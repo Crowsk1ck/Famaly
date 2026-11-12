@@ -245,7 +245,7 @@ function renderPublic(){
 function loginModal(){modal('Вхід до панелі',`<p class="modal-desc">Логін і пароль видає керівник сім’ї. Реєстрація після заявки не відбувається автоматично.</p><form id="login-form" class="stack"><div class="field"><label>Логін</label><input class="input" name="username" autocomplete="username" required autofocus></div><div class="field"><label>Пароль</label><input class="input" type="password" name="password" autocomplete="current-password" required></div><button type="submit" class="btn">Увійти →</button></form>`);}
 function modal(title,html){$('#modal-root').innerHTML=`<div class="modal-backdrop" data-backdrop="1"><div class="modal" role="dialog" aria-modal="true" aria-label="${esc(title)}"><div class="modal-head"><h3>${esc(title)}</h3><button type="button" data-action="close-modal" class="iconbtn">✕</button></div><div class="modal-body">${html}</div></div></div>`;const first=$('#modal-root input:not([type=hidden])');if(first)setTimeout(()=>first.focus(),20);}
 function closeModal(){$('#modal-root').innerHTML='';state.galleryLightboxId=null;}
-function visible(n){if(['audit','settings'].includes(n.id)&&state.user.role!=='leader')return false;if(n.id==='applications'&&!can('recruitment:manage'))return false;if(n.id==='discipline'&&!can('discipline:manage'))return false;if(n.id==='contracts'&&!can('finance:read')&&!can('finance:manage'))return true;return true;}
+function visible(n){if(['audit','settings'].includes(n.id)&&state.user.role!=='leader')return false;if(n.id==='applications'&&!can('recruitment:manage'))return false;if(n.id==='public_news'&&!can('content:manage'))return false;if(n.id==='discipline'&&!can('discipline:manage'))return false;if(n.id==='contracts'&&!can('finance:read')&&!can('finance:manage'))return true;return true;}
 function sidebar(){let current='';return `<aside class="sidebar"><div class="sidebrand"><div class="brand"><span class="brand-mark">🐻</span>GRIZZLY</div><span class="sub">FAMILY CONTROL</span></div><nav class="side-scroll"><a class="sideitem" href="/?view=public#home"><span class="ni">↗</span> Публічний сайт</a>${nav.filter(visible).map(n=>{let group='';if(n.group!==current){current=n.group;group=`<div class="nav-group">${esc(current)}</div>`;}return `${group}<a href="#${n.id}" class="sideitem ${state.route===n.id?'active':''}" data-route="${n.id}"><span class="ni">${n.icon}</span>${esc(n.text)}</a>`;}).join('')}</nav><div class="side-bottom"><div class="row"><div class="avatar">${esc((state.user.nickname||state.user.username).slice(0,1).toUpperCase())}</div><div style="min-width:0"><strong class="small">${esc(state.user.nickname||state.user.username)}</strong><div class="muted small">${esc(roles[state.user.role])}</div></div></div><button class="btn ghost tiny sidebar-logout" data-action="logout">Вийти ↗</button></div></aside>`;}
 function shell(content){const unread=state.notifications.filter(x=>!x.read_at).length;$('#app').innerHTML=`<div class="shell ${state.menu?'menu-open':''}">${sidebar()}<div class="app-main"><header class="topbar"><div class="row"><button class="iconbtn mobile-menu" data-action="toggle-menu">☰</button><div><small>GRIZZLY / ${esc(roles[state.user.role])}</small><h2>${esc(nav.find(n=>n.id===state.route)?.text||'Огляд')}</h2></div></div><div class="row"><div class="notif-menu"><button class="iconbtn" data-action="notifications" aria-label="Сповіщення">♧${unread?'<span class="alert-dot"></span>':''}</button><div id="notif-pop" class="notif-pop hide"></div></div><button class="iconbtn" data-route="profile" title="Мій профіль">◌</button></div></header><div class="app-content">${content}</div></div></div>`;}
 function notifyPopup(){const el=$('#notif-pop');if(!el)return;el.classList.toggle('hide');el.innerHTML=`<div class="card-head"><h3>Сповіщення</h3><span class="pill">${state.notifications.filter(x=>!x.read_at).length} нових</span></div>${state.notifications.length?state.notifications.slice(0,12).map(n=>`<div class="notif-item"><div class="row space"><strong class="small">${esc(n.title)}</strong>${n.read_at?'':`<button class="btn tiny ghost" data-action="read-notification" data-id="${esc(n.id)}">✓</button>`}</div><div class="muted small">${esc(n.details)}</div><div class="muted small">${date(n.created_at)}</div></div>`).join(''):empty('Немає сповіщень','Нові події з’являться тут.')}`;}
@@ -490,6 +490,14 @@ async function handleSubmit(e){const f=e.target;if(!f.id)return;e.preventDefault
     const result=await api(id?`/users/${id}`:'/users',id?'PATCH':'POST',payload);if(!id){closeModal();await preload();await render();credentialReceipt(result.item.username,b.password,result.item.nickname);return;}await afterSaved('Особову справу оновлено');return;}
   case 'rank-form':{const r=state.ranks.find(x=>x.id===Number(f.dataset.id));await api(`/ranks/${r.id}`,'PATCH',{title:b.title,requirements:b.requirements,checklist:lines(b.checklist),version:r.version});await afterSaved('Ранг оновлено');return;}
   case 'department-form':{const d=state.departments.find(x=>x.id===f.dataset.id);await api(`/departments/${d.id}`,'PATCH',{...b,version:d.version});await afterSaved();return;}
+  case 'news-form':{
+    if(!can('content:manage'))throw new Error('Недостатньо прав для публікації');
+    const id=f.dataset.id,record=id?(await api('/records/public_news')).items.find(r=>r.id===id):null;
+    if(id&&!record)throw new Error('Новину не знайдено');
+    const payload={title:b.title,details:b.details,status:b.status||'Заплановано',evidence:[],
+      extra:{...record?.extra,news_category:b.category,featured:b.featured==='true'},version:record?.version};
+    await api(id?'/records/public_news/'+encodeURIComponent(id):'/records/public_news',id?'PATCH':'POST',payload);
+    await afterSaved('Новину збережено');return;}
   case 'gallery-form':{
     const id=f.dataset.id,old=id?(await api('/records/gallery')).items.find(x=>x.id===id):null;
     const url=String(b.photo_url||'').trim();
@@ -556,6 +564,17 @@ document.addEventListener('click',async e=>{const back=e.target.closest('[data-b
   case 'edit-department':departmentForm(id);break;
   case 'new-record':await preload();if(mod==='gallery')galleryForm();else if(mod==='public_news')newsForm();else moduleForm(mod);break;
   case 'edit-record':{const r=(await api(`/records/${mod}`)).items.find(x=>x.id===id);await preload();if(mod==='gallery')galleryForm(r);else if(mod==='public_news')newsForm(r);else moduleForm(mod,r);break;}
+  case 'news-new':if(!can('content:manage'))throw new Error('Недостатньо прав');newsForm();break;
+  case 'news-edit':{
+    if(!can('content:manage'))throw new Error('Недостатньо прав');
+    const item=(await api('/records/public_news')).items.find(x=>x.id===id);
+    if(!item)throw new Error('Новину не знайдено');newsForm(item);break;}
+  case 'news-publish':{
+    if(!can('content:manage'))throw new Error('Недостатньо прав');
+    const item=(await api('/records/public_news')).items.find(x=>x.id===id);
+    if(!item)throw new Error('Новину не знайдено');
+    await api('/records/public_news/'+encodeURIComponent(id),'PATCH',{version:item.version,status:t.dataset.status});
+    await afterSaved(t.dataset.status==='Погоджено'?'Новину опубліковано':'Новину приховано');break;}
   case 'gallery-new':galleryForm();break;
   case 'gallery-admin-filter':state.galleryAdminFilter=t.dataset.category||'all';await render();break;
   case 'gallery-publish':{
