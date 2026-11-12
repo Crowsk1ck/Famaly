@@ -8,7 +8,7 @@ import worker,{payoutPreview,hashPassword,verifyPassword,validDiscordWebhookUrl,
 
 const dir=mkdtempSync(join(tmpdir(),'grizzly-test-'));
 const file=join(dir,'local.sqlite');
-const schema=['0001_init.sql','0002_capt_signups.sql','0003_discord_notifications.sql','0004_discord_capt_news.sql'].map(file=>readFileSync(resolve('migrations',file),'utf8')).join('\n');
+const schema=['0001_init.sql','0002_capt_signups.sql','0003_discord_notifications.sql','0004_discord_capt_news.sql','0005_discord_announcements.sql'].map(file=>readFileSync(resolve('migrations',file),'utf8')).join('\n');
 const child=spawn('python',['-u',resolve('tests/db_adapter.py')]);let pending=[],buf='';child.stdout.on('data',d=>{buf+=d.toString();let idx;while((idx=buf.indexOf('\n'))>=0){const line=buf.slice(0,idx);buf=buf.slice(idx+1);const {resolve:res,reject:rej}=pending.shift();const obj=JSON.parse(line);if(obj.error)rej(new Error(obj.error));else res(obj);}});
 function python(payload){return new Promise((res,rej)=>{pending.push({resolve:res,reject:rej});child.stdin.write(JSON.stringify({file,...payload})+'\n');});}
 await python({init:schema});
@@ -532,7 +532,7 @@ test('Discord leader preferences persist and prevent disabled alerts; delivery l
   const memberList=await req('/api/discord/deliveries',{token:member});
   assert.equal(memberList.status,403);
   const memberEdit=await req('/api/discord/preferences',{method:'PATCH',token:member,data:{
-    enabled:{applications:false,decisions:false,events:false,capt:false,news:false},versions:{applications:1,decisions:1,events:1,capt:1,news:1}
+    enabled:{applications:false,decisions:false,events:false,capt:false,news:false,announcements:false},versions:{applications:1,decisions:1,events:1,capt:1,news:1,announcements:1}
   }});
   assert.equal(memberEdit.status,403);
   const original=(await req('/api/discord/status',{token:leader})).data;
@@ -540,13 +540,14 @@ test('Discord leader preferences persist and prevent disabled alerts; delivery l
   assert.equal(original.enabled.applications,true);
   assert.equal(original.enabled.capt,true);
   assert.equal(original.enabled.news,true);
+  assert.equal(original.enabled.announcements,true);
   assert.ok(original.versions.applications>=1);
   const bad=await req('/api/discord/preferences',{method:'PATCH',token:leader,data:{
-    enabled:{applications:'false',decisions:true,events:true,capt:true,news:true},versions:original.versions
+    enabled:{applications:'false',decisions:true,events:true,capt:true,news:true,announcements:true},versions:original.versions
   }});
   assert.equal(bad.status,400);
   const update=await req('/api/discord/preferences',{method:'PATCH',token:leader,data:{
-    enabled:{applications:false,decisions:true,events:false,capt:true,news:true},versions:original.versions
+    enabled:{applications:false,decisions:true,events:false,capt:true,news:true,announcements:true},versions:original.versions
   }});
   assert.equal(update.status,200,JSON.stringify(update.data));
   const status=(await req('/api/discord/status',{token:leader})).data;
@@ -555,9 +556,10 @@ test('Discord leader preferences persist and prevent disabled alerts; delivery l
   assert.equal(status.categories.events,false);
   assert.equal(status.categories.capt,true);
   assert.equal(status.categories.news,true);
+  assert.equal(status.categories.announcements,true);
   assert.ok(status.versions.applications>original.versions.applications);
   const stale=await req('/api/discord/preferences',{method:'PATCH',token:leader,data:{
-    enabled:{applications:true,decisions:true,events:true,capt:true,news:true},versions:original.versions
+    enabled:{applications:true,decisions:true,events:true,capt:true,news:true,announcements:true},versions:original.versions
   }});
   assert.equal(stale.status,409);
   const webhook='https://discord.com/api/webhooks/123456789012345678/abcdefghijklmnopqrstuvwxyz_0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
@@ -578,7 +580,7 @@ test('Discord leader preferences persist and prevent disabled alerts; delivery l
     assert.equal(sent.length,0);
     assert.equal((await req('/api/discord/deliveries',{token:leader})).data.items.length,before);
     const reenable=await req('/api/discord/preferences',{method:'PATCH',token:leader,data:{
-      enabled:{applications:true,decisions:true,events:true,capt:true,news:true},versions:status.versions
+      enabled:{applications:true,decisions:true,events:true,capt:true,news:true,announcements:true},versions:status.versions
     }});
     assert.equal(reenable.status,200,JSON.stringify(reenable.data));
     const active=await req('/api/apply',{method:'POST',headers:{'cf-connecting-ip':'198.51.100.109'},
@@ -615,8 +617,13 @@ test('CAPT announcements and family news notify only on explicit public-news pub
   const hook='https://discord.com/api/webhooks/123456789012345678/abcdefghijklmnopqrstuvwxyz_0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
   const oldFetch=globalThis.fetch;
   const sent=[],pending=[],ctx={waitUntil(p){pending.push(p);}};
+  const captHook=hook.replace('123456789012345678','223456789012345678');
+  const newsHook=hook.replace('123456789012345678','323456789012345678');
   env.DISCORD_WEBHOOK_URL=hook;
-  globalThis.fetch=async(_url,opt)=>{sent.push(JSON.parse(opt.body));return new Response(null,{status:204});};
+  env.DISCORD_WEBHOOK_CAPT=captHook;
+  env.DISCORD_WEBHOOK_NEWS=newsHook;
+  const destinations=[];
+  globalThis.fetch=async(url,opt)=>{destinations.push(url);sent.push(JSON.parse(opt.body));return new Response(null,{status:204});};
   try{
     const initial=(await req('/api/discord/status',{token:leader})).data;
     assert.equal(initial.migrationRequired,false);
@@ -636,6 +643,7 @@ test('CAPT announcements and family news notify only on explicit public-news pub
     assert.equal(captLive.status,200,JSON.stringify(captLive.data));
     await Promise.all(pending.splice(0));
     assert.equal(sent.length,1);
+    assert.equal(destinations[0],captHook);
     assert.ok(sent[0].embeds[0].title.includes('CAPT'));
     assert.ok(JSON.stringify(sent[0]).includes('CAPT збори'));
     assert.ok(!JSON.stringify(sent[0]).includes('PUBLIC_CAPT_DETAILS'));
@@ -655,6 +663,7 @@ test('CAPT announcements and family news notify only on explicit public-news pub
     assert.equal(newsPost.status,201,JSON.stringify(newsPost.data));
     await Promise.all(pending.splice(0));
     assert.equal(sent.length,2);
+    assert.equal(destinations[1],newsHook);
     assert.ok(sent[1].embeds[0].title.includes('Новина'));
     assert.ok(JSON.stringify(sent[1]).includes('Сімейні новини GRIZZLY'));
     assert.ok(!JSON.stringify(sent[1]).includes('PUBLIC_NEWS_DETAILS'));
@@ -685,7 +694,88 @@ test('CAPT announcements and family news notify only on explicit public-news pub
     assert.equal(restored.status,200,JSON.stringify(restored.data));
   }finally{
     delete env.DISCORD_WEBHOOK_URL;
+    delete env.DISCORD_WEBHOOK_CAPT;
+    delete env.DISCORD_WEBHOOK_NEWS;
     globalThis.fetch=oldFetch;
+  }
+});
+
+test('General announcements use a distinct webhook, not CAPT/news or the legacy route',async()=>{
+  const base='https://discord.com/api/webhooks/123456789012345678/abcdefghijklmnopqrstuvwxyz_0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  const own=base.replace('123456789012345678','423456789012345678');
+  const capt=base.replace('123456789012345678','223456789012345678');
+  const news=base.replace('123456789012345678','323456789012345678');
+  const oldFetch=globalThis.fetch;
+  const sent=[],pending=[],ctx={waitUntil(p){pending.push(p);}};
+  env.DISCORD_WEBHOOK_URL=base;
+  env.DISCORD_WEBHOOK_CAPT=capt;
+  env.DISCORD_WEBHOOK_NEWS=news;
+  env.DISCORD_WEBHOOK_ANNOUNCEMENTS=own;
+  globalThis.fetch=async(url,opt)=>{sent.push({url,payload:JSON.parse(opt.body)});return new Response(null,{status:204});};
+  try{
+    const initial=(await req('/api/discord/status',{token:leader})).data;
+    assert.equal(initial.migrationRequired,false);
+    assert.deepEqual(initial.routes.announcements,{configured:true,reason:'ready'});
+    assert.deepEqual(initial.routes.capt,{configured:true,reason:'ready'});
+    assert.deepEqual(initial.routes.news,{configured:true,reason:'ready'});
+    const draft=await req('/api/records/public_news',{method:'POST',token:leader,ctx,data:{
+      title:'Важливе оголошення GRIZZLY',details:'Збори на маєтку о 19:00',status:'Заплановано',
+      extra:{news_category:'announcement',private_note:'SECRET_NOT_FOR_DISCORD'}
+    }});
+    assert.equal(draft.status,201,JSON.stringify(draft.data));
+    await Promise.all(pending.splice(0));
+    assert.equal(sent.length,0);
+    const published=await req('/api/records/public_news/'+draft.data.item.id,{method:'PATCH',token:leader,ctx,data:{
+      version:1,status:'Погоджено'
+    }});
+    assert.equal(published.status,200,JSON.stringify(published.data));
+    await Promise.all(pending.splice(0));
+    assert.equal(sent.length,1);
+    assert.equal(sent[0].url,own);
+    assert.ok(sent[0].payload.embeds[0].title.includes('Оголошення'));
+    assert.ok(JSON.stringify(sent[0].payload).includes('Збори на маєтку'));
+    assert.ok(!JSON.stringify(sent[0].payload).includes('SECRET_NOT_FOR_DISCORD'));
+    assert.deepEqual(sent[0].payload.allowed_mentions,{parse:[]});
+    const same=await req('/api/records/public_news/'+draft.data.item.id,{method:'PATCH',token:leader,ctx,data:{
+      version:2,status:'Погоджено',title:'Оголошення оновлено'
+    }});
+    assert.equal(same.status,200);
+    await Promise.all(pending.splice(0));
+    assert.equal(sent.length,1);
+    const logs=(await req('/api/discord/deliveries',{token:leader})).data.items;
+    assert.ok(logs.some(x=>x.kind==='announcements'&&x.status==='sent'));
+    assert.ok(!JSON.stringify(logs).includes('Збори на маєтку'));
+    const announceTest=await req('/api/discord/test',{method:'POST',token:leader,data:{kind:'announcements'}});
+    assert.equal(announceTest.status,200,JSON.stringify(announceTest.data));
+    assert.equal(sent.length,2);
+    assert.equal(sent[1].url,own);
+    const captTest=await req('/api/discord/test',{method:'POST',token:leader,data:{kind:'capt'}});
+    assert.equal(captTest.status,200,JSON.stringify(captTest.data));
+    assert.equal(sent[2].url,capt);
+    const newsTest=await req('/api/discord/test',{method:'POST',token:leader,data:{kind:'news'}});
+    assert.equal(newsTest.status,200,JSON.stringify(newsTest.data));
+    assert.equal(sent[3].url,news);
+    // Duplicating a secret must not silently merge editorial channels.
+    env.DISCORD_WEBHOOK_ANNOUNCEMENTS=capt;
+    const duplicate=(await req('/api/discord/status',{token:leader})).data;
+    assert.equal(duplicate.routes.announcements.reason,'duplicate');
+    assert.equal(duplicate.routes.announcements.configured,false);
+    const noSend=await req('/api/discord/test',{method:'POST',token:leader,data:{kind:'announcements'}});
+    assert.equal(noSend.status,503);
+    assert.equal(sent.length,4);
+    // Missing separate secret does not fall back to the default URL.
+    delete env.DISCORD_WEBHOOK_ANNOUNCEMENTS;
+    const missing=(await req('/api/discord/status',{token:leader})).data;
+    assert.equal(missing.routes.announcements.reason,'missing');
+    const missTest=await req('/api/discord/test',{method:'POST',token:leader,data:{kind:'announcements'}});
+    assert.equal(missTest.status,503);
+    assert.equal(sent.length,4);
+  }finally{
+    globalThis.fetch=oldFetch;
+    delete env.DISCORD_WEBHOOK_URL;
+    delete env.DISCORD_WEBHOOK_CAPT;
+    delete env.DISCORD_WEBHOOK_NEWS;
+    delete env.DISCORD_WEBHOOK_ANNOUNCEMENTS;
   }
 });
 
