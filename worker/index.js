@@ -48,6 +48,18 @@ function evidence(value){if(!Array.isArray(value)||value.length>30)fail(400,'Н�
 function money(v){if(!Number.isSafeInteger(Number(v))||Number(v)<0||Number(v)>1_000_000_000_000)fail(400,'Сума має бути цілим невід’ємним числом');return Number(v);}
 function percent(v){const x=Number(v);if(!Number.isInteger(x)||x<0||x>100)fail(400,'Відсоток повинен бути від 0 до 100');return x;}
 function validStatus(v){if(!STATUSES.includes(v))fail(400,'Недопустимий статус');return v;}
+// Recruitment uses a dedicated 3-state workflow, independent of record statuses.
+const APPLICATION_STATUSES=['Очікує','Прийнято','Відхилено'];
+function applicationStatus(raw){
+  if(raw==='Погоджено'||raw==='Завершено'||raw==='Прийнято')return 'Прийнято';
+  if(raw==='Відхилено')return 'Відхилено';
+  return 'Очікує';
+}
+function validApplicationStatus(value){
+  if(!APPLICATION_STATUSES.includes(value))fail(400,'Статус заявки: Очікує, Прийнято або Відхилено');
+  return value;
+}
+function applicationView(record){return {...record,status:applicationStatus(record.status)};}
 function dateInput(v){const s=str(v,40);if(s && !/^\d{4}-\d\d-\d\d(?:T\d\d:\d\d(?::\d\d)?)?$/.test(s))fail(400,'Невірний формат дати');return s;}
 function tokenValue(){const b=new Uint8Array(32);crypto.getRandomValues(b);return [...b].map(x=>x.toString(16).padStart(2,'0')).join('');}
 async function sha256(s){const d=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s));return [...new Uint8Array(d)].map(x=>x.toString(16).padStart(2,'0')).join('');}
@@ -158,7 +170,7 @@ export function buildDiscordNotification(kind,info={}){
   const fields=[];
   if(info.nickname)fields.push({name:'Ігровий нік',value:discordSafe(info.nickname,80),inline:true});
   if(info.gameId)fields.push({name:'Ігровий ID',value:discordSafe(info.gameId,40),inline:true});
-  if(info.status)fields.push({name:'Рішення',value:discordSafe(info.status,70),inline:true});
+  if(info.status)fields.push({name:kind==='applications'?'Статус заявки':'Рішення',value:discordSafe(info.status,70),inline:true});
   if(info.event)fields.push({name:kind==='capt'?'CAPT-оголошення':kind==='news'?'Заголовок новини':kind==='announcements'?'Оголошення':'Подія',value:discordSafe(info.event,150),inline:false});
   if(info.message&&kind==='announcements')fields.push({name:'Текст оголошення',value:discordSafe(info.message,950),inline:false});
   if(info.startsAt)fields.push({name:'Час за Києвом',value:discordSafe(info.startsAt,28).replace('T',' · '),inline:true});
@@ -360,7 +372,7 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
   }
   if(path==='/api/apply'&&method==='POST'){
     const key='apply:'+await sha256(publicOrigin(req));await rateCheck(db,key,3,60);const b=await body(req);const nickname=str(b.nickname,80),gameId=str(b.game_id,40),motivation=str(b.motivation,1400);if(!nickname||!gameId||motivation.length<10)fail(400,'Вкажіть нік, ігровий ID та мотивацію (від 10 символів)');
-    const id=uuid(),t=now();await db.prepare('INSERT INTO applications(id,nickname,game_id,discord,experience,motivation,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)').bind(id,nickname,gameId,str(b.discord,120),str(b.experience,700),motivation,t,t).run();await rateFail(db,key,1000,60);queueDiscord(ctx,db,env,'applications',{nickname,gameId});return json({ok:true,message:'Заявку надіслано. Акаунт не створюється автоматично.'},201);
+    const id=uuid(),t=now();await db.prepare('INSERT INTO applications(id,nickname,game_id,discord,experience,motivation,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)').bind(id,nickname,gameId,str(b.discord,120),str(b.experience,700),motivation,'Очікує',t,t).run();await rateFail(db,key,1000,60);queueDiscord(ctx,db,env,'applications',{nickname,gameId,status:'Очікує'});return json({ok:true,message:'Заявку надіслано. Акаунт не створюється автоматично.'},201);
   }
   if(path==='/api/setup/bootstrap'&&method==='POST'){
     const configured=env.BOOTSTRAP_TOKEN||'';if(configured.length<32)fail(503,'Для створення лідера налаштуйте секрет BOOTSTRAP_TOKEN (мінімум 32 символи)');
@@ -504,9 +516,9 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
     const r=await db.prepare(`UPDATE settings SET value=CASE key ${caseSql} ELSE value END,version=version+1,updated_at=? WHERE key IN (${keys}) AND (SELECT COUNT(*) FROM settings WHERE ${guard})=?`).bind(...args,normalized.length).run();
     if(r.meta.changes!==normalized.length)fail(409,'Налаштування змінив інший лідер. Оновіть сторінку');await audit(db,user,'update','settings','site',entries.map(([k])=>k).join(','));return json({items:await settings(db)});
   }
-  if(path==='/api/applications'&&method==='GET'){requirePerm(user,'recruitment:manage');return json({items:await allRows(db,'SELECT * FROM applications ORDER BY created_at DESC LIMIT 500')});}
+  if(path==='/api/applications'&&method==='GET'){requirePerm(user,'recruitment:manage');return json({items:(await allRows(db,'SELECT * FROM applications ORDER BY created_at DESC LIMIT 500')).map(applicationView)});}
   m=path.match(/^\/api\/applications\/([\w-]+)$/);if(m&&method==='PATCH'){
-    requirePerm(user,'recruitment:manage');const b=await body(req);if(!Number.isInteger(b.version))fail(428,'Потрібна версія');const old=await db.prepare('SELECT nickname,status FROM applications WHERE id=?').bind(m[1]).first();if(!old)fail(404,'Заявку не знайдено');const status=validStatus(b.status);const r=await db.prepare('UPDATE applications SET status=?,comment=?,version=version+1,updated_at=? WHERE id=? AND version=?').bind(status,str(b.comment,1200),now(),m[1],b.version).run();if(r.meta.changes!==1)fail(409,'Заявку змінено іншим користувачем');await audit(db,user,'review','applications',m[1],status);if(old.status!==status)queueDiscord(ctx,db,env,'decisions',{nickname:old.nickname,status});return json({ok:true});
+    requirePerm(user,'recruitment:manage');const b=await body(req);if(!Number.isInteger(b.version))fail(428,'Потрібна версія');const old=await db.prepare('SELECT nickname,status FROM applications WHERE id=?').bind(m[1]).first();if(!old)fail(404,'Заявку не знайдено');const status=validApplicationStatus(b.status);const r=await db.prepare('UPDATE applications SET status=?,comment=?,version=version+1,updated_at=? WHERE id=? AND version=?').bind(status,str(b.comment,1200),now(),m[1],b.version).run();if(r.meta.changes!==1)fail(409,'Заявку змінено іншим користувачем');await audit(db,user,'review','applications',m[1],status);if(applicationStatus(old.status)!==status)queueDiscord(ctx,db,env,'decisions',{nickname:old.nickname,status});return json({ok:true});
   }
   // CAPT dashboard: return only records the current role can see. Payout details
   // remain limited to finance managers or the payout recipient.
@@ -654,7 +666,7 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
     const financeEvents=can(user,'finance:read')||can(user,'finance:manage')?await allRows(db,"SELECT amount,created_at,kind FROM ledger WHERE kind IN ('treasury','contribution')"):[];const revenue=(from)=>financeEvents.filter(x=>new Date(x.created_at).getTime()>=from).reduce((sum,x)=>sum+x.amount,0);return json({members:can(user,'members:read')?users[0]?.count:null,tasks_active:tasks.filter(r=>!['Завершено','Відхилено'].includes(r.status)).length,reports_review:reports.filter(r=>r.status==='На перевірці').length,events_upcoming:events.filter(r=>r.starts_at&&new Date(r.starts_at).getTime()>=Date.now()).length,week:{tasks:countMod(recent(weekAgo),'tasks'),reports:countMod(recent(weekAgo),'reports'),events:countMod(recent(weekAgo),'events'),income:revenue(weekAgo)},month:{tasks:countMod(recent(monthAgo),'tasks'),reports:countMod(recent(monthAgo),'reports'),events:countMod(recent(monthAgo),'events'),income:revenue(monthAgo)},leaderboard:leaderboard_week,leaderboard_week,leaderboard_month});
   }
   if(path==='/api/export'&&method==='GET'){
-    const mod=url.searchParams.get('module');let data;if(mod==='users'){data=(await allRows(db,'SELECT * FROM users')).filter(x=>x.id===user.id||can(user,'members:read')&&manageInDepartment(user,x.department_id)).map(safeUser);}else if(mod==='contracts'){data=(await allRows(db,'SELECT * FROM contracts')).filter(c=>can(user,'finance:read')||can(user,'finance:manage')||parseJson(c.participant_ids,[]).includes(user.id)).map(contractView);}else if(mod==='applications'){requirePerm(user,'recruitment:manage');data=await allRows(db,'SELECT * FROM applications');}else if(MODULES[mod]){data=(await allRows(db,'SELECT * FROM records WHERE module=? AND deleted_at IS NULL',mod)).filter(r=>permittedRecord(user,mod,r)).map(mapRecord);}else fail(400,'Невідомий модуль експорту');return json({module:mod,exported_at:now(),items:data},200,{'Content-Disposition':`attachment; filename="grizzly-${mod}.json"`});
+    const mod=url.searchParams.get('module');let data;if(mod==='users'){data=(await allRows(db,'SELECT * FROM users')).filter(x=>x.id===user.id||can(user,'members:read')&&manageInDepartment(user,x.department_id)).map(safeUser);}else if(mod==='contracts'){data=(await allRows(db,'SELECT * FROM contracts')).filter(c=>can(user,'finance:read')||can(user,'finance:manage')||parseJson(c.participant_ids,[]).includes(user.id)).map(contractView);}else if(mod==='applications'){requirePerm(user,'recruitment:manage');data=(await allRows(db,'SELECT * FROM applications')).map(applicationView);}else if(MODULES[mod]){data=(await allRows(db,'SELECT * FROM records WHERE module=? AND deleted_at IS NULL',mod)).filter(r=>permittedRecord(user,mod,r)).map(mapRecord);}else fail(400,'Невідомий модуль експорту');return json({module:mod,exported_at:now(),items:data},200,{'Content-Disposition':`attachment; filename="grizzly-${mod}.json"`});
   }
   fail(404,'Маршрут не знайдено');
 }
