@@ -4,7 +4,7 @@ import {spawn} from 'node:child_process';
 import {readFileSync,mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
-import worker,{payoutPreview,hashPassword,verifyPassword,validDiscordWebhookUrl,buildDiscordNotification} from '../worker/index.js';
+import worker,{payoutPreview,hashPassword,verifyPassword,validDiscordWebhookUrl,discordWebhookDiagnostic,buildDiscordNotification} from '../worker/index.js';
 
 const dir=mkdtempSync(join(tmpdir(),'grizzly-test-'));
 const file=join(dir,'local.sqlite');
@@ -408,6 +408,11 @@ test('public calendar is opt-in and validates published events without exposing 
 test('Discord webhook validation and formatter forbid spoofed hosts and mentions',()=>{
   const valid='https://discord.com/api/webhooks/123456789012345678/abcdefghijklmnopqrstuvwxyz_0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
   assert.equal(validDiscordWebhookUrl(valid),true);
+  assert.equal(validDiscordWebhookUrl('  '+valid+'  '),true);
+  assert.equal(validDiscordWebhookUrl(valid.replace('discord.com','discordapp.com')+'/'),true);
+  assert.deepEqual(discordWebhookDiagnostic(undefined),{configured:false,reason:'missing'});
+  assert.deepEqual(discordWebhookDiagnostic('not-a-webhook'),{configured:false,reason:'invalid'});
+  assert.deepEqual(discordWebhookDiagnostic(valid),{configured:true,reason:'ready'});
   for(const url of [
     '',null,'http://discord.com/api/webhooks/123456789012345678/abcdefghijklmnopqrstuvwxyz0123456789',
     'https://discord.com.evil.example/api/webhooks/123456789012345678/abcdefghijklmnopqrstuvwxyz0123456789',
@@ -432,6 +437,17 @@ test('Discord settings and delivery enforce leader access and notify once per me
   const disabled=await req('/api/discord/status',{token:leader});
   assert.equal(disabled.status,200);
   assert.equal(disabled.data.configured,false);
+  assert.equal(disabled.data.reason,'missing');
+  assert.equal(disabled.data.worker,'famaly');
+  env.DISCORD_WEBHOOK_URL='this is not a webhook';
+  const invalid=await req('/api/discord/status',{token:leader});
+  assert.equal(invalid.status,200);
+  assert.equal(invalid.data.reason,'invalid');
+  assert.equal(invalid.data.configured,false);
+  assert.ok(!JSON.stringify(invalid.data).includes('this is not a webhook'));
+  const invalidTest=await req('/api/discord/test',{method:'POST',token:leader,data:{}});
+  assert.equal(invalidTest.status,503);
+  delete env.DISCORD_WEBHOOK_URL;
   const notConfigured=await req('/api/discord/test',{method:'POST',token:leader,data:{}});
   assert.equal(notConfigured.status,503);
   const webhook='https://discord.com/api/webhooks/123456789012345678/abcdefghijklmnopqrstuvwxyz_0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
@@ -450,6 +466,7 @@ test('Discord settings and delivery enforce leader access and notify once per me
     const status=await req('/api/discord/status',{token:leader});
     assert.equal(status.status,200);
     assert.equal(status.data.configured,true);
+    assert.equal(status.data.reason,'ready');
     assert.ok(!JSON.stringify(status.data).includes(webhook));
     const forbidden=await req('/api/discord/test',{method:'POST',token:member,data:{}});
     assert.equal(forbidden.status,403);
