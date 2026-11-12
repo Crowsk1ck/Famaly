@@ -117,7 +117,6 @@ test('CAPT match signups build a deterministic roster and prevent duplicates',as
   assert.equal(bad.status,400);
 });
 test('settings updates use all-or-nothing optimistic versions',async()=>{const first=await req('/api/settings',{token:leader});assert.equal(first.status,200);const v=first.data.versions;const success=await req('/api/settings',{method:'PATCH',token:leader,data:{tagline:'Grizzly Test Update',treasury_percent:'25',__versions:v}});assert.equal(success.status,200,JSON.stringify(success.data));const conflict=await req('/api/settings',{method:'PATCH',token:leader,data:{tagline:'Stale Attempt',treasury_percent:'40',__versions:v}});assert.equal(conflict.status,409);const after=await req('/api/settings',{token:leader});assert.equal(after.data.items.tagline,'Grizzly Test Update');assert.equal(after.data.items.treasury_percent,'25');const pub=await req('/api/public');assert.equal(pub.data.settings.tagline,'Grizzly Test Update');assert.equal(pub.data.settings.treasury_percent,undefined);});
-test('blocking user revokes sessions and stops access',async()=>{const u=(await req('/api/users',{token:leader})).data.items.find(x=>x.id===memberId);const r=await req(`/api/users/${memberId}`,{method:'PATCH',token:leader,data:{...u,status:'blocked'}});assert.equal(r.status,200,JSON.stringify(r.data));assert.equal((await req('/api/auth/me',{token:member})).status,401);});
 test('payout rounding is deterministic',()=>{const p=payoutPreview(100,20,['a','b','c']);assert.equal(p.treasury,22);assert.equal(p.per_member,26);assert.equal(p.rounding_remainder,2);assert.equal(p.allocations.length,3);});
 test.after(()=>{child.kill();rmSync(dir,{recursive:true,force:true});});
 
@@ -341,3 +340,6 @@ test('public achievements respect publication status, dates, permissions and pub
   }});
   assert.equal(fakeImage.status,400);
 });
+
+// Run destructive session-revocation coverage last: other integration tests use this member's active session.
+test('blocking user revokes sessions and stops access',async()=>{const u=(await req('/api/users',{token:leader})).data.items.find(x=>x.id===memberId);const r=await req(`/api/users/${memberId}`,{method:'PATCH',token:leader,data:{...u,status:'blocked'}});assert.equal(r.status,200,JSON.stringify(r.data));assert.equal((await req('/api/auth/me',{token:member})).status,401);});
