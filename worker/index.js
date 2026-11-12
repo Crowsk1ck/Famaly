@@ -64,6 +64,61 @@ function clearCookie(req){return cookie(req,'')+'; Max-Age=0';}
 function safeUser(u){if(!u)return null;return {id:u.id,username:u.username,nickname:u.nickname,game_id:u.game_id,discord:u.discord,role:u.role,permissions:permissions(u),custom_permissions:parseJson(u.permissions,[]),rank_id:u.rank_id,department_id:u.department_id,joined_at:u.joined_at,status:u.status,activity:u.activity,version:u.version,created_at:u.created_at,updated_at:u.updated_at};}
 async function audit(db,user,action,entity,id,detail=''){await db.prepare('INSERT INTO audit(id,actor_id,actor_name,action,entity,entity_id,detail,created_at) VALUES(?,?,?,?,?,?,?,?)').bind(uuid(),user?.id||'system',user?.username||'system',action,entity,id,str(detail,1000),now()).run();}
 async function notify(db,userId,title,details=''){if(!userId)return;await db.prepare('INSERT INTO notifications(id,user_id,title,details,created_at) VALUES(?,?,?,?,?)').bind(uuid(),userId,str(title,150),str(details,600),now()).run();}
+// A Discord webhook is a credential. Never store it in D1, echo it in JSON,
+// or include it in diagnostic logs. Configure DISCORD_WEBHOOK_URL as a Worker secret.
+export function validDiscordWebhookUrl(value){
+  if(typeof value!=='string')return false;
+  try{
+    const u=new URL(value);
+    return u.protocol==='https:'&&u.hostname==='discord.com'&&u.port===''&&
+      !u.username&&!u.password&&!u.search&&!u.hash&&
+      /^\/api\/webhooks\/\d{17,22}\/[A-Za-z0-9._-]{30,}$/.test(u.pathname);
+  }catch{return false;}
+}
+function discordSafe(value,limit=180){
+  return str(value,limit).replace(/[\u0000-\u001f\u007f]/g,' ').replace(/@/g,'@\u200b').replace(/<(?=[@#])/g,'&lt;');
+}
+const DISCORD_NOTIFY_KINDS=['applications','decisions','events'];
+function discordEnabled(env,kind){
+  return env['DISCORD_NOTIFY_'+String(kind).toUpperCase()]!=='false';
+}
+export function buildDiscordNotification(kind,info={}){
+  const label={applications:'📝 Нова заявка GRIZZLY',decisions:'📋 Рішення за заявкою',events:'📅 Новий захід GRIZZLY',test:'🐻 Перевірка Discord GRIZZLY'}[kind];
+  if(!label)throw new Error('Невідомий тип Discord-сповіщення');
+  const fields=[];
+  if(info.nickname)fields.push({name:'Ігровий нік',value:discordSafe(info.nickname,80),inline:true});
+  if(info.gameId)fields.push({name:'Ігровий ID',value:discordSafe(info.gameId,40),inline:true});
+  if(info.status)fields.push({name:'Рішення',value:discordSafe(info.status,70),inline:true});
+  if(info.event)fields.push({name:'Подія',value:discordSafe(info.event,150),inline:false});
+  if(info.startsAt)fields.push({name:'Час за Києвом',value:discordSafe(info.startsAt,28).replace('T',' · '),inline:true});
+  if(info.location)fields.push({name:'Місце',value:discordSafe(info.location,120),inline:true});
+  return {username:'GRIZZLY FAMILY',allowed_mentions:{parse:[]},
+    embeds:[{title:label,color:kind==='decisions'?0xF0A44F:kind==='events'?0xE84255:0x6D8B9E,
+      description:kind==='test'?'З’єднання із сайтом працює. Повідомлення з’являтимуться після відповідних дій.':
+        kind==='applications'?'Створено нову заявку. Перегляньте її в закритій панелі рекрутингу.':
+        kind==='decisions'?'Статус заявки оновлено керівництвом.':'Опубліковано захід у календарі сім’ї.',
+      fields,footer:{text:'GRIZZLY · Автоматичне сповіщення'},timestamp:new Date().toISOString()}]
+  };
+}
+async function sendDiscordWebhook(env,kind,info){
+  const webhook=env.DISCORD_WEBHOOK_URL;
+  if(!validDiscordWebhookUrl(webhook))throw new Error('DISCORD_WEBHOOK_URL відсутній або має невірний формат');
+  const response=await fetch(webhook,{method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(buildDiscordNotification(kind,info))
+  });
+  if(!response.ok)throw new Error('Discord відповів кодом '+response.status);
+  return true;
+}
+function queueDiscord(ctx,env,kind,info){
+  if(!env.DISCORD_WEBHOOK_URL||!discordEnabled(env,kind))return;
+  const task=sendDiscordWebhook(env,kind,info).catch(err=>{
+    // Never log the webhook URL, token, applicant data or response body.
+    console.error('GRIZZLY Discord delivery:',String(err.message).slice(0,140));
+  });
+  if(ctx&&typeof ctx.waitUntil==='function')ctx.waitUntil(task);
+  return task;
+}
 async function auth(req,db){const match=(req.headers.get('cookie')||'').match(/(?:^|;\s*)grizzly_session=([a-f0-9]{64})(?:;|$)/);if(!match)fail(401,'Потрібно увійти');const hashed=await sha256(match[1]);const u=await db.prepare("SELECT u.* FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND s.revoked_at IS NULL AND s.expires_at>? AND u.status='active'").bind(hashed,now()).first();if(!u)fail(401,'Сесію завершено. Увійдіть повторно');return u;}
 function writeSafety(req){if(['POST','PATCH','PUT','DELETE'].includes(req.method)){
   const o=req.headers.get('origin');if(o && o!==new URL(req.url).origin)fail(403,'Неприпустиме походження запиту');
@@ -194,7 +249,7 @@ function captResults(records) {
 function contractView(c){return {...c,participant_ids:parseJson(c.participant_ids,[]),evidence:parseJson(c.evidence,[])};}
 export function payoutPreview(amount,rate,ids){const total=money(amount),pct=percent(rate);const members=uniqueIds(ids);if(!members.length)fail(400,'Контракт без учасників');const treasuryBase=Math.floor(total*pct/100),pool=total-treasuryBase,each=Math.floor(pool/members.length),remainder=pool-each*members.length;return {amount:total,treasury_percent:pct,treasury:treasuryBase+remainder,per_member:each,participants:members.length,distributable:each*members.length,rounding_remainder:remainder,allocations:members.map(user_id=>({user_id,amount:each}))};}
 
-async function handleApi(req,env){const db=env.DB;if(!db)fail(500,'Не налаштовано D1');const url=new URL(req.url),path=url.pathname,method=req.method;writeSafety(req);
+async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не налаштовано D1');const url=new URL(req.url),path=url.pathname,method=req.method;writeSafety(req);
   if(path==='/api/health'&&method==='GET')return json({ok:true,service:'grizzly',storage:'D1'});
   if(path==='/api/public'&&method==='GET'){
     const [s,gallery,news,team,achievements,calendar]=await Promise.all([
@@ -217,7 +272,7 @@ async function handleApi(req,env){const db=env.DB;if(!db)fail(500,'Не нала
   }
   if(path==='/api/apply'&&method==='POST'){
     const key='apply:'+await sha256(publicOrigin(req));await rateCheck(db,key,3,60);const b=await body(req);const nickname=str(b.nickname,80),gameId=str(b.game_id,40),motivation=str(b.motivation,1400);if(!nickname||!gameId||motivation.length<10)fail(400,'Вкажіть нік, ігровий ID та мотивацію (від 10 символів)');
-    const id=uuid(),t=now();await db.prepare('INSERT INTO applications(id,nickname,game_id,discord,experience,motivation,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)').bind(id,nickname,gameId,str(b.discord,120),str(b.experience,700),motivation,t,t).run();await rateFail(db,key,1000,60);return json({ok:true,message:'Заявку надіслано. Акаунт не створюється автоматично.'},201);
+    const id=uuid(),t=now();await db.prepare('INSERT INTO applications(id,nickname,game_id,discord,experience,motivation,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)').bind(id,nickname,gameId,str(b.discord,120),str(b.experience,700),motivation,t,t).run();await rateFail(db,key,1000,60);queueDiscord(ctx,env,'applications',{nickname,gameId});return json({ok:true,message:'Заявку надіслано. Акаунт не створюється автоматично.'},201);
   }
   if(path==='/api/setup/bootstrap'&&method==='POST'){
     const configured=env.BOOTSTRAP_TOKEN||'';if(configured.length<32)fail(503,'Для створення лідера налаштуйте секрет BOOTSTRAP_TOKEN (мінімум 32 символи)');
@@ -295,6 +350,24 @@ async function handleApi(req,env){const db=env.DB;if(!db)fail(500,'Не нала
   m=path.match(/^\/api\/departments\/([\w-]+)$/);if(m&&method==='PATCH'){
     if(user.role!=='leader')fail(403,'Лише лідер редагує напрямки');const b=await body(req);if(!Number.isInteger(b.version))fail(428,'Потрібна версія');const r=await db.prepare('UPDATE departments SET title=?,head_id=?,version=version+1,updated_at=? WHERE id=? AND version=?').bind(str(b.title,100),str(b.head_id,80)||null,now(),m[1],b.version).run();if(r.meta.changes!==1)fail(409,'Напрямок змінився, оновіть список');await audit(db,user,'update','departments',m[1]);return json({ok:true});
   }
+  if(path==='/api/discord/status'&&method==='GET'){
+    if(user.role!=='leader')fail(403,'Лише лідер переглядає інтеграцію Discord');
+    return json({configured:validDiscordWebhookUrl(env.DISCORD_WEBHOOK_URL),
+      categories:Object.fromEntries(DISCORD_NOTIFY_KINDS.map(k=>[k,discordEnabled(env,k)]))});
+  }
+  if(path==='/api/discord/test'&&method==='POST'){
+    if(user.role!=='leader')fail(403,'Лише лідер може перевіряти Discord');
+    if(!validDiscordWebhookUrl(env.DISCORD_WEBHOOK_URL))fail(503,'Спочатку додайте секрет DISCORD_WEBHOOK_URL у Cloudflare Workers');
+    const rateKey='discord:test:'+user.id;
+    await rateCheck(db,rateKey,3,10);
+    await rateFail(db,rateKey,3,10);
+    try{await sendDiscordWebhook(env,'test',{});}catch(e){
+      // Return just the HTTP status, never the webhook URL or Discord response body.
+      fail(502,'Не вдалося надіслати тест до Discord. '+String(e.message).slice(0,110));
+    }
+    await audit(db,user,'discord_test','integrations','discord');
+    return json({ok:true,message:'Тестове повідомлення прийнято Discord'});
+  }
   if(path==='/api/settings'&&method==='GET'){const items=await settings(db,user.role!=='leader');const versions=user.role==='leader'?Object.fromEntries((await allRows(db,'SELECT key,version FROM settings')).map(r=>[r.key,r.version])):undefined;return json({items,versions});}
   if(path==='/api/settings'&&method==='PATCH'){
     if(user.role!=='leader')fail(403,'Лише лідер редагує налаштування');const b=await body(req);const entries=Object.entries(b).filter(([k])=>ALL_SETTINGS.includes(k));if(!entries.length)fail(400,'Немає налаштувань');const versions=b.__versions;if(!versions||entries.some(([k])=>!Number.isInteger(versions[k])))fail(428,'Потрібні версії налаштувань');const normalized=[];
@@ -306,7 +379,7 @@ async function handleApi(req,env){const db=env.DB;if(!db)fail(500,'Не нала
   }
   if(path==='/api/applications'&&method==='GET'){requirePerm(user,'recruitment:manage');return json({items:await allRows(db,'SELECT * FROM applications ORDER BY created_at DESC LIMIT 500')});}
   m=path.match(/^\/api\/applications\/([\w-]+)$/);if(m&&method==='PATCH'){
-    requirePerm(user,'recruitment:manage');const b=await body(req);if(!Number.isInteger(b.version))fail(428,'Потрібна версія');const r=await db.prepare('UPDATE applications SET status=?,comment=?,version=version+1,updated_at=? WHERE id=? AND version=?').bind(validStatus(b.status),str(b.comment,1200),now(),m[1],b.version).run();if(r.meta.changes!==1)fail(409,'Заявку змінено іншим користувачем');await audit(db,user,'review','applications',m[1],b.status);return json({ok:true});
+    requirePerm(user,'recruitment:manage');const b=await body(req);if(!Number.isInteger(b.version))fail(428,'Потрібна версія');const old=await db.prepare('SELECT nickname,status FROM applications WHERE id=?').bind(m[1]).first();if(!old)fail(404,'Заявку не знайдено');const status=validStatus(b.status);const r=await db.prepare('UPDATE applications SET status=?,comment=?,version=version+1,updated_at=? WHERE id=? AND version=?').bind(status,str(b.comment,1200),now(),m[1],b.version).run();if(r.meta.changes!==1)fail(409,'Заявку змінено іншим користувачем');await audit(db,user,'review','applications',m[1],status);if(old.status!==status)queueDiscord(ctx,env,'decisions',{nickname:old.nickname,status});return json({ok:true});
   }
   // CAPT dashboard: return only records the current role can see. Payout details
   // remain limited to finance managers or the payout recipient.
@@ -377,7 +450,7 @@ async function handleApi(req,env){const db=env.DB;if(!db)fail(500,'Не нала
     if(!id&&method==='POST'){
       const b=await body(req);const allowed=can(user,cfg.manage) || cfg.memberCreate;if(!allowed)fail(403,'Недостатньо прав для створення');const p=recordPayload(b,user,mod);if(mod==='capt_matches')captMatchPayload(p);if(mod==='gallery')validateGalleryPayload(p);if(mod==='public_news')validatePublicNewsPayload(p);if(mod==='public_team')validatePublicTeamPayload(p);if(mod==='public_achievements')validatePublicAchievementPayload(p);if(mod==='public_calendar')validatePublicCalendarPayload(p);if(!p.title)fail(400,'Додайте назву');if(mod==='promotions'&&(!Number.isInteger(Number(p.extra.requested_rank_id))||Number(p.extra.requested_rank_id)<1||Number(p.extra.requested_rank_id)>15))fail(400,'Виберіть ранг для підвищення');if(user.role==='head'&&!manageInDepartment(user,p.department_id))fail(403,'Доступ лише до свого напрямку');if(cfg.review)p.status='На перевірці';if(!can(user,cfg.manage)){p.status=cfg.review?'На перевірці':'Заплановано';p.assignee_id=user.id;p.department_id=user.department_id;}
       if(mod==='capt_attendance'&&!can(user,'capt:manage'))p.status='На перевірці';
-      const newId=uuid(),t=now();await db.prepare('INSERT INTO records(id,module,title,details,status,owner_id,assignee_id,department_id,amount,starts_at,ends_at,evidence,extra,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(newId,mod,p.title,p.details,p.status,p.owner_id,p.assignee_id,p.department_id,p.amount,p.starts_at,p.ends_at,JSON.stringify(p.evidence),JSON.stringify(p.extra),t,t).run();await audit(db,user,'create',mod,newId);
+      const newId=uuid(),t=now();await db.prepare('INSERT INTO records(id,module,title,details,status,owner_id,assignee_id,department_id,amount,starts_at,ends_at,evidence,extra,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(newId,mod,p.title,p.details,p.status,p.owner_id,p.assignee_id,p.department_id,p.amount,p.starts_at,p.ends_at,JSON.stringify(p.evidence),JSON.stringify(p.extra),t,t).run();await audit(db,user,'create',mod,newId);if(mod==='public_calendar'&&p.status==='Погоджено')queueDiscord(ctx,env,'events',{event:p.title,startsAt:p.starts_at,location:p.extra.location});
       if(p.assignee_id&&p.assignee_id!==user.id)await notify(db,p.assignee_id,'Нове завдання / запис',p.title);return json({item:mapRecord(await db.prepare('SELECT * FROM records WHERE id=?').bind(newId).first())},201);
     }
     if(id){const old=await db.prepare('SELECT * FROM records WHERE id=? AND module=? AND deleted_at IS NULL').bind(id,mod).first();if(!old||!permittedRecord(user,mod,old))fail(404,'Запис не знайдено');
@@ -393,7 +466,7 @@ async function handleApi(req,env){const db=env.DB;if(!db)fail(500,'Не нала
         const b=await body(req);if(!Number.isInteger(b.version))fail(428,'Потрібна версія');const manager=permittedRecord(user,mod,old,'manage');const self=old.owner_id===user.id||old.assignee_id===user.id;
         if(!manager&&!(self&&(cfg.memberUpdate||cfg.memberCreate)))fail(403,'Недостатньо прав');if(!manager&&['Погоджено','Відхилено','Завершено'].includes(b.status))fail(403,'Погодження тільки керівником');if(cfg.review&&manager&&b.status&&b.status!==old.status&&['Погоджено','Відхилено','На доопрацювання','Завершено'].includes(b.status))fail(400,'Для рішення використовуйте спеціальне погодження');
         if(mod==='promotions'&&old.status==='Погоджено')fail(409,'Погоджене підвищення не можна змінювати');const p=recordPayload(b,user,mod,old);if(mod==='capt_matches')captMatchPayload(p,old);if(mod==='gallery')validateGalleryPayload(p);if(mod==='public_news')validatePublicNewsPayload(p);if(mod==='public_team')validatePublicTeamPayload(p);if(mod==='public_achievements')validatePublicAchievementPayload(p);if(mod==='public_calendar')validatePublicCalendarPayload(p);if(!manager){p.assignee_id=old.assignee_id;p.department_id=old.department_id;p.amount=old.amount;p.starts_at=old.starts_at;p.ends_at=old.ends_at;p.extra=parseJson(old.extra,{});p.status=cfg.review?'На перевірці':p.status;}
-        if(user.role==='head'&&!manageInDepartment(user,p.department_id))fail(403,'Напрямок недоступний');const r=await db.prepare('UPDATE records SET title=?,details=?,status=?,assignee_id=?,department_id=?,amount=?,starts_at=?,ends_at=?,evidence=?,extra=?,version=version+1,updated_at=? WHERE id=? AND version=?').bind(p.title,p.details,p.status,p.assignee_id,p.department_id,p.amount,p.starts_at,p.ends_at,JSON.stringify(p.evidence),JSON.stringify(p.extra),now(),id,b.version).run();if(r.meta.changes!==1)fail(409,'Запис змінено іншим користувачем');await audit(db,user,'update',mod,id);return json({ok:true});
+        if(user.role==='head'&&!manageInDepartment(user,p.department_id))fail(403,'Напрямок недоступний');const r=await db.prepare('UPDATE records SET title=?,details=?,status=?,assignee_id=?,department_id=?,amount=?,starts_at=?,ends_at=?,evidence=?,extra=?,version=version+1,updated_at=? WHERE id=? AND version=?').bind(p.title,p.details,p.status,p.assignee_id,p.department_id,p.amount,p.starts_at,p.ends_at,JSON.stringify(p.evidence),JSON.stringify(p.extra),now(),id,b.version).run();if(r.meta.changes!==1)fail(409,'Запис змінено іншим користувачем');await audit(db,user,'update',mod,id);if(mod==='public_calendar'&&old.status!=='Погоджено'&&p.status==='Погоджено')queueDiscord(ctx,env,'events',{event:p.title,startsAt:p.starts_at,location:p.extra.location});return json({ok:true});
       }
       if(!review&&method==='DELETE'){
         if(!permittedRecord(user,mod,old,'manage'))fail(403,'Немає прав');const b=await body(req);if(!Number.isInteger(b.version))fail(428,'Потрібна версія');const r=await db.prepare('UPDATE records SET deleted_at=?,version=version+1 WHERE id=? AND version=?').bind(now(),id,b.version).run();if(r.meta.changes!==1)fail(409,'Запис змінено');await audit(db,user,'delete',mod,id);return json({ok:true});
@@ -459,4 +532,4 @@ async function handleApi(req,env){const db=env.DB;if(!db)fail(500,'Не нала
   fail(404,'Маршрут не знайдено');
 }
 const SECURITY_HEADERS={'X-Content-Type-Options':'nosniff','Referrer-Policy':'strict-origin-when-cross-origin','X-Frame-Options':'DENY','Permissions-Policy':'camera=(), microphone=(), geolocation=()'};
-export default {async fetch(req,env){try{if(!new URL(req.url).pathname.startsWith('/api/'))return env.ASSETS.fetch(req);const res=await handleApi(req,env);const h=new Headers(res.headers);Object.entries(SECURITY_HEADERS).forEach(([k,v])=>h.set(k,v));return new Response(res.body,{status:res.status,headers:h});}catch(err){const code=err instanceof HttpError?err.status:500;if(code===500)console.error('Grizzly API error',err);return json({error:code===500?'Внутрішня помилка сервера':err.message},code,SECURITY_HEADERS);}}};
+export default {async fetch(req,env,ctx){try{if(!new URL(req.url).pathname.startsWith('/api/'))return env.ASSETS.fetch(req);const res=await handleApi(req,env,ctx);const h=new Headers(res.headers);Object.entries(SECURITY_HEADERS).forEach(([k,v])=>h.set(k,v));return new Response(res.body,{status:res.status,headers:h});}catch(err){const code=err instanceof HttpError?err.status:500;if(code===500)console.error('Grizzly API error',err);return json({error:code===500?'Внутрішня помилка сервера':err.message},code,SECURITY_HEADERS);}}};
