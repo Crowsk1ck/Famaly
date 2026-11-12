@@ -327,3 +327,39 @@
 @media(max-width:1050px){.gr-news-grid,.gr-news-admin-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:780px){.gr-news-card{min-height:230px}.gr-news-admin-stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:550px){.gr-news-grid,.gr-news-admin-grid{grid-template-columns:1fr}.gr-news-admin-stats{grid-template-columns:1fr}.gr-news-empty{padding:25px}}
+
+
+/* GRIZZLY PUBLIC TEAM */
+.gr-team{background:radial-gradient(ellipse 55% 80% at 90% 45%,#3D1D2C52,transparent 85%),#101219;border-top:1px solid #40313C;border-bottom:1px solid #40313C}
+.gr-team-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}
+.gr-team-card{min-width:0;background:#1B1D26;border:1px solid #4B3B47;transition:border-color .2s,transform .2s}
+.gr-team-card:hover{border-color:#C95B6C;transform:translateY(-4px)}
+.gr-team-portrait{position:relative;aspect-ratio:4/4.45;overflow:hidden;background:radial-gradient(circle at 50% 33%,#683146,#161720 72%);border-bottom:1px solid #50404A}
+.gr-team-portrait img{width:100%;height:100%;object-fit:cover;object-position:center 24%;display:block;transition:transform .3s}
+.gr-team-card:hover .gr-team-portrait img{transform:scale(1.035)}
+.gr-team-placeholder{display:flex;flex-direction:column;justify-content:center;align-items:center;height:100%;gap:5px;background:linear-gradient(135deg,#3B2434,#181921);overflow:hidden;position:relative}
+.gr-team-placeholder:before{content:'';position:absolute;width:73%;aspect-ratio:1;border-radius:50%;border:1px solid #A4505F62;box-shadow:0 0 0 32px #8B324525,0 0 0 67px #712C3A1F}
+.gr-team-placeholder span{font-size:clamp(80px,12vw,155px);color:#E65D70;font-style:italic;line-height:1;font-weight:1000;position:relative;letter-spacing:-.08em;text-shadow:8px 7px #512231}
+.gr-team-placeholder small{font-size:10px;color:#BC9CA7;font-weight:900;letter-spacing:.18em;position:relative}
+.gr-team-index{position:absolute;left:15px;top:16px;border:1px solid #FFFFFF40;background:#12131AD9;color:#E4C0C8;font-size:10px;font-weight:850;padding:6px 10px;letter-spacing:.13em}
+.gr-team-details{min-height:148px;padding:22px 23px 24px}
+.gr-team-role{color:#EE8290;font-size:10px;font-weight:900;letter-spacing:.15em;text-transform:uppercase}
+.gr-team-details h3{font-size:clamp(20px,2.5vw,29px);font-weight:950;letter-spacing:-.035em;line-height:1.12;margin-top:9px;overflow-wrap:anywhere}
+.gr-team-details p{font-size:13px;color:#B6BAC5;line-height:1.76;white-space:pre-wrap;margin-top:14px;overflow-wrap:anywhere}
+.gr-team-empty{border:1px dashed #82515D;background:#221924;min-height:220px;display:flex;flex-direction:column;justify-content:center;align-items:flex-start;gap:15px;padding:34px 44px}
+.gr-team-empty strong{font-weight:950;font-size:clamp(20px,3vw,32px);letter-spacing:-.045em}
+.gr-team-empty p{font-size:14px;color:#BAB7C2;line-height:1.7}
+.gr-admin-team-stats{grid-template-columns:repeat(3,minmax(0,1fr))}
+.gr-admin-team-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:17px}
+.gr-admin-team-card{padding:0;overflow:hidden}
+.gr-admin-team-portrait{aspect-ratio:16/11;background:#282331;overflow:hidden}
+.gr-admin-team-portrait img{width:100%;height:100%;object-fit:cover;object-position:center 24%}
+.gr-admin-team-placeholder{height:100%;display:grid;place-items:center;background:linear-gradient(130deg,#4C2638,#1A1E27);color:#EF7889;font-weight:950;font-size:75px;font-style:italic}
+.gr-admin-team-meta{padding:18px;display:flex;flex-direction:column;gap:10px}
+.gr-admin-team-role{font-size:12px;font-weight:820;color:#F0919D;letter-spacing:.08em}
+.gr-admin-team-meta h3{font-size:18px;overflow-wrap:anywhere}
+.gr-admin-team-meta p{min-height:36px;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere}
+.gr-admin-team-actions{padding-top:8px;margin-top:auto}
+@media(max-width:1100px){.gr-team-grid,.gr-admin-team-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:780px){.gr-team-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.gr-admin-team-stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:560px){.gr-team-grid,.gr-admin-team-grid,.gr-admin-team-stats{grid-template-columns:1fr}.gr-team-empty{padding:25px}.gr-team-portrait{aspect-ratio:4/3.9}}
