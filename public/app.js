@@ -1,4 +1,13 @@
 'use strict';
+// Hide the referral tracking parameter in the browser address bar without reloading
+// or disrupting the current SPA hash route or other query parameters.
+{
+  const url = new URL(window.location.href);
+  if (url.searchParams.get('utm_source') === 'chatgpt.com') {
+    url.searchParams.delete('utm_source');
+    window.history.replaceState(window.history.state, '', url.pathname + url.search + url.hash);
+  }
+}
 const $=sel=>document.querySelector(sel);
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fmt=n=>Number(n||0).toLocaleString('uk-UA');
