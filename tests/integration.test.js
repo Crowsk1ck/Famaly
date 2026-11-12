@@ -92,6 +92,29 @@ test('CAPT match signups build a deterministic roster and prevent duplicates',as
   assert.equal(left.status,200);
   assert.equal(left.data.lineup.length,1);
   assert.equal(left.data.lineup[0].user_id,(await req('/api/auth/me',{token:leader})).data.user.id);
+  const finished=await req('/api/records/capt_matches/'+matchId,{method:'PATCH',token:leader,data:{
+    version:1,status:'Завершено',extra:{lineup_limit:1,outcome:'win',opponent:'Тестовий суперник',result:'1:0'}
+  }});
+  assert.equal(finished.status,200,JSON.stringify(finished.data));
+  assert.equal((await req('/api/capt/matches/'+matchId+'/signups',{method:'POST',token:member,data:{action:'join'}})).status,409);
+  const scoreboard=(await req('/api/capt/overview',{token:leader})).data.results;
+  assert.equal(scoreboard.wins,1);
+  assert.equal(scoreboard.losses,0);
+  assert.equal(scoreboard.played,1);
+  assert.equal(scoreboard.win_rate,100);
+  const lost=await req('/api/records/capt_matches',{method:'POST',token:leader,data:{
+    title:'Completed test match',status:'Завершено',extra:{lineup_limit:8,outcome:'loss',result:'0:2'}
+  }});
+  assert.equal(lost.status,201,JSON.stringify(lost.data));
+  const updated=(await req('/api/capt/overview',{token:leader})).data.results;
+  assert.equal(updated.wins,1);
+  assert.equal(updated.losses,1);
+  assert.equal(updated.played,2);
+  assert.equal(updated.win_rate,50);
+  const bad=await req('/api/records/capt_matches',{method:'POST',token:leader,data:{
+    title:'Invalid result',extra:{lineup_limit:8,outcome:'made-up'}
+  }});
+  assert.equal(bad.status,400);
 });
 test('settings updates use all-or-nothing optimistic versions',async()=>{const first=await req('/api/settings',{token:leader});assert.equal(first.status,200);const v=first.data.versions;const success=await req('/api/settings',{method:'PATCH',token:leader,data:{tagline:'Grizzly Test Update',treasury_percent:'25',__versions:v}});assert.equal(success.status,200,JSON.stringify(success.data));const conflict=await req('/api/settings',{method:'PATCH',token:leader,data:{tagline:'Stale Attempt',treasury_percent:'40',__versions:v}});assert.equal(conflict.status,409);const after=await req('/api/settings',{token:leader});assert.equal(after.data.items.tagline,'Grizzly Test Update');assert.equal(after.data.items.treasury_percent,'25');const pub=await req('/api/public');assert.equal(pub.data.settings.tagline,'Grizzly Test Update');assert.equal(pub.data.settings.treasury_percent,undefined);});
 test('blocking user revokes sessions and stops access',async()=>{const u=(await req('/api/users',{token:leader})).data.items.find(x=>x.id===memberId);const r=await req(`/api/users/${memberId}`,{method:'PATCH',token:leader,data:{...u,status:'blocked'}});assert.equal(r.status,200,JSON.stringify(r.data));assert.equal((await req('/api/auth/me',{token:member})).status,401);});
