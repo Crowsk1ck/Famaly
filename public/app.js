@@ -66,26 +66,87 @@ function badge(s){const cls=['Погоджено','Завершено','active',
 function intro(title,description='',right=''){return `<div class="page-intro"><div><div class="overline">GRIZZLY / FAMILY PANEL</div><h1>${esc(title)}</h1><p>${esc(description)}</p></div>${right}</div>`;}
 function empty(label='Тут поки немає записів',desc='Створіть перший запис або змініть параметри пошуку.'){return `<div class="empty"><div><div class="empty-icon">◇</div><strong>${esc(label)}</strong>${esc(desc)}</div></div>`;}
 function itemText(obj){return esc(JSON.stringify(obj));}
+const galleryCategories=[['all','Усі фото'],['capt','CAPT'],['cars','Автомобілі'],['meetings','Збори'],['events','Івенти'],['other','Інше']];
+function galleryPhoto(record){
+  const urls=Array.isArray(record?.evidence)?record.evidence:[];
+  for(const raw of urls){
+    if(typeof raw!=='string')continue;
+    try{
+      const url=new URL(raw);
+      if(url.protocol==='https:'&&url.hostname==='i.ibb.co'&&/\.(png|jpe?g|webp|gif)$/i.test(url.pathname))return url.href;
+    }catch{}
+  }
+  return '';
+}
+function galleryLink(record){
+  for(const raw of Array.isArray(record?.evidence)?record.evidence:[]){
+    if(typeof raw!=='string')continue;
+    try{const url=new URL(raw);if(url.protocol==='https:'&&['i.ibb.co','ibb.co'].includes(url.hostname))return url.href;}catch{}
+  }
+  return '';
+}
+function galleryCategory(record){
+  const category=String(record?.extra?.gallery_category||'other');
+  return galleryCategories.some(([k])=>k===category&&k!=='all')?category:'other';
+}
+function galleryCategoryLabel(category){
+  return galleryCategories.find(([k])=>k===category)?.[1]||'Інше';
+}
+function publicGalleryFiltered(){
+  const gallery=Array.isArray(state.public?.gallery)?state.public.gallery:[];
+  const category=state.galleryFilter||'all';
+  return category==='all'?gallery:gallery.filter(r=>galleryCategory(r)===category);
+}
 function publicPhotoCard(record,index){
   const title=String(record.title||'Момент GRIZZLY');
   const description=String(record.details||'');
-  const raw=Array.isArray(record.evidence)&&typeof record.evidence[0]==='string'?record.evidence[0]:'';
-  let photo='',link='';
-  try{
-    const parsed=new URL(raw);
-    if(parsed.protocol==='https:'&&['i.ibb.co','ibb.co'].includes(parsed.hostname)){
-      link=parsed.href;
-      if(parsed.hostname==='i.ibb.co'&&/\.(png|jpe?g|webp|gif)(\?.*)?$/i.test(parsed.href))photo=parsed.href;
-    }
-  }catch{}
-  return '<article class="gr-photo-card">'+
+  const photo=galleryPhoto(record),link=galleryLink(record),category=galleryCategory(record);
+  const id=String(record.id||'');
+  return '<article class="gr-photo-card'+(record.extra?.featured?' gr-photo-featured':'')+'">'+
     '<div class="gr-photo-frame">'+
     (photo?'<img src="'+esc(photo)+'" alt="'+esc(title)+'" loading="lazy" decoding="async">':
       '<div class="gr-photo-empty" aria-hidden="true"><span>GRIZZLY</span><strong>✦</strong><small>FAMILY MOMENTS</small></div>')+
-    '<span class="gr-photo-number">'+String(index+1).padStart(2,'0')+'</span></div>'+
+    '<span class="gr-photo-number">'+String(index+1).padStart(2,'0')+'</span>'+
+    '<span class="gr-photo-category">'+esc(galleryCategoryLabel(category))+'</span>'+
+    (photo&&id?'<button type="button" class="gr-photo-view" data-action="gallery-open" data-id="'+esc(id)+'" aria-label="Переглянути фото: '+esc(title)+'">Переглянути фото ↗</button>':'')+
+    '</div>'+
     '<div class="gr-photo-info"><div><h3>'+esc(title)+'</h3>'+(description?'<p>'+esc(description.slice(0,100))+'</p>':'')+'</div>'+
     (link?'<a href="'+esc(link)+'" target="_blank" rel="noopener noreferrer" aria-label="Відкрити фото: '+esc(title)+'">↗</a>':'')+
     '</div></article>';
+}
+function renderPublicGallery(){
+  const all=Array.isArray(state.public?.gallery)?state.public.gallery:[];
+  if(!all.length)return '<div class="gr-gallery-placeholder"><div class="gr-placeholder-mark" aria-hidden="true">✦</div><div><span class="gr-small-label">GRIZZLY / GALLERY</span><h3>НАШІ НАЙКРАЩІ МОМЕНТИ<br>ЩЕ ПОПЕРЕДУ.</h3><p>Коли керівництво опублікує фото в розділі «Галерея», вони автоматично з’являться тут.</p></div></div>';
+  const active=state.galleryFilter||'all';
+  const items=publicGalleryFiltered();
+  const filters='<div class="gr-gallery-filters" role="group" aria-label="Фільтр фотографій">'+galleryCategories.map(([id,label])=>{
+    const count=id==='all'?all.length:all.filter(r=>galleryCategory(r)===id).length;
+    if(!count&&id!=='all')return '';
+    return '<button type="button" class="gr-gallery-filter'+(active===id?' active':'')+'" data-action="gallery-filter" data-category="'+id+'" aria-pressed="'+(active===id)+'">'+esc(label)+' <span>'+count+'</span></button>';
+  }).join('')+'</div>';
+  return filters+(items.length?'<div class="gr-gallery-grid">'+items.map(publicPhotoCard).join('')+'</div>':'<div class="gr-gallery-filter-empty">У цій категорії ще немає фотографій.</div>');
+}
+function publicGalleryLightbox(id){
+  const list=publicGalleryFiltered();
+  const at=list.findIndex(r=>String(r.id||'')===String(id||''));
+  if(at<0)return;
+  const record=list[at],image=galleryPhoto(record);
+  if(!image)return;
+  state.galleryLightboxId=record.id;
+  modal('GRIZZLY — '+record.title,
+    '<div class="gr-gallery-lightbox"><div class="gr-gallery-lightbox-image"><img src="'+esc(image)+'" alt="'+esc(record.title)+'"></div>'+
+    '<div class="gr-gallery-lightbox-details"><span class="gr-small-label">'+esc(galleryCategoryLabel(galleryCategory(record)))+' · '+(at+1)+' / '+list.length+'</span>'+
+    '<strong>'+esc(record.title)+'</strong>'+(record.details?'<p>'+esc(record.details)+'</p>':'')+
+    '<div class="gr-gallery-lightbox-controls">'+
+    '<button type="button" class="btn secondary" data-action="gallery-step" data-offset="-1" '+(at===0?'disabled':'')+' aria-label="Попереднє фото">← Попереднє</button>'+
+    '<button type="button" class="btn secondary" data-action="gallery-step" data-offset="1" '+(at===list.length-1?'disabled':'')+' aria-label="Наступне фото">Наступне →</button>'+
+    '</div></div></div>');
+}
+function publicGalleryStep(offset){
+  const list=publicGalleryFiltered().filter(r=>galleryPhoto(r));
+  const index=list.findIndex(r=>String(r.id)===String(state.galleryLightboxId));
+  const next=list[index+offset];
+  if(next)publicGalleryLightbox(next.id);
 }
 function renderPublic(){
   const settings=state.public?.settings||{};
@@ -144,8 +205,7 @@ function renderPublic(){
     '<article class="gr-rules-card"><div class="gr-rules-top"><span>02</span><strong>ВИМОГИ ДО УЧАСНИКІВ</strong><span>↗</span></div><p class="gr-rule-copy">'+esc(requirements)+'</p></article></div>'+
   '</div></section>'+
   '<section class="gr-section gr-gallery" id="gallery"><div class="gr-container"><div class="gr-section-heading gr-heading-row"><div><span class="gr-kicker">04 — ЗАКАРБОВАНІ МОМЕНТИ</span><h2>НАША ІСТОРІЯ<br><span>У КАДРАХ.</span></h2></div><p>Моменти з життя сім’ї GRIZZLY — від командних боїв до спільних зустрічей.</p></div>'+
-   (gallery.length?'<div class="gr-gallery-grid">'+gallery.map(publicPhotoCard).join('')+'</div>':
-    '<div class="gr-gallery-placeholder"><div class="gr-placeholder-mark" aria-hidden="true">✦</div><div><span class="gr-small-label">GRIZZLY / GALLERY</span><h3>НАШІ НАЙКРАЩІ МОМЕНТИ<br>ЩЕ ПОПЕРЕДУ.</h3><p>Коли керівництво опублікує фото в розділі «Галерея», вони автоматично з’являться тут.</p></div></div>')+
+   '<div id="gr-gallery-content">'+renderPublicGallery()+'</div>'+
   '</div></section>'+
   '<section class="gr-section gr-join" id="join"><div class="gr-container gr-join-layout"><div class="gr-join-info"><span class="gr-kicker">05 — ПРИЄДНАЙСЯ ДО НАС</span><h2>ТВОЄ МІСЦЕ<br><span>СЕРЕД СВОЇХ.</span></h2><p>Готовий стати частиною GRIZZLY? Заповни анкету — рекрутер розгляне твою заявку.</p><div class="gr-join-steps"><div><span>01</span><p>Заповни анкету</p></div><div><span>02</span><p>Дочекайся розгляду</p></div><div><span>03</span><p>Приєднайся до команди</p></div></div></div>'+
     '<div class="gr-join-form"><div class="gr-form-header"><span>ЗАЯВКА НА ВСТУП</span><small>GRIZZLY / RECRUITMENT</small></div>'+
