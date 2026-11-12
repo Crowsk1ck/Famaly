@@ -341,5 +341,69 @@ test('public achievements respect publication status, dates, permissions and pub
   assert.equal(fakeImage.status,400);
 });
 
+test('public calendar is opt-in and validates published events without exposing internal schedules',async()=>{
+  const unauth=await req('/api/records/public_calendar');
+  assert.equal(unauth.status,401);
+  const blocked=await req('/api/records/public_calendar',{method:'POST',token:member,data:{
+    title:'Unauthorized event',details:'Test',starts_at:'2026-12-04T18:00',
+    extra:{category:'meeting',location:'Сімейний маєток'}
+  }});
+  assert.equal(blocked.status,403);
+  const privateEvent=await req('/api/records/events',{method:'POST',token:leader,data:{
+    title:'INTERNAL_ONLY_MEETING',details:'Internal schedule',starts_at:'2026-12-02T19:00',status:'Погоджено'
+  }});
+  assert.equal(privateEvent.status,201);
+  const draft=await req('/api/records/public_calendar',{method:'POST',token:leader,data:{
+    title:'GRIZZLY — спільні збори',details:'Оголошення для учасників сім’ї',status:'Заплановано',
+    starts_at:'2026-12-05T19:00',ends_at:'2026-12-05T20:00',
+    extra:{category:'meeting',location:'Маєток сім’ї',secret:'NEVER_PUBLIC'}
+  }});
+  assert.equal(draft.status,201,JSON.stringify(draft.data));
+  const id=draft.data.item.id;
+  let pub=await req('/api/public');
+  assert.ok(!pub.data.calendar.some(e=>e.id===id));
+  assert.ok(!JSON.stringify(pub.data).includes('INTERNAL_ONLY_MEETING'));
+  const live=await req('/api/records/public_calendar/'+id,{method:'PATCH',token:leader,data:{
+    version:1,status:'Погоджено'
+  }});
+  assert.equal(live.status,200,JSON.stringify(live.data));
+  pub=await req('/api/public');
+  const ev=pub.data.calendar.find(e=>e.id===id);
+  assert.ok(ev);
+  assert.equal(ev.title,'GRIZZLY — спільні збори');
+  assert.equal(ev.description,'Оголошення для учасників сім’ї');
+  assert.equal(ev.starts_at,'2026-12-05T19:00');
+  assert.equal(ev.ends_at,'2026-12-05T20:00');
+  assert.equal(ev.location,'Маєток сім’ї');
+  assert.equal(ev.category,'meeting');
+  assert.equal(ev.secret,undefined);
+  assert.equal(ev.extra,undefined);
+  assert.equal(ev.owner_id,undefined);
+  assert.ok(!JSON.stringify(pub.data).includes('NEVER_PUBLIC'));
+  const hidden=await req('/api/records/public_calendar/'+id,{method:'PATCH',token:leader,data:{
+    version:2,status:'Заплановано'
+  }});
+  assert.equal(hidden.status,200);
+  assert.ok(!(await req('/api/public')).data.calendar.some(e=>e.id===id));
+  const invalidDay=await req('/api/records/public_calendar',{method:'POST',token:leader,data:{
+    title:'Bad date',details:'Calendar invalid',starts_at:'2026-02-30T19:00',
+    extra:{category:'event'}
+  }});
+  assert.equal(invalidDay.status,400);
+  const invalidOrder=await req('/api/records/public_calendar',{method:'POST',token:leader,data:{
+    title:'Bad order',details:'End before start',starts_at:'2026-12-05T19:00',ends_at:'2026-12-05T17:00',
+    extra:{category:'event'}
+  }});
+  assert.equal(invalidOrder.status,400);
+  const wrongCategory=await req('/api/records/public_calendar',{method:'POST',token:leader,data:{
+    title:'Bad category',details:'Test',starts_at:'2026-12-05T19:00',extra:{category:'private'}
+  }});
+  assert.equal(wrongCategory.status,400);
+  const noDate=await req('/api/records/public_calendar',{method:'POST',token:leader,data:{
+    title:'Missing start',details:'Test',status:'Погоджено',extra:{category:'meeting'}
+  }});
+  assert.equal(noDate.status,400);
+});
+
 // Run destructive session-revocation coverage last: other integration tests use this member's active session.
 test('blocking user revokes sessions and stops access',async()=>{const u=(await req('/api/users',{token:leader})).data.items.find(x=>x.id===memberId);const r=await req(`/api/users/${memberId}`,{method:'PATCH',token:leader,data:{...u,status:'blocked'}});assert.equal(r.status,200,JSON.stringify(r.data));assert.equal((await req('/api/auth/me',{token:member})).status,401);});
