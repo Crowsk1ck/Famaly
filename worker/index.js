@@ -25,6 +25,7 @@ const MODULES = {
   public_news: {manage:'content:manage'},
   public_team: {manage:'content:manage'},
   public_achievements: {manage:'content:manage'},
+  public_calendar: {manage:'content:manage'},
   templates: {manage:'notices:manage', memberRead:true},
   contributions: {manage:'finance:manage', restricted:true},
   expenses: {manage:'finance:manage', restricted:true},
@@ -146,6 +147,23 @@ function validatePublicAchievementPayload(p){
   if(p.status==='Погоджено'&&(!p.title||!p.details||!when))
     fail(400,'Для публікації потрібні назва, опис і дата досягнення');
 }
+function validatePublicCalendarPayload(p){
+  const allowed=['meeting','capt','training','event'];
+  if(!allowed.includes(p.extra.category??'event'))fail(400,'Некоректна категорія заходу');
+  if(p.extra.location!==undefined&&(typeof p.extra.location!=='string'||p.extra.location.length>120))
+    fail(400,'Місце заходу має бути текстом до 120 символів');
+  const starts=String(p.starts_at||''),ends=String(p.ends_at||'');
+  const checkDateTime=value=>{
+    if(!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value))return false;
+    const time=new Date(value+'Z');
+    return Number.isFinite(time.getTime())&&time.toISOString().slice(0,16)===value;
+  };
+  if(starts&&!checkDateTime(starts))fail(400,'Некоректна дата початку заходу');
+  if(ends&&!checkDateTime(ends))fail(400,'Некоректна дата завершення заходу');
+  if(ends&&(!starts||ends<=starts))fail(400,'Завершення заходу має бути після початку');
+  if(p.status==='Погоджено'&&(!p.title||!p.details||!starts))
+    fail(400,'Для публікації потрібні назва, опис і дата початку');
+}
 function captMatchSize(extra) {
   const value=extra?.lineup_limit??8;
   const size=Number(value);
@@ -179,12 +197,13 @@ export function payoutPreview(amount,rate,ids){const total=money(amount),pct=per
 async function handleApi(req,env){const db=env.DB;if(!db)fail(500,'Не налаштовано D1');const url=new URL(req.url),path=url.pathname,method=req.method;writeSafety(req);
   if(path==='/api/health'&&method==='GET')return json({ok:true,service:'grizzly',storage:'D1'});
   if(path==='/api/public'&&method==='GET'){
-    const [s,gallery,news,team,achievements]=await Promise.all([
+    const [s,gallery,news,team,achievements,calendar]=await Promise.all([
       settings(db,true),
       allRows(db,"SELECT id,title,details,evidence,extra,created_at FROM records WHERE module='gallery' AND deleted_at IS NULL AND status='Погоджено' ORDER BY created_at DESC LIMIT 100"),
       allRows(db,"SELECT id,title,details,extra,updated_at FROM records WHERE module='public_news' AND deleted_at IS NULL AND status='Погоджено' ORDER BY updated_at DESC LIMIT 60"),
       allRows(db,"SELECT id,title,details,extra,evidence FROM records WHERE module='public_team' AND deleted_at IS NULL AND status='Погоджено' ORDER BY created_at ASC LIMIT 70"),
-      allRows(db,"SELECT id,title,details,extra,evidence FROM records WHERE module='public_achievements' AND deleted_at IS NULL AND status='Погоджено' ORDER BY created_at DESC LIMIT 100")
+      allRows(db,"SELECT id,title,details,extra,evidence FROM records WHERE module='public_achievements' AND deleted_at IS NULL AND status='Погоджено' ORDER BY created_at DESC LIMIT 100"),
+      allRows(db,"SELECT id,title,details,starts_at,ends_at,extra FROM records WHERE module='public_calendar' AND deleted_at IS NULL AND status='Погоджено' ORDER BY starts_at ASC LIMIT 240")
     ]);
     return json({settings:s,
       gallery:gallery.map(mapRecord).sort((a,b)=>Number(!!b.extra?.featured)-Number(!!a.extra?.featured)).slice(0,48).map(r=>({id:r.id,title:r.title,details:r.details,evidence:r.evidence,extra:{gallery_category:r.extra?.gallery_category||'other',featured:r.extra?.featured===true}})),
@@ -192,7 +211,8 @@ async function handleApi(req,env){const db=env.DB;if(!db)fail(500,'Не нала
         category:['news','event','recruitment','achievement'].includes(parseJson(r.extra,{}).news_category)?parseJson(r.extra,{}).news_category:'news',
         featured:parseJson(r.extra,{}).featured===true})).sort((a,b)=>Number(b.featured)-Number(a.featured)||String(b.updated_at).localeCompare(String(a.updated_at))).slice(0,12),
       team:team.map(r=>{const x=parseJson(r.extra,{});return {id:r.id,nickname:r.title,position:str(x.position,80),bio:r.details,order:Number(x.sort_order??50),photo:parseJson(r.evidence,[])[0]||''};}).sort((a,b)=>a.order-b.order||a.nickname.localeCompare(b.nickname,'uk')).slice(0,18),
-      achievements:achievements.map(r=>{const x=parseJson(r.extra,{});return {id:r.id,title:r.title,description:r.details,category:['capt','milestone','event','award'].includes(x.category)?x.category:'milestone',achieved_on:x.achieved_on||'',featured:x.featured===true,photo:parseJson(r.evidence,[])[0]||''};}).sort((a,b)=>Number(b.featured)-Number(a.featured)||String(b.achieved_on).localeCompare(String(a.achieved_on))).slice(0,40)
+      achievements:achievements.map(r=>{const x=parseJson(r.extra,{});return {id:r.id,title:r.title,description:r.details,category:['capt','milestone','event','award'].includes(x.category)?x.category:'milestone',achieved_on:x.achieved_on||'',featured:x.featured===true,photo:parseJson(r.evidence,[])[0]||''};}).sort((a,b)=>Number(b.featured)-Number(a.featured)||String(b.achieved_on).localeCompare(String(a.achieved_on))).slice(0,40),
+      calendar:calendar.map(r=>{const x=parseJson(r.extra,{});return {id:r.id,title:r.title,description:r.details,starts_at:r.starts_at,ends_at:r.ends_at,category:['meeting','capt','training','event'].includes(x.category)?x.category:'event',location:str(x.location,120)};})
     });
   }
   if(path==='/api/apply'&&method==='POST'){
@@ -355,7 +375,7 @@ async function handleApi(req,env){const db=env.DB;if(!db)fail(500,'Не нала
       const rows=await allRows(db,'SELECT * FROM records WHERE module=? AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 1000',mod);return json({items:rows.filter(r=>permittedRecord(user,mod,r)).map(mapRecord)});
     }
     if(!id&&method==='POST'){
-      const b=await body(req);const allowed=can(user,cfg.manage) || cfg.memberCreate;if(!allowed)fail(403,'Недостатньо прав для створення');const p=recordPayload(b,user,mod);if(mod==='capt_matches')captMatchPayload(p);if(mod==='gallery')validateGalleryPayload(p);if(mod==='public_news')validatePublicNewsPayload(p);if(mod==='public_team')validatePublicTeamPayload(p);if(mod==='public_achievements')validatePublicAchievementPayload(p);if(!p.title)fail(400,'Додайте назву');if(mod==='promotions'&&(!Number.isInteger(Number(p.extra.requested_rank_id))||Number(p.extra.requested_rank_id)<1||Number(p.extra.requested_rank_id)>15))fail(400,'Виберіть ранг для підвищення');if(user.role==='head'&&!manageInDepartment(user,p.department_id))fail(403,'Доступ лише до свого напрямку');if(cfg.review)p.status='На перевірці';if(!can(user,cfg.manage)){p.status=cfg.review?'На перевірці':'Заплановано';p.assignee_id=user.id;p.department_id=user.department_id;}
+      const b=await body(req);const allowed=can(user,cfg.manage) || cfg.memberCreate;if(!allowed)fail(403,'Недостатньо прав для створення');const p=recordPayload(b,user,mod);if(mod==='capt_matches')captMatchPayload(p);if(mod==='gallery')validateGalleryPayload(p);if(mod==='public_news')validatePublicNewsPayload(p);if(mod==='public_team')validatePublicTeamPayload(p);if(mod==='public_achievements')validatePublicAchievementPayload(p);if(mod==='public_calendar')validatePublicCalendarPayload(p);if(!p.title)fail(400,'Додайте назву');if(mod==='promotions'&&(!Number.isInteger(Number(p.extra.requested_rank_id))||Number(p.extra.requested_rank_id)<1||Number(p.extra.requested_rank_id)>15))fail(400,'Виберіть ранг для підвищення');if(user.role==='head'&&!manageInDepartment(user,p.department_id))fail(403,'Доступ лише до свого напрямку');if(cfg.review)p.status='На перевірці';if(!can(user,cfg.manage)){p.status=cfg.review?'На перевірці':'Заплановано';p.assignee_id=user.id;p.department_id=user.department_id;}
       if(mod==='capt_attendance'&&!can(user,'capt:manage'))p.status='На перевірці';
       const newId=uuid(),t=now();await db.prepare('INSERT INTO records(id,module,title,details,status,owner_id,assignee_id,department_id,amount,starts_at,ends_at,evidence,extra,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(newId,mod,p.title,p.details,p.status,p.owner_id,p.assignee_id,p.department_id,p.amount,p.starts_at,p.ends_at,JSON.stringify(p.evidence),JSON.stringify(p.extra),t,t).run();await audit(db,user,'create',mod,newId);
       if(p.assignee_id&&p.assignee_id!==user.id)await notify(db,p.assignee_id,'Нове завдання / запис',p.title);return json({item:mapRecord(await db.prepare('SELECT * FROM records WHERE id=?').bind(newId).first())},201);
@@ -372,7 +392,7 @@ async function handleApi(req,env){const db=env.DB;if(!db)fail(500,'Не нала
       if(!review&&method==='PATCH'){
         const b=await body(req);if(!Number.isInteger(b.version))fail(428,'Потрібна версія');const manager=permittedRecord(user,mod,old,'manage');const self=old.owner_id===user.id||old.assignee_id===user.id;
         if(!manager&&!(self&&(cfg.memberUpdate||cfg.memberCreate)))fail(403,'Недостатньо прав');if(!manager&&['Погоджено','Відхилено','Завершено'].includes(b.status))fail(403,'Погодження тільки керівником');if(cfg.review&&manager&&b.status&&b.status!==old.status&&['Погоджено','Відхилено','На доопрацювання','Завершено'].includes(b.status))fail(400,'Для рішення використовуйте спеціальне погодження');
-        if(mod==='promotions'&&old.status==='Погоджено')fail(409,'Погоджене підвищення не можна змінювати');const p=recordPayload(b,user,mod,old);if(mod==='capt_matches')captMatchPayload(p,old);if(mod==='gallery')validateGalleryPayload(p);if(mod==='public_news')validatePublicNewsPayload(p);if(mod==='public_team')validatePublicTeamPayload(p);if(mod==='public_achievements')validatePublicAchievementPayload(p);if(!manager){p.assignee_id=old.assignee_id;p.department_id=old.department_id;p.amount=old.amount;p.starts_at=old.starts_at;p.ends_at=old.ends_at;p.extra=parseJson(old.extra,{});p.status=cfg.review?'На перевірці':p.status;}
+        if(mod==='promotions'&&old.status==='Погоджено')fail(409,'Погоджене підвищення не можна змінювати');const p=recordPayload(b,user,mod,old);if(mod==='capt_matches')captMatchPayload(p,old);if(mod==='gallery')validateGalleryPayload(p);if(mod==='public_news')validatePublicNewsPayload(p);if(mod==='public_team')validatePublicTeamPayload(p);if(mod==='public_achievements')validatePublicAchievementPayload(p);if(mod==='public_calendar')validatePublicCalendarPayload(p);if(!manager){p.assignee_id=old.assignee_id;p.department_id=old.department_id;p.amount=old.amount;p.starts_at=old.starts_at;p.ends_at=old.ends_at;p.extra=parseJson(old.extra,{});p.status=cfg.review?'На перевірці':p.status;}
         if(user.role==='head'&&!manageInDepartment(user,p.department_id))fail(403,'Напрямок недоступний');const r=await db.prepare('UPDATE records SET title=?,details=?,status=?,assignee_id=?,department_id=?,amount=?,starts_at=?,ends_at=?,evidence=?,extra=?,version=version+1,updated_at=? WHERE id=? AND version=?').bind(p.title,p.details,p.status,p.assignee_id,p.department_id,p.amount,p.starts_at,p.ends_at,JSON.stringify(p.evidence),JSON.stringify(p.extra),now(),id,b.version).run();if(r.meta.changes!==1)fail(409,'Запис змінено іншим користувачем');await audit(db,user,'update',mod,id);return json({ok:true});
       }
       if(!review&&method==='DELETE'){
