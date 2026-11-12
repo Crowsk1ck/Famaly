@@ -412,6 +412,61 @@ function newsForm(record){
     '<div class="field full"><label>Видимість</label><select name="status" class="select">'+statuses+'</select></div>'+
     '<div class="full form-actions"><button type="button" class="btn ghost" data-action="close-modal">Скасувати</button><button class="btn" type="submit">Зберегти новину</button></div></form>');
 }
+async function teamManager(){
+  const records=(await api('/records/public_team')).items;
+  const matching=records.filter(r=>searchMatch(r.title,r.details,r.extra?.position));
+  const display=matching.sort((a,b)=>Number(a.extra?.sort_order??50)-Number(b.extra?.sort_order??50)||String(a.title).localeCompare(String(b.title),'uk'));
+  const published=records.filter(r=>r.status==='Погоджено').length;
+  const cards=display.map(r=>{
+    const image=galleryPhoto(r);
+    const isPublic=r.status==='Погоджено';
+    const initial=String(r.title||'G').slice(0,1).toUpperCase();
+    return '<article class="card gr-admin-team-card">'+
+      '<div class="gr-admin-team-portrait">'+(image?'<img loading="lazy" src="'+esc(image)+'" alt="Персонаж '+esc(r.title)+'">':
+       '<div class="gr-admin-team-placeholder">'+esc(initial)+'</div>')+'</div>'+
+      '<div class="gr-admin-team-meta"><div class="row wrap"><span>'+badge(r.status)+'</span><span class="pill">Порядок: '+esc(String(r.extra?.sort_order??50))+'</span></div>'+
+      '<span class="gr-admin-team-role">'+esc(r.extra?.position||'Посаду не вказано')+'</span>'+
+      '<h3>'+esc(r.title)+'</h3><p class="muted small">'+esc(String(r.details||'').slice(0,145))+'</p>'+
+      '<div class="row wrap gr-admin-team-actions"><button class="btn tiny secondary" data-action="team-edit" data-id="'+esc(r.id)+'">Редагувати</button>'+
+      '<button class="btn tiny '+(isPublic?'ghost':'')+'" data-action="team-publish" data-id="'+esc(r.id)+'" data-status="'+(isPublic?'Заплановано':'Погоджено')+'">'+(isPublic?'Приховати':'Опублікувати')+'</button></div>'+
+      '</div></article>';
+  }).join('');
+  return intro('Керівництво сайту','Публічні RP-профілі керівників сім’ї. Вони не пов’язані з приватними даними акаунтів.',
+    '<button class="btn" data-action="team-new">＋ Додати керівника</button>')+
+    '<div class="notice">На головній видно тільки опубліковані профілі. Додавай лише ігрові нікнейми, посади й зображення, які можна показувати відкрито.</div>'+
+    '<div class="cards gr-admin-team-stats mt">'+
+      '<div class="card stat"><div class="muted small">Усього профілів</div><div class="number">'+fmt(records.length)+'</div></div>'+
+      '<div class="card stat"><div class="muted small">Показуються на сайті</div><div class="number">'+fmt(published)+'</div></div>'+
+      '<div class="card stat"><div class="muted small">Не опубліковано</div><div class="number">'+fmt(records.length-published)+'</div></div>'+
+    '</div><div class="toolbar">'+searchBar()+'</div>'+
+    (display.length?'<div class="gr-admin-team-grid">'+cards+'</div>':empty('Профілів керівництва ще немає','Натисни «Додати керівника» та заповни ігровий профіль.'));
+}
+function teamForm(record){
+  const r=record||{},extra=r.extra||{},image=galleryPhoto(r);
+  const options=['Заплановано','Погоджено'].map(status=>'<option value="'+status+'" '+((r.status||'Заплановано')===status?'selected':'')+'>'+(status==='Погоджено'?'Опубліковано':'Чернетка')+'</option>').join('');
+  modal(record?'Редагувати профіль керівника':'Новий профіль керівника',
+    '<div class="notice mb">Додавай тільки дані ігрового персонажа, які мають бути публічними. Особові справи учасників не використовуються.</div>'+
+    '<form id="team-form" data-id="'+esc(r.id||'')+'" class="formgrid">'+
+    field('Ігровий нікнейм *','nickname',r.title||'','text',true,'required maxlength="160"')+
+    field('Посада в сім’ї *','position',extra.position||'','text',false,'required maxlength="80"')+
+    field('Порядок на сайті (1–99)','sort_order',extra.sort_order??50,'number',false,'required min="1" max="99" step="1"')+
+    field('Коротка біографія / опис','bio',r.details||'','textarea',true,'maxlength="3000"')+
+    '<div class="field full"><label>Фото персонажа (необов’язково)</label>'+
+    '<input class="input" type="url" name="photo_url" placeholder="https://i.ibb.co/.../image.webp" value="'+esc(image||galleryLink(r))+'">'+
+    '<small>Пряме HTTPS-посилання ImgBB на JPG, PNG або WEBP. Без фото буде стилізована картка з першою літерою імені.</small></div>'+
+    '<div class="field full"><label>Публікація</label><select name="status" class="select">'+options+'</select></div>'+
+    '<div class="full gr-gallery-form-preview" id="team-live-preview">'+(image?'<img alt="Попередній перегляд персонажа" src="'+esc(image)+'" loading="lazy">':'<span class="muted small">Фото можна додати пізніше.</span>')+'</div>'+
+    '<div class="full form-actions"><button type="button" class="btn ghost" data-action="close-modal">Скасувати</button>'+
+    '<button type="submit" class="btn">Зберегти профіль</button></div></form>');
+}
+function updateTeamFormPreview(){
+  const form=$('#team-form'),target=$('#team-live-preview');
+  if(!form||!target)return;
+  const raw=form.querySelector('[name="photo_url"]')?.value.trim()||'';
+  const img=galleryPhoto({evidence:[raw]});
+  target.innerHTML=img?'<img alt="Попередній перегляд персонажа" src="'+esc(img)+'" loading="lazy">':
+    '<span class="muted small">'+(raw?'Вкажіть пряме HTTPS-посилання ImgBB на зображення.':'Фото можна додати пізніше.')+'</span>';
+}
 function moduleForm(mod,r){const cfg=moduleInfo[mod],isEdit=!!r;const canManage=can(cfg[2]);const x=r||{};const fields=`<form id="record-form" data-module="${mod}" data-id="${esc(r?.id||'')}" class="formgrid">${field('Назва / тема *','title',x.title,'text',true,'required maxlength="160"')}${field('Опис / RP-звіт','details',x.details,'textarea',true)}${recordExtraFields(mod,r)}${canManage?`${statusField(x.status||'Заплановано')}${selectField('Виконавець','assignee_id',state.users,x.assignee_id)}${selectField('Напрямок','department_id',state.departments,x.department_id)}${field('Сума / винагорода (ігрова валюта)','amount',x.amount||0,'number',false,'min="0" step="1"')}${field('Початок','starts_at',formatDateField(x.starts_at),'datetime-local')}${field('Термін / завершення','ends_at',formatDateField(x.ends_at),'datetime-local')}`:''}${field('Докази ImgBB (кожне посилання з нового рядка)','evidence',evidenceText(x),'textarea',true)}${canManage?field('Додаткові дані (JSON: склад, номер ТЗ, стан, чекліст тощо)','extra',JSON.stringify(x.extra||{},null,2),'textarea',true):''}<div class="full form-actions"><button type="button" class="btn ghost" data-action="close-modal">Скасувати</button><button type="submit" class="btn">${isEdit?'Зберегти':'Створити'}</button></div></form>`;modal(`${isEdit?'Редагувати':'Створити'} · ${cfg[0]}`,`${isEdit?`<div class="notice mb">Запис із перевіркою версії: чужі зміни не будуть перезаписані.</div>`:''}${fields}`);}
 async function viewRecord(mod,id){const rows=(await api(`/records/${mod}`)).items;const r=rows.find(x=>x.id===id);if(!r)return toast('Запис недоступний',true);const payoutState=mod==='capt_attendance'?(await api('/capt/overview')).attendance.find(x=>x.id===id):null;const canManage=can(moduleInfo[mod][2])&&(state.user.role!=='head'||r.department_id===state.user.department_id);const canEdit=canManage||((r.owner_id===state.user.id||r.assignee_id===state.user.id)&&['reports','promotions','capt_attendance','vehicle_loans','tasks'].includes(mod));const review=canManage&&['reports','promotions'].includes(mod)&&r.owner_id!==state.user.id;const status=mod==='events'?`<div class="hr"></div><div id="rsvp-content" class="muted small">Завантаження учасників…</div>`:'';modal(r.title,`<div class="stack"><div class="row space">${badge(r.status)}<span class="muted small">v${r.version} · ${date(r.updated_at)}</span></div><div class="longtext">${esc(r.details||'Опис не додано')}</div><div class="small muted">Відповідальний: ${esc(userName(r.assignee_id||r.owner_id))} · ${esc(departmentName(r.department_id))}</div>${r.amount?`<div class="small">Винагорода: <strong>${fmt(r.amount)}</strong></div>`:''}${r.starts_at?`<div class="small">Початок: ${esc(r.starts_at.replace('T',' '))}</div>`:''}${links(r)}${Object.keys(r.extra||{}).length?`<div class="card flat"><strong>Додаткова інформація</strong><div class="stack mt small">${Object.entries(r.extra).filter(([k])=>k!=='review_nonce').map(([k,v])=>`<div><span class="muted">${esc(({requested_rank_id:'Цільовий ранг',checklist_completed:'Виконані умови',opponent:'Суперник',place:'Місце',lineup:'Склад на бій',result:'Результат',attendance_type:'Тип участі',match_id:'Бій / тренування',plate:'Номер ТЗ',condition:'Стан',responsible:'Відповідальний',review_comment:'Коментар керівника'})[k]||k)}:</span> <strong>${esc(Array.isArray(v)?v.join(', '):v)}</strong></div>`).join('')}</div></div>`:''}${status}${mod==='capt_matches'?'<div class="hr"></div><section id="capt-signup-panel" class="stack"><p class="muted">Завантаження списку учасників…</p></section>':''}<div class="form-actions">${review?`<button class="btn secondary" data-action="review-record" data-module="${mod}" data-id="${id}">Перевірити</button>`:''}${canEdit?`<button class="btn" data-action="edit-record" data-module="${mod}" data-id="${id}">Редагувати</button>`:''}${mod==='templates'?`<button class="btn secondary" data-action="copy-template" data-id="${id}">Копіювати текст</button>`:''}${mod==='capt_attendance'&&payoutState?.paid===true?'<span class="pill">CAPT-виплату проведено</span>':mod==='capt_attendance'&&r.status==='Погоджено'&&can('finance:manage')?`<button class="btn" data-action="capt-pay" data-id="${id}">₴ Нарахувати CAPT</button>`:''}${canManage?`<button class="btn danger" data-action="delete-record" data-module="${mod}" data-id="${id}">Видалити</button>`:''}</div></div>`);if(mod==='capt_matches')await renderCaptSignupPanel(id);if(mod==='events'){try{const rs=await api(`/rsvp/${id}`);const el=$('#rsvp-content');if(el)el.innerHTML=`<div class="row wrap"><strong>Моя участь: ${esc(rs.own||'Не підтверджено')}</strong><span class="muted">Так: ${rs.counts.yes} · Ні: ${rs.counts.no}</span></div><div class="row mt"><button class="btn tiny" data-action="rsvp" data-id="${id}" data-value="Так">✓ Буду</button><button class="btn tiny ghost" data-action="rsvp" data-id="${id}" data-value="Ні">Не зможу</button></div>${rs.items.length?`<div class="muted small mt">${rs.items.map(i=>`${esc(userName(i.user_id))}: ${esc(i.response)}`).join(' · ')}</div>`:''}`;}catch(e){toast(e.message,true);}}}
 async function renderCaptSignupPanel(id){
