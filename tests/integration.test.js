@@ -210,3 +210,65 @@ test('public news stays separate from private notices and unpublished drafts',as
   }});
   assert.equal(missingText.status,400);
 });
+
+
+test('public leadership profiles are opt-in, permissioned and contain no account records',async()=>{
+  const anonymous=await req('/api/records/public_team');
+  assert.equal(anonymous.status,401);
+  const forbidden=await req('/api/records/public_team',{method:'POST',token:member,data:{
+    title:'Wrong person',details:'Should be rejected',extra:{position:'Лідер',sort_order:1}
+  }});
+  assert.equal(forbidden.status,403);
+  const before=(await req('/api/public')).data;
+  assert.ok(Array.isArray(before.team));
+  assert.equal(before.team.length,0);
+  const draft=await req('/api/records/public_team',{method:'POST',token:leader,data:{
+    title:'Andrii Grizzly',details:'Лідер і засновник сім’ї',status:'Заплановано',
+    evidence:['https://i.ibb.co/test/grizzly.webp'],
+    extra:{position:'Лідер сім’ї',sort_order:1,private_contact:'PRIVATE_ONLY'}
+  }});
+  assert.equal(draft.status,201,JSON.stringify(draft.data));
+  const profileId=draft.data.item.id;
+  assert.equal((await req('/api/public')).data.team.some(x=>x.id===profileId),false);
+  const published=await req('/api/records/public_team/'+profileId,{method:'PATCH',token:leader,data:{
+    status:'Погоджено',version:1
+  }});
+  assert.equal(published.status,200,JSON.stringify(published.data));
+  const pub=(await req('/api/public')).data;
+  const profile=pub.team.find(x=>x.id===profileId);
+  assert.ok(profile);
+  assert.equal(profile.nickname,'Andrii Grizzly');
+  assert.equal(profile.position,'Лідер сім’ї');
+  assert.equal(profile.order,1);
+  assert.equal(profile.photo,'https://i.ibb.co/test/grizzly.webp');
+  assert.equal(profile.private_contact,undefined);
+  assert.equal(profile.extra,undefined);
+  assert.equal(profile.owner_id,undefined);
+  assert.equal(profile.username,undefined);
+  assert.ok(!JSON.stringify(pub).includes('PRIVATE_ONLY'));
+  const hidden=await req('/api/records/public_team/'+profileId,{method:'PATCH',token:leader,data:{
+    status:'Заплановано',version:2
+  }});
+  assert.equal(hidden.status,200);
+  assert.equal((await req('/api/public')).data.team.some(x=>x.id===profileId),false);
+  const badPosition=await req('/api/records/public_team',{method:'POST',token:leader,data:{
+    title:'Missing position',details:'Public text',extra:{sort_order:3}
+  }});
+  assert.equal(badPosition.status,400);
+  const badOrder=await req('/api/records/public_team',{method:'POST',token:leader,data:{
+    title:'Invalid order',details:'Public text',extra:{position:'Заступник',sort_order:100}
+  }});
+  assert.equal(badOrder.status,400);
+  const badPhoto=await req('/api/records/public_team',{method:'POST',token:leader,data:{
+    title:'Invalid photo',details:'Public text',evidence:['https://ibb.co/example'],
+    extra:{position:'CAPT керівник',sort_order:5}
+  }});
+  assert.equal(badPhoto.status,400);
+  const withoutPhoto=await req('/api/records/public_team',{method:'POST',token:leader,data:{
+    title:'Photo later',details:'Public text',status:'Погоджено',evidence:[],
+    extra:{position:'Керівник CAPT',sort_order:2}
+  }});
+  assert.equal(withoutPhoto.status,201,JSON.stringify(withoutPhoto.data));
+  const publicCard=(await req('/api/public')).data.team.find(x=>x.id===withoutPhoto.data.item.id);
+  assert.equal(publicCard.photo,'');
+});
