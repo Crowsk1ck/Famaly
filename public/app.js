@@ -662,6 +662,16 @@ async function handleSubmit(e){const f=e.target;if(!f.id)return;e.preventDefault
     const result=await api(id?`/users/${id}`:'/users',id?'PATCH':'POST',payload);if(!id){closeModal();await preload();await render();credentialReceipt(result.item.username,b.password,result.item.nickname);return;}await afterSaved('Особову справу оновлено');return;}
   case 'rank-form':{const r=state.ranks.find(x=>x.id===Number(f.dataset.id));await api(`/ranks/${r.id}`,'PATCH',{title:b.title,requirements:b.requirements,checklist:lines(b.checklist),version:r.version});await afterSaved('Ранг оновлено');return;}
   case 'department-form':{const d=state.departments.find(x=>x.id===f.dataset.id);await api(`/departments/${d.id}`,'PATCH',{...b,version:d.version});await afterSaved();return;}
+  case 'achievement-form':{
+    if(!can('content:manage'))throw new Error('Недостатньо прав для досягнень');
+    const id=f.dataset.id,old=id?(await api('/records/public_achievements')).items.find(a=>a.id===id):null;
+    if(id&&!old)throw new Error('Досягнення не знайдено');
+    const photo=String(b.photo_url||'').trim();
+    if(photo&&!galleryPhoto({evidence:[photo]}))throw new Error('Фото має бути прямим HTTPS-посиланням ImgBB на JPG, PNG, WEBP або GIF');
+    const payload={title:b.title,details:b.description,status:b.status||'Заплановано',
+      evidence:photo?[photo]:[],extra:{category:b.category,achieved_on:b.achieved_on,featured:b.featured==='true'},version:old?.version};
+    await api(id?'/records/public_achievements/'+encodeURIComponent(id):'/records/public_achievements',id?'PATCH':'POST',payload);
+    await afterSaved('Досягнення збережено');return;}
   case 'team-form':{
     if(!can('content:manage'))throw new Error('Недостатньо прав для редагування публічних профілів');
     const id=f.dataset.id,old=id?(await api('/records/public_team')).items.find(x=>x.id===id):null;
@@ -700,7 +710,7 @@ async function handleSubmit(e){const f=e.target;if(!f.id)return;e.preventDefault
   case 'reset-password-form':{const target=state.users.find(u=>u.id===f.dataset.id);await api(`/users/${f.dataset.id}/reset-password`,'POST',b);closeModal();await preload();await render();credentialReceipt(target?.username||'',b.password,target?.nickname||'',true);return;}
 } }catch(err){toast(err.message,true);if(err.status===409)toast('Оновіть сторінку перед повторним редагуванням.',true);}finally{if(submit)submit.disabled=false;}}
 document.addEventListener('submit',handleSubmit);
-document.addEventListener('input',e=>{if(e.target.name==='photo_url'&&e.target.closest('#gallery-form'))updateGalleryFormPreview();if(e.target.name==='photo_url'&&e.target.closest('#team-form'))updateTeamFormPreview();if(e.target.id==='search-input'){state.search=e.target.value;const start=e.target.selectionStart;render().then(()=>{const v=$('#search-input');if(v){v.focus();try{v.setSelectionRange(start,start);}catch{}}});}});
+document.addEventListener('input',e=>{if(e.target.name==='photo_url'&&e.target.closest('#gallery-form'))updateGalleryFormPreview();if(e.target.name==='photo_url'&&e.target.closest('#team-form'))updateTeamFormPreview();if(e.target.name==='photo_url'&&e.target.closest('#achievement-form'))updateAchievementPreview();if(e.target.id==='search-input'){state.search=e.target.value;const start=e.target.selectionStart;render().then(()=>{const v=$('#search-input');if(v){v.focus();try{v.setSelectionRange(start,start);}catch{}}});}});
 document.addEventListener('change',e=>{if(e.target.id==='status-filter'){state.filter=e.target.value;render();}if(e.target.id==='sort-select'){state.sort=e.target.value;render();}if(e.target.id==='period-filter'){state.period=e.target.value;render();}});
 document.addEventListener('click',async e=>{const back=e.target.closest('[data-backdrop]');if(back&&e.target===back){closeModal();return;}const t=e.target.closest('[data-action],[data-route]');if(!t)return;e.preventDefault();try{if(t.dataset.route){await navigate(t.dataset.route);return;}const act=t.dataset.action,id=t.dataset.id,mod=t.dataset.module;switch(act){
   case 'show-login':loginModal();break;
@@ -744,8 +754,35 @@ document.addEventListener('click',async e=>{const back=e.target.closest('[data-b
      await afterSaved(`Заповнено ${result.updated} рангів. Можна редагувати кожен окремо.`);break;}
   case 'edit-rank':rankForm(id);break;
   case 'edit-department':departmentForm(id);break;
-  case 'new-record':await preload();if(mod==='gallery')galleryForm();else if(mod==='public_news')newsForm();else if(mod==='public_team')teamForm();else moduleForm(mod);break;
-  case 'edit-record':{const r=(await api(`/records/${mod}`)).items.find(x=>x.id===id);await preload();if(mod==='gallery')galleryForm(r);else if(mod==='public_news')newsForm(r);else if(mod==='public_team')teamForm(r);else moduleForm(mod,r);break;}
+  case 'new-record':await preload();if(mod==='gallery')galleryForm();else if(mod==='public_news')newsForm();else if(mod==='public_team')teamForm();else if(mod==='public_achievements')achievementForm();else moduleForm(mod);break;
+  case 'edit-record':{const r=(await api(`/records/${mod}`)).items.find(x=>x.id===id);await preload();if(mod==='gallery')galleryForm(r);else if(mod==='public_news')newsForm(r);else if(mod==='public_team')teamForm(r);else if(mod==='public_achievements')achievementForm(r);else moduleForm(mod,r);break;}
+  case 'achievement-new':{
+    if(!can('content:manage'))throw new Error('Недостатньо прав');
+    achievementForm();break;}
+  case 'achievement-edit':{
+    if(!can('content:manage'))throw new Error('Недостатньо прав');
+    const old=(await api('/records/public_achievements')).items.find(a=>a.id===id);
+    if(!old)throw new Error('Досягнення не знайдено');
+    achievementForm(old);break;}
+  case 'achievement-publish':{
+    if(!can('content:manage'))throw new Error('Недостатньо прав');
+    const old=(await api('/records/public_achievements')).items.find(a=>a.id===id);
+    if(!old)throw new Error('Досягнення не знайдено');
+    await api('/records/public_achievements/'+encodeURIComponent(id),'PATCH',{version:old.version,status:t.dataset.status});
+    await afterSaved(t.dataset.status==='Погоджено'?'Досягнення опубліковано':'Досягнення приховано');break;}
+  case 'achievement-delete':{
+    if(!can('content:manage'))throw new Error('Недостатньо прав');
+    if(!confirm('Видалити це досягнення з історії GRIZZLY?'))break;
+    const old=(await api('/records/public_achievements')).items.find(a=>a.id===id);
+    if(!old)throw new Error('Досягнення не знайдено');
+    await api('/records/public_achievements/'+encodeURIComponent(id),'DELETE',{version:old.version});
+    await afterSaved('Досягнення видалено');break;}
+  case 'achievement-admin-filter':state.achievementAdminFilter=t.dataset.category||'all';await render();break;
+  case 'achievement-filter':{
+    state.achievementFilter=t.dataset.category||'all';
+    const block=$('#gr-achievements-content');
+    if(block)block.innerHTML=renderPublicAchievements();
+    break;}
   case 'team-new':if(!can('content:manage'))throw new Error('Недостатньо прав');teamForm();break;
   case 'team-edit':{
     if(!can('content:manage'))throw new Error('Недостатньо прав');
