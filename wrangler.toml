@@ -1,4 +1,4 @@
-name = "grizzly-family"
+name = "famaly"
 main = "worker/index.js"
 compatibility_date = "2026-11-12"
 workers_dev = true
@@ -12,5 +12,5 @@ not_found_handling = "single-page-application"
 [[d1_databases]]
 binding = "DB"
 database_name = "grizzly-db"
-database_id = "REPLACE_WITH_YOUR_OWN_D1_DATABASE_ID"
+database_id = "22bfd811-aa30-4eba-bc72-2418ef7fedd4"
 migrations_dir = "migrations"
