@@ -1,0 +1,16 @@
+name = "grizzly-family"
+main = "worker/index.js"
+compatibility_date = "2026-11-12"
+workers_dev = true
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+run_worker_first = ["/api/*"]
+not_found_handling = "single-page-application"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "grizzly-db"
+database_id = "REPLACE_WITH_YOUR_OWN_D1_DATABASE_ID"
+migrations_dir = "migrations"
