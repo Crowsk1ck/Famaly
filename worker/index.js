@@ -1,4 +1,5 @@
 /** Grizzly Family API. Runs directly on Cloudflare Workers; no server framework required. */
+import { GRIZZLY_RANK_TEMPLATES } from './rank-templates.js';
 const STATUSES = ['Заплановано', 'У роботі', 'На перевірці', 'На доопрацювання', 'Погоджено', 'Відхилено', 'Завершено'];
 const ROLES = ['leader','deputy','head','member'];
 const DEFAULT_PERMISSIONS = {
@@ -144,7 +145,34 @@ async function handleApi(req,env){const db=env.DB;if(!db)fail(500,'Не нала
     const result=await db.prepare('UPDATE users SET nickname=?,game_id=?,discord=?,role=?,permissions=?,rank_id=?,department_id=?,joined_at=?,status=?,activity=?,version=version+1,updated_at=? WHERE id=? AND version=?').bind(str(b.nickname??old.nickname,80),str(b.game_id??old.game_id,40),str(b.discord??old.discord,120),role,customPerms,manager?(b.rank_id?Number(b.rank_id):null):old.rank_id,manager?(str(b.department_id,80)||null):old.department_id,manager?dateInput(b.joined_at??old.joined_at):old.joined_at,manager&&['active','blocked'].includes(b.status)?b.status:old.status,str(b.activity??old.activity,100),now(),old.id,b.version).run();if(result.meta.changes!==1)fail(409,'Запис змінив інший користувач. Оновіть дані');
     if(b.status==='blocked')await db.prepare('UPDATE sessions SET revoked_at=? WHERE user_id=?').bind(now(),old.id).run();await audit(db,user,'update','users',old.id);return json({item:safeUser(await db.prepare('SELECT * FROM users WHERE id=?').bind(old.id).first())});
   }
-  if(path==='/api/ranks'&&method==='GET')return json({items:await allRows(db,'SELECT * FROM ranks ORDER BY id')});
+  if(path==='/api/ranks'&&method==='GET')return json({items:await allRows(db,'SELECT * FROM ranks ORDER BY id'),templates:user.role==='leader'?GRIZZLY_RANK_TEMPLATES:undefined});
+  if(path==='/api/ranks/apply-templates'&&method==='POST'){
+    if(user.role!=='leader')fail(403,'Лише лідер може встановити приклади рангів');
+    const b=await body(req), expected=b?.expected;
+    if(!Array.isArray(expected)||expected.length<1||expected.length>15)fail(400,'Виберіть від 1 до 15 початкових рангів');
+    const unique=new Set(), candidates=[];
+    for(const entry of expected){
+      const id=entry?.id, version=entry?.version;
+      if(!Number.isInteger(id)||id<1||id>15||!Number.isInteger(version)||version<1||unique.has(id))fail(400,'Некоректний список рангів');
+      unique.add(id); candidates.push({id,version});
+    }
+    const records=await allRows(db,'SELECT id,title,is_example,version FROM ranks');
+    for(const candidate of candidates){
+      const row=records.find(x=>x.id===candidate.id);
+      if(!row||row.version!==candidate.version||row.is_example!==1||row.title!==`Ранг ${String(candidate.id).padStart(2,'0')} — приклад`)
+        fail(409,'Один із рангів уже налаштовано або змінено. Оновіть список');
+    }
+    const timestamp=now();
+    const statements=candidates.map(({id,version})=>{
+      const preset=GRIZZLY_RANK_TEMPLATES[id-1],placeholder=`Ранг ${String(id).padStart(2,'0')} — приклад`;
+      return db.prepare('UPDATE ranks SET title=?,requirements=?,checklist=?,is_example=1,version=version+1,updated_at=? WHERE id=? AND version=? AND title=? AND is_example=1')
+        .bind(preset.title,preset.requirements,JSON.stringify(preset.checklist),timestamp,id,version,placeholder);
+    });
+    const results=await db.batch(statements);
+    const updated=results.reduce((total,result)=>total+Number(result.meta?.changes||0),0);
+    await audit(db,user,'apply_templates','ranks','grizzly',`${updated} із ${candidates.length} початкових рангів`);
+    return json({ok:true,updated,skipped:candidates.length-updated});
+  }
   m=path.match(/^\/api\/ranks\/(\d+)$/);if(m&&method==='PATCH'){
     if(user.role!=='leader')fail(403,'Лише лідер редагує ранги');const b=await body(req);if(!Number.isInteger(b.version))fail(428,'Потрібна версія');const checklist=Array.isArray(b.checklist)?b.checklist.map(x=>str(x,250)).filter(Boolean):[];if(checklist.length>30)fail(400,'Забагато умов');const r=await db.prepare('UPDATE ranks SET title=?,requirements=?,checklist=?,is_example=0,version=version+1,updated_at=? WHERE id=? AND version=?').bind(str(b.title,100),str(b.requirements,3000),JSON.stringify(checklist),now(),Number(m[1]),b.version).run();if(r.meta.changes!==1)fail(409,'Ранг змінився, оновіть список');await audit(db,user,'update','ranks',m[1]);return json({ok:true});
   }
