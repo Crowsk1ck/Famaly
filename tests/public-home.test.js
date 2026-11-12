@@ -207,3 +207,34 @@ test('calendar renders valid scheduled events, week days and filters, escaping p
   state.calendarMonth='2027-01';
   assert.ok(renderer.renderPublicCalendar().includes('немає опублікованих заходів'));
 });
+
+
+test('homepage selects a real featured ImgBB photo without accepting external spoofed images',()=>{
+  const gallery=[
+    {id:'regular',title:'Похід GRIZZLY',evidence:['https://i.ibb.co/test/regular.webp'],extra:{featured:false}},
+    {id:'bad',title:'Invalid featured',evidence:['https://i.ibb.co@evil.example/fake.jpg'],extra:{featured:true}},
+    {id:'featured',title:'Головне фото',evidence:['https://i.ibb.co/test/featured.webp'],extra:{featured:true}}
+  ];
+  const html=publicHtml({gallery});
+  assert.ok(html.includes('class="gr-hero-art has-photo"'));
+  assert.ok(html.includes('class="gr-art-photo" src="https://i.ibb.co/test/featured.webp"'));
+  assert.ok(!html.includes('src="https://i.ibb.co@evil.example'));
+  assert.ok(html.includes('fetchpriority="high"'));
+});
+test('without approved photos the homepage retains its lightweight paw emblem',()=>{
+  const html=publicHtml();
+  assert.ok(html.includes('class="gr-hero-art"'));
+  assert.ok(!html.includes('class="gr-art-photo"'));
+  assert.ok(html.includes('class="gr-paw"'));
+});
+test('mobile menu preserves login access when desktop login button is hidden on small screens',()=>{
+  const guest=publicHtml(),member=publicHtml({user:{role:'leader'}});
+  assert.ok(guest.includes('class="gr-mobile-menu"'));
+  assert.ok(guest.includes('class="gr-mobile-account" data-action="show-login"'));
+  assert.ok(member.includes('class="gr-mobile-account" href="/#overview"')||member.includes('class="gr-mobile-account" href="/#overview"'));
+  assert.ok(guest.includes('id="gr-main" tabindex="-1"'));
+  const css=readFileSync(new URL('../public/style.css',import.meta.url),'utf8');
+  assert.ok(css.includes('overflow:clip;font-family:Inter'));
+  assert.ok(css.includes('.gr-header-actions>.gr-login-btn{display:none}'));
+  assert.ok(css.includes('.gr-mobile-menu nav{width:min(294px'));
+});
