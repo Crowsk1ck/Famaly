@@ -786,17 +786,43 @@ function ledgerForm(){modal('Нова фінансова операція',`<for
 async function stats(){const s=await api('/stats');const leaderboard=(state.period==='month'?s.leaderboard_month:s.leaderboard_week)||s.leaderboard||[];return `${intro('Статистика сім’ї','Активність за останні 7 і 30 днів. Рейтинг враховує погоджені й завершені записи.')}<div class="grid2"><div class="card"><h3>За 7 днів</h3><div class="grid3 mt">${Object.entries(s.week).map(([k,v])=>`<div><span class="muted small">${esc(({tasks:'Завдання',reports:'Звіти',events:'Заходи',income:'Надходження'})[k])}</span><h2>${fmt(v)}</h2></div>`).join('')}</div></div><div class="card"><h3>За 30 днів</h3><div class="grid3 mt">${Object.entries(s.month).map(([k,v])=>`<div><span class="muted small">${esc(({tasks:'Завдання',reports:'Звіти',events:'Заходи',income:'Надходження'})[k])}</span><h2>${fmt(v)}</h2></div>`).join('')}</div></div></div><div class="card mt"><div class="card-head"><h3>Рейтинг активності</h3><select id="period-filter" class="select" style="width:auto"><option value="week" ${state.period==='week'?'selected':''}>За 7 днів</option><option value="month" ${state.period==='month'?'selected':''}>За 30 днів</option></select></div>${table(['Учасник','Завершено','Бали'],leaderboard.map((x,i)=>`<tr><td>${i+1}. ${esc(userName(x.user_id))}</td><td>${x.completed}</td><td class="mono">${x.points}</td></tr>`))}</div>`;}
 async function auditPage(){const a=(await api('/audit')).items;return `${intro('Журнал змін','Хто, коли й що змінював. Доступ лише лідеру.')}<div class="toolbar">${searchBar()}</div>${table(['Дата','Користувач','Дія','Розділ','ID'],a.filter(x=>searchMatch(x.actor_name,x.action,x.entity,x.detail)).map(x=>`<tr><td>${esc(x.created_at.replace('T',' ').slice(0,19))}</td><td>${esc(x.actor_name)}</td><td>${esc(x.action)}<div class="muted">${esc(x.detail.slice(0,110))}</div></td><td>${esc(x.entity)}</td><td><span class="muted small">${esc(short(x.entity_id))}</span></td></tr>`))}`;}
 async function settingsPage(){const response=await api('/settings');const s=response.items;state.settingsVersions=response.versions||{};const discord=state.user.role==='leader'?await api('/discord/status'):null;
+if(discord)state.discordVersions=discord.versions||{};
+let discordLogs=[],discordLogError='';
+if(discord&&!discord.migrationRequired){
+  try{discordLogs=(await api('/discord/deliveries')).items||[];}catch(e){discordLogError=e.message;}
+}
+
 const discordLabel=discord?.reason==='missing'?'Секрет відсутній':discord?.reason==='invalid'?'Некоректний URL':discord?.configured?'Секрет знайдено':'Не підключено';
 const discordHelp=discord?.reason==='missing'?
  'Worker famaly не бачить DISCORD_WEBHOOK_URL. У Cloudflare відкрий Workers & Pages → famaly → Settings → Variables and Secrets → Add Secret → Deploy.':
  discord?.reason==='invalid'?
  'Секрет існує, але адреса неправильна. Потрібен повний URL виду https://discord.com/api/webhooks/ID/TOKEN без зайвих лапок, параметрів або стороннього домену.':
  'Секрет виявлено, але зв’язок ще не перевірений. Натисни «Надіслати тестове повідомлення».';
+const discordNames={applications:'Нові заявки',decisions:'Рішення за заявками',events:'Опубліковані події',test:'Тест webhook'};
+const discordSettingsHtml=discord&&!discord.migrationRequired?
+ '<form id="discord-preferences-form" class="gr-discord-settings">'+
+ ['applications','decisions','events'].map(k=>
+   '<label class="gr-discord-switch"><span><strong>'+discordNames[k]+'</strong>'+
+   '<small>'+(discord.lockedByEnvironment?.[k]?'Вимкнено у змінних Cloudflare.':'Керуй сповіщеннями без зміни Cloudflare.')+'</small></span>'+
+   '<input type="checkbox" name="'+k+'" '+(discord.enabled?.[k]?'checked':'')+' '+(discord.lockedByEnvironment?.[k]?'disabled':'')+' aria-label="'+discordNames[k]+'"></label>'
+ ).join('')+
+ '<button class="btn secondary" type="submit">Зберегти перемикачі</button></form>':
+ '<div class="notice mt">Для перемикачів і журналу потрібно застосувати нову міграцію D1: <strong>0003_discord_notifications.sql</strong>. Сповіщення продовжать працювати з поточними налаштуваннями до міграції.</div>';
+const discordLogsHtml=discord&&!discord.migrationRequired?
+ '<div class="gr-discord-log"><div class="row space wrap"><h3>Журнал доставки</h3><span class="muted small">Останні 100 відправлень</span></div>'+
+ (discordLogError?'<div class="notice">'+esc(discordLogError)+'</div>':
+ discordLogs.length?'<div class="gr-discord-log-scroll"><table class="gr-discord-table"><thead><tr><th>Дата</th><th>Тип</th><th>Результат</th><th>Помилка</th></tr></thead><tbody>'+
+ discordLogs.map(e=>'<tr><td>'+esc(date(e.created_at))+'</td><td>'+esc(discordNames[e.kind]||e.kind)+'</td>'+
+ '<td><span class="gr-discord-result '+(e.status==='sent'?'is-success':'is-error')+'">'+(e.status==='sent'?'Надіслано':'Помилка')+'</span></td>'+
+ '<td>'+esc(e.status==='failed'?(e.http_status?'HTTP '+e.http_status:e.error_code==='network_error'?'Мережевий збій':'Помилка налаштувань'):'—')+'</td></tr>').join('')+
+ '</tbody></table></div>':'<p class="muted small">Історія порожня. Натисни кнопку тесту або дочекайся нової заявки.</p>')+
+ '</div>':'';
 return `${intro('Налаштування Grizzly','Редагування публічного сайту, правил, Discord та фінансових параметрів.')}<div class="card"><form id="settings-form" class="formgrid">${field('Назва сім’ї','family_name',s.family_name)}${field('Гасло','tagline',s.tagline)}${field('Історія сім’ї','history',s.history,'textarea',true)}${field('Посилання Discord','discord_url',s.discord_url,'url',true,'placeholder="https://discord.gg/..."')}${field('Правила','rules',s.rules,'textarea',true)}${field('Вимоги до кандидатів','requirements',s.requirements,'textarea',true)}${field('Відсоток казни від контрактів','treasury_percent',s.treasury_percent,'number',false,'min="0" max="100"')}${field('CAPT — ставка AFK','capt_afk_rate',s.capt_afk_rate,'number',false,'min="0"')}${field('CAPT — ставка за бій','capt_battle_rate',s.capt_battle_rate,'number',false,'min="0"')}<div class="full form-actions"><button class="btn" type="submit">Зберегти налаштування</button></div></form></div>${discord?'<div class="card mt"><div class="card-head"><h3>Discord-сповіщення</h3><span class="pill">'+discordLabel+'</span></div>'+
     '<p class="muted small mt">Нові заявки, рішення за заявками та опубліковані заходи. Webhook зберігається як секрет Cloudflare, не в D1.</p>'+ '<div class="notice mt">'+discordHelp+'</div>'+ 
     '<div class="row wrap mt"><span class="pill">Заявки: '+(discord.categories.applications?'увімкнено':'вимкнено')+'</span>'+
     '<span class="pill">Рішення: '+(discord.categories.decisions?'увімкнено':'вимкнено')+'</span>'+
     '<span class="pill">Події: '+(discord.categories.events?'увімкнено':'вимкнено')+'</span></div>'+
+    discordSettingsHtml+discordLogsHtml+
     '<div class="row wrap mt"><button class="btn secondary" type="button" data-action="discord-test" '+(discord.configured?'':'disabled')+'>Надіслати тестове повідомлення</button>'+
     '<button type="button" class="btn ghost" data-action="discord-refresh">Оновити статус</button><span class="muted small">Worker: famaly · Не надсилай webhook у чат.</span></div></div>':''}<div class="notice mt">Ставки CAPT застосовуються вручну при створенні виплат, щоб керівник контролював підставу нарахування. Права заступників задаються в особових справах.</div>`;}
 async function profile(){const u=state.user;const sessions=(await api('/auth/sessions')).items;return `${intro('Мій профіль','Особисті дані, пароль та активні сесії.')}<div class="grid2"><div class="card"><h3>${esc(u.nickname||u.username)}</h3><div class="stack mt"><div>Логін: <strong>${esc(u.username)}</strong></div><div>Роль доступу: <strong>${esc(roles[u.role])}</strong></div><div>Ігровий ранг: <strong>${esc(rankName(u.rank_id))}</strong></div><div>Напрямок: <strong>${esc(departmentName(u.department_id))}</strong></div><div>Ігровий ID: <strong>${esc(u.game_id||'—')}</strong></div><div>Discord: <strong>${esc(u.discord||'—')}</strong></div></div><button class="btn tiny secondary mt" data-action="edit-user" data-id="${u.id}">Редагувати профіль</button></div><div class="card"><h3>Зміна пароля</h3><form id="password-form" class="stack mt">${field('Поточний пароль','old_password','','password',true,'required')}${field('Новий пароль (12–128 символів)','new_password','','password',true,'minlength="12" required')}<button class="btn" type="submit">Змінити пароль і завершити сесії</button></form></div></div><div class="card mt"><div class="card-head"><h3>Сесії</h3><span class="muted small">Завершення доступу з інших пристроїв</span></div>${table(['Створено','Термін дії','Пристрій','Дія'],sessions.map(x=>`<tr><td>${date(x.created_at)}</td><td>${date(x.expires_at)}</td><td class="wordwrap">${esc(x.user_agent.slice(0,100))}</td><td>${x.revoked_at?badge('Завершено'):`<button class="btn tiny danger" data-action="revoke-session" data-id="${esc(x.id)}">Завершити</button>`}</td></tr>`))}</div>`;}
@@ -866,6 +892,11 @@ async function handleSubmit(e){const f=e.target;if(!f.id)return;e.preventDefault
   case 'contract-form':{const id=f.dataset.id,old=id?(await api('/contracts')).items.find(x=>x.id===id):null;const participant_ids=[...f.querySelectorAll('[name=participant]:checked')].map(x=>x.value);await api(id?`/contracts/${id}`:'/contracts',id?'PATCH':'POST',{...b,participant_ids,amount:Number(b.amount),treasury_percent:Number(b.treasury_percent),evidence:lines(b.evidence),version:old?.version});await afterSaved('Контракт збережено');return;}
   case 'app-review-form':{const a=(await api('/applications')).items.find(x=>x.id===f.dataset.id);await api(`/applications/${a.id}`,'PATCH',{...b,version:a.version});await afterSaved('Рішення щодо кандидата збережено');return;}
   case 'ledger-form':await api('/ledger','POST',{...b,amount:Number(b.amount)});await afterSaved('Операцію проведено');return;
+  case 'discord-preferences-form':{
+    if(state.user?.role!=='leader')throw new Error('Недостатньо прав');
+    const enabled=Object.fromEntries(['applications','decisions','events'].map(k=>[k,!!f.elements.namedItem(k)?.checked]));
+    await api('/discord/preferences','PATCH',{enabled,versions:state.discordVersions});
+    await render();toast('Discord-сповіщення оновлено');return;}
   case 'settings-form':await api('/settings','PATCH',{...b,__versions:state.settingsVersions});state.public=await api('/public');await afterSaved('Налаштування оновлено');return;
   case 'password-form':await api('/auth/password','POST',b);state.user=null;closeModal();renderPublic();toast('Пароль змінено. Увійдіть повторно.');return;
   case 'reset-password-form':{const target=state.users.find(u=>u.id===f.dataset.id);await api(`/users/${f.dataset.id}/reset-password`,'POST',b);closeModal();await preload();await render();credentialReceipt(target?.username||'',b.password,target?.nickname||'',true);return;}
