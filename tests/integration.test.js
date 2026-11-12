@@ -444,7 +444,7 @@ test('Discord settings and delivery enforce leader access and notify once per me
     assert.equal(url,webhook);
     const body=JSON.parse(init.body);
     sent.push(body);
-    return new Response('',{status:204});
+    return new Response(null,{status:204});
   };
   try{
     const status=await req('/api/discord/status',{token:leader});
