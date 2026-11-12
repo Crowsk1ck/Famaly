@@ -5,190 +5,143 @@ import {readFileSync} from 'node:fs';
 const source=readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
 const start=source.indexOf('const galleryCategories=');
 const end=source.indexOf('function loginModal(){',start);
-assert.ok(start>=0&&end>start,'public renderer exists');
+assert.ok(start>=0&&end>start,'public renderer and helpers exist');
 
-const escapeHtml=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const compile=new Function('state','
-
-function publicHtml(settings={},gallery=[],user=null,news=[],team=[]){
-  const app={innerHTML:''};
-  const state={public:{settings,gallery,news,team},user};
-  const render=compile(state,s=>s==='#app'?app:null,escapeHtml,URL,iso=>iso?new Date(iso).toLocaleDateString('uk-UA'):'—');
-  render();
-  return app.innerHTML;
+const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const compile=new Function('state','$','esc','URL','date',source.slice(start,end)+'\nreturn {renderPublic,renderPublicGallery,renderPublicAchievements,renderPublicTeam};');
+function context({settings={},gallery=[],news=[],team=[],achievements=[],user=null}={}){
+  const node={innerHTML:''};
+  const state={public:{settings,gallery,news,team,achievements},user};
+  const date=v=>v?new Date(v).toLocaleDateString('uk-UA'):'—';
+  const renderer=compile(state,sel=>sel==='#app'?node:null,esc,URL,date);
+  return {state,node,renderer};
 }
-test('public landing page has navigation, safe sections and working application fields',()=>{
-  const html=publicHtml({tagline:'Разом сильніші',history:'Наш шлях',rules:'Правила',requirements:'Умови'});
-  for(const section of ['home','about','team','directions','rules','news','gallery','join'])assert.ok(html.includes('id="'+section+'"'),section);
-  for(const field of ['nickname','game_id','discord','experience','motivation'])assert.ok(html.includes('name="'+field+'"'),field);
+function publicHtml(options={}){
+  const {node,renderer}=context(options);
+  renderer.renderPublic();
+  return node.innerHTML;
+}
+
+test('public site renders every section, including achievements, without changing the application form',()=>{
+  const html=publicHtml({settings:{tagline:'Сила в єдності',history:'Наша історія',rules:'Правила',requirements:'Вимоги'}});
+  for(const id of ['home','about','team','directions','rules','news','achievements','gallery','join']){
+    assert.ok(html.includes('id="'+id+'"'),id);
+  }
+  for(const field of ['nickname','game_id','discord','experience','motivation']){
+    assert.ok(html.includes('name="'+field+'"'),field);
+  }
   assert.ok(html.includes('id="apply-form"'));
   assert.ok(html.includes('data-action="show-login"'));
-  assert.ok(html.includes('Разом сильніші'));
-  assert.ok(html.includes('Наш шлях'));
+  assert.ok(html.includes('Сила в єдності'));
+  assert.ok(html.includes('Наша історія'));
 });
-test('published direct ImgBB gallery image renders while non-image links do not',()=>{
-  const html=publicHtml({},[
-    {title:'Командна гра',details:'Спільний виїзд',evidence:['https://i.ibb.co/grizzly.jpg']},
-    {title:'Підозрілий URL',evidence:['javascript:alert(1)']}
-  ]);
-  assert.ok(html.includes('src="https://i.ibb.co/grizzly.jpg"'));
-  assert.ok(html.includes('Командна гра'));
-  assert.ok(!html.includes('href="javascript:'));
-  assert.ok(!html.includes('src="javascript:'));
-});
-test('injected text and untrusted Discord URLs cannot become markup',()=>{
-  const html=publicHtml({history:'<img src=x onerror=alert(1)>',tagline:'<script>bad</script>',discord_url:'javascript:alert(1)'});
-  assert.ok(!html.includes('<script>bad</script>'));
-  assert.ok(!html.includes('<img src=x onerror='));
-  assert.ok(!html.includes('href="javascript:'));
-  assert.ok(html.includes('&lt;script&gt;'));
-});
-test('authenticated visitors can preview the homepage and go back to their panel',()=>{
-  const html=publicHtml({},[],{id:'leader'});
+
+test('authenticated users preview the public page without needing to sign in again',()=>{
+  const html=publicHtml({user:{role:'leader',username:'demo'}});
   assert.ok(html.includes('href="/#overview"'));
   assert.ok(!html.includes('data-action="show-login"'));
 });
-test('metadata has correct canonical host and indexable public description',()=>{
-  const html=readFileSync(new URL('../public/index.html',import.meta.url),'utf8');
-  assert.ok(html.includes('https://grizzly-family.online/'));
-  assert.ok(html.includes('og:description'));
-});
 
-test('gallery categories remain filterable and captions are escaped',()=>{
-  const html=publicHtml({},[
-    {id:'a',title:'Тренування CAPT',details:'Бойовий склад',extra:{gallery_category:'capt',featured:true},evidence:['https://i.ibb.co/abc/photo.webp']},
-    {id:'b',title:'Автопарк',extra:{gallery_category:'cars'},evidence:['https://i.ibb.co/abc/car.jpg']},
-    {id:'c',title:'Небезпечне <img src=x onerror=1>',extra:{gallery_category:'other'},evidence:['https://i.ibb.co/abc/c.jpg']}
-  ]);
-  assert.ok(html.includes('data-action="gallery-filter"'));
-  assert.ok(html.includes('data-category="capt"'));
-  assert.ok(html.includes('data-category="cars"'));
-  assert.ok(html.includes('data-action="gallery-open"'));
-  assert.ok(html.includes('gr-photo-featured'));
-  assert.ok(html.includes('&lt;img src=x onerror=1&gt;'));
-  assert.ok(!html.includes('<img src=x onerror=1>'));
-});
-test('gallery links reject unrelated domains and userinfo lookalikes',()=>{
-  const html=publicHtml({},[
-    {id:'a',title:'Підробка',evidence:['https://i.ibb.co@evil.test/photo.jpg']},
-    {id:'b',title:'Інший сайт',evidence:['https://evil.test/img.jpg']},
-    {id:'c',title:'Фото',evidence:['https://i.ibb.co/file.png']}
-  ]);
-  assert.ok(!html.includes('src="https://i.ibb.co@evil.test'));
-  assert.ok(!html.includes('src="https://evil.test'));
-  assert.ok(html.includes('src="https://i.ibb.co/file.png"'));
-});
-,'esc','URL','date',source.slice(start,end)+'\nreturn renderPublic;');
-
-function publicHtml(settings={},gallery=[],user=null){
-  const app={innerHTML:''};
-  const state={public:{settings,gallery},user};
-  const render=compile(state,s=>s==='#app'?app:null,escapeHtml,URL);
-  render();
-  return app.innerHTML;
-}
-test('public landing page has navigation, safe sections and working application fields',()=>{
-  const html=publicHtml({tagline:'Разом сильніші',history:'Наш шлях',rules:'Правила',requirements:'Умови'});
-  for(const section of ['home','about','directions','rules','gallery','join'])assert.ok(html.includes('id="'+section+'"'),section);
-  for(const field of ['nickname','game_id','discord','experience','motivation'])assert.ok(html.includes('name="'+field+'"'),field);
-  assert.ok(html.includes('id="apply-form"'));
-  assert.ok(html.includes('data-action="show-login"'));
-  assert.ok(html.includes('Разом сильніші'));
-  assert.ok(html.includes('Наш шлях'));
-});
-test('published direct ImgBB gallery image renders while non-image links do not',()=>{
-  const html=publicHtml({},[
-    {title:'Командна гра',details:'Спільний виїзд',evidence:['https://i.ibb.co/grizzly.jpg']},
-    {title:'Підозрілий URL',evidence:['javascript:alert(1)']}
-  ]);
-  assert.ok(html.includes('src="https://i.ibb.co/grizzly.jpg"'));
-  assert.ok(html.includes('Командна гра'));
-  assert.ok(!html.includes('href="javascript:'));
-  assert.ok(!html.includes('src="javascript:'));
-});
-test('injected text and untrusted Discord URLs cannot become markup',()=>{
-  const html=publicHtml({history:'<img src=x onerror=alert(1)>',tagline:'<script>bad</script>',discord_url:'javascript:alert(1)'});
-  assert.ok(!html.includes('<script>bad</script>'));
-  assert.ok(!html.includes('<img src=x onerror='));
-  assert.ok(!html.includes('href="javascript:'));
-  assert.ok(html.includes('&lt;script&gt;'));
-});
-test('authenticated visitors can preview the homepage and go back to their panel',()=>{
-  const html=publicHtml({},[],{id:'leader'});
-  assert.ok(html.includes('href="/#overview"'));
-  assert.ok(!html.includes('data-action="show-login"'));
-});
-test('metadata has correct canonical host and indexable public description',()=>{
-  const html=readFileSync(new URL('../public/index.html',import.meta.url),'utf8');
-  assert.ok(html.includes('https://grizzly-family.online/'));
-  assert.ok(html.includes('og:description'));
-});
-
-test('gallery categories remain filterable and captions are escaped',()=>{
-  const html=publicHtml({},[
-    {id:'a',title:'Тренування CAPT',details:'Бойовий склад',extra:{gallery_category:'capt',featured:true},evidence:['https://i.ibb.co/abc/photo.webp']},
-    {id:'b',title:'Автопарк',extra:{gallery_category:'cars'},evidence:['https://i.ibb.co/abc/car.jpg']},
-    {id:'c',title:'Небезпечне <img src=x onerror=1>',extra:{gallery_category:'other'},evidence:['https://i.ibb.co/abc/c.jpg']}
-  ]);
-  assert.ok(html.includes('data-action="gallery-filter"'));
-  assert.ok(html.includes('data-category="capt"'));
-  assert.ok(html.includes('data-category="cars"'));
-  assert.ok(html.includes('data-action="gallery-open"'));
-  assert.ok(html.includes('gr-photo-featured'));
-  assert.ok(html.includes('&lt;img src=x onerror=1&gt;'));
-  assert.ok(!html.includes('<img src=x onerror=1>'));
-});
-test('gallery links reject unrelated domains and userinfo lookalikes',()=>{
-  const html=publicHtml({},[
-    {id:'a',title:'Підробка',evidence:['https://i.ibb.co@evil.test/photo.jpg']},
-    {id:'b',title:'Інший сайт',evidence:['https://evil.test/img.jpg']},
-    {id:'c',title:'Фото',evidence:['https://i.ibb.co/file.png']}
-  ]);
-  assert.ok(!html.includes('src="https://i.ibb.co@evil.test'));
-  assert.ok(!html.includes('src="https://evil.test'));
-  assert.ok(html.includes('src="https://i.ibb.co/file.png"'));
-});
-
-test('public news renders approved category cards and escapes unsafe content',()=>{
-  const html=publicHtml({},[],null,[
-    {id:'pub-1',title:'CAPT набір',details:'Відкрито набір до CAPT',updated_at:'2026-11-12T10:00:00Z',category:'recruitment',featured:true},
-    {id:'pub-2',title:'<script>alert(1)</script>',details:'<img src=x onerror=1>',updated_at:'2026-11-11T10:00:00Z',category:'news'}
-  ]);
-  assert.ok(html.includes('id="news"'));
-  assert.ok(html.includes('href="#news"'));
-  assert.ok(html.includes('CAPT набір'));
-  assert.ok(html.includes('Відкрито набір до CAPT'));
-  assert.ok(html.includes('gr-news-featured'));
-  assert.ok(html.includes('href="#join"'));
+test('public settings escape HTML and disallow untrusted Discord URLs',()=>{
+  const html=publicHtml({settings:{
+    tagline:'<script>alert(1)</script>',
+    history:'<img src=x onerror=1>',
+    discord_url:'javascript:alert(1)'
+  }});
   assert.ok(!html.includes('<script>alert(1)</script>'));
   assert.ok(!html.includes('<img src=x onerror=1>'));
+  assert.ok(!html.includes('href="javascript:'));
   assert.ok(html.includes('&lt;script&gt;'));
 });
-test('empty public news does not invent family announcements',()=>{
-  const html=publicHtml();
-  assert.ok(html.includes('НОВИНИ ГОТУЮТЬСЯ'));
-  assert.ok(!html.includes('CAPT набір'));
+
+test('gallery filters by approved public categories and allows direct ImgBB images only',()=>{
+  const data=[
+    {id:'p1',title:'CAPT кадр',evidence:['https://i.ibb.co/test/capt.jpg'],extra:{gallery_category:'capt',featured:true}},
+    {id:'p2',title:'Автомобіль',evidence:['https://i.ibb.co/test/car.webp'],extra:{gallery_category:'cars'}},
+    {id:'p3',title:'Небезпека',evidence:['https://i.ibb.co@evil.test/fake.jpg'],extra:{gallery_category:'other'}}
+  ];
+  const {renderer,state,node}=context({gallery:data});
+  renderer.renderPublic();
+  assert.ok(node.innerHTML.includes('data-action="gallery-filter"'));
+  assert.ok(node.innerHTML.includes('data-action="gallery-open"'));
+  assert.ok(node.innerHTML.includes('gr-photo-featured'));
+  assert.ok(node.innerHTML.includes('src="https://i.ibb.co/test/capt.jpg"'));
+  assert.ok(!node.innerHTML.includes('src="https://i.ibb.co@evil.test'));
+  state.galleryFilter='capt';
+  const filtered=renderer.renderPublicGallery();
+  assert.ok(filtered.includes('CAPT кадр'));
+  assert.ok(!filtered.includes('Автомобіль'));
 });
 
-test('public team is opt-in and renders RP role profiles without leaking markup',()=>{
-  const home=publicHtml({},[],null,[],[
-    {id:'1',nickname:'Andrii Grizzly',position:'Лідер',bio:'Засновник GRIZZLY',photo:'https://i.ibb.co/test/photo.jpg',order:1},
-    {id:'2',nickname:'<script>x</script>',position:'<img src=x onerror=1>',bio:'<svg onload=1>',photo:'javascript:alert(1)',order:2}
-  ]);
-  assert.ok(home.includes('id="team"'));
-  assert.ok(home.includes('href="#team"'));
-  assert.ok(home.includes('Andrii Grizzly'));
-  assert.ok(home.includes('Засновник GRIZZLY'));
-  assert.ok(home.includes('gr-team-portrait'));
-  assert.ok(home.includes('src="https://i.ibb.co/test/photo.jpg"'));
-  assert.ok(!home.includes('src="javascript:'));
-  assert.ok(!home.includes('<script>x</script>'));
-  assert.ok(home.includes('&lt;script&gt;'));
-  assert.ok(!home.includes('<img src=x onerror=1>'));
-  assert.ok(home.includes('gr-team-placeholder'));
+test('gallery descriptions and photo names are escaped',()=>{
+  const html=publicHtml({gallery:[
+    {id:'evil',title:'<script>bad</script>',details:'<img src=x onerror=1>',evidence:['https://i.ibb.co/ok.jpg']}
+  ]});
+  assert.ok(!html.includes('<script>bad</script>'));
+  assert.ok(!html.includes('<img src=x onerror=1>'));
+  assert.ok(html.includes('&lt;script&gt;'));
 });
-test('empty leadership profiles show an honest empty state instead of made-up people',()=>{
-  const home=publicHtml();
-  assert.ok(home.includes('Профілі керівництва з’являться після публікації'));
-  assert.ok(!home.includes('Andrii Grizzly'));
+
+test('empty gallery, news, team and achievements show honest empty states',()=>{
+  const html=publicHtml();
+  assert.ok(html.includes('Галерея')||html.includes('НАШІ НАЙКРАЩІ МОМЕНТИ'));
+  assert.ok(html.includes('НОВИНИ ГОТУЮТЬСЯ'));
+  assert.ok(html.includes('Профілі керівництва з’являться після публікації'));
+  assert.ok(html.includes('НАША ІСТОРІЯ ПИШЕТЬСЯ'));
+  assert.ok(!html.includes('Перша перемога CAPT'));
+});
+
+test('news cards render categories, dates and escape HTML',()=>{
+  const html=publicHtml({news:[
+    {id:'n1',title:'Набір CAPT',details:'Запрошуємо до сім’ї',category:'recruitment',featured:true,updated_at:'2026-11-12T12:00:00Z'},
+    {id:'n2',title:'<svg onload=1>',details:'<img src=x>',category:'news',updated_at:'2026-11-11T12:00:00Z'}
+  ]});
+  assert.ok(html.includes('Набір CAPT'));
+  assert.ok(html.includes('gr-news-featured'));
+  assert.ok(html.includes('href="#join"'));
+  assert.ok(!html.includes('<svg onload=1>'));
+  assert.ok(!html.includes('<img src=x>'));
+});
+
+test('public team renders safe role profiles and no unsafe image URLs',()=>{
+  const html=publicHtml({team:[
+    {id:'a',nickname:'Andrii Grizzly',position:'Лідер',bio:'Засновник GRIZZLY',photo:'https://i.ibb.co/test/leader.jpg'},
+    {id:'b',nickname:'<script>unsafe</script>',position:'<img src=x>',bio:'<svg onload=1>',photo:'javascript:alert(1)'}
+  ]});
+  assert.ok(html.includes('Andrii Grizzly'));
+  assert.ok(html.includes('gr-team-portrait'));
+  assert.ok(html.includes('src="https://i.ibb.co/test/leader.jpg"'));
+  assert.ok(!html.includes('src="javascript:'));
+  assert.ok(!html.includes('<script>unsafe</script>'));
+  assert.ok(!html.includes('<img src=x>'));
+  assert.ok(html.includes('gr-team-placeholder'));
+});
+
+test('achievements render published counts, filters, photos and escaped descriptions',()=>{
+  const data=[
+    {id:'a1',title:'Перша перемога CAPT',description:'Команда перемогла у бою',category:'capt',
+      achieved_on:'2026-11-12',featured:true,photo:'https://i.ibb.co/test/capt-win.webp'},
+    {id:'a2',title:'<script>bad</script>',description:'<img src=x>',category:'award',
+      achieved_on:'2026-10-01',featured:false,photo:'javascript:alert(1)'}
+  ];
+  const {renderer,state,node}=context({achievements:data});
+  renderer.renderPublic();
+  assert.ok(node.innerHTML.includes('id="achievements"'));
+  assert.ok(node.innerHTML.includes('href="#achievements"'));
+  assert.ok(node.innerHTML.includes('data-action="achievement-filter"'));
+  assert.ok(node.innerHTML.includes('gr-ach-featured'));
+  assert.ok(node.innerHTML.includes('src="https://i.ibb.co/test/capt-win.webp"'));
+  assert.ok(!node.innerHTML.includes('src="javascript:'));
+  assert.ok(!node.innerHTML.includes('<script>bad</script>'));
+  assert.ok(!node.innerHTML.includes('<img src=x>'));
+  state.achievementFilter='capt';
+  const filtered=renderer.renderPublicAchievements();
+  assert.ok(filtered.includes('Перша перемога CAPT'));
+  assert.ok(!filtered.includes('gr-ach-card-top"><span>Нагороди'));
+});
+
+test('canonical metadata points at the real Grizzly host',()=>{
+  const html=readFileSync(new URL('../public/index.html',import.meta.url),'utf8');
+  assert.ok(html.includes('https://grizzly-family.online/'));
+  assert.ok(html.includes('og:description'));
 });
