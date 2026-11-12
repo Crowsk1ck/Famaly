@@ -252,7 +252,7 @@ async function handleApi(req,env){const db=env.DB;if(!db)fail(500,'Не нала
   // Members may register themselves for scheduled CAPT matches. Roster is
   // computed deterministically from registration order, never from arbitrary
   // player names in the match's free-text notes.
-  m=path.match(/^\/api\/capt\/matches\/([\\w-]+)\/signups$/);
+  m=path.match(/^\/api\/capt\/matches\/([a-zA-Z0-9_-]+)\/signups$/);
   if(m&&(method==='GET'||method==='POST')){
     const match=await db.prepare("SELECT * FROM records WHERE id=? AND module='capt_matches' AND deleted_at IS NULL").bind(m[1]).first();
     if(!match||!permittedRecord(user,'capt_matches',match))fail(404,'Бій CAPT не знайдено');
