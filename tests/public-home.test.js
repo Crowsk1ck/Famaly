@@ -9,11 +9,11 @@ assert.ok(start>=0&&end>start,'public renderer and helpers exist');
 
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const compile=new Function('state','$','esc','URL','date','location',
-  source.slice(start,end)+'\nreturn {renderPublic,renderPublicGallery,renderPublicAchievements,renderPublicTeam,publicPageFromHash,renderPublicNewsPreview};'
+  source.slice(start,end)+'\nreturn {renderPublic,renderPublicGallery,renderPublicAchievements,renderPublicTeam,publicPageFromHash,renderPublicNewsPreview,renderPublicCalendar,grCalendarMonthValue};'
 );
-function context({hash='#home',settings={},gallery=[],news=[],team=[],achievements=[],user=null}={}){
+function context({hash='#home',settings={},gallery=[],news=[],team=[],achievements=[],calendar=[],user=null}={}){
   const node={innerHTML:''};
-  const state={public:{settings,gallery,news,team,achievements},user};
+  const state={public:{settings,gallery,news,team,achievements,calendar},user};
   const location={hash};
   const formatDate=v=>v?new Date(v).toLocaleDateString('uk-UA'):'—';
   const renderer=compile(state,selector=>selector==='#app'?node:null,esc,URL,formatDate,location);
@@ -43,6 +43,7 @@ test('all dedicated public pages have own routes and no unnecessary sections',()
     '#news':['news'],
     '#achievements':['achievements'],
     '#gallery':['gallery'],
+    '#calendar':['calendar'],
     '#join':['join']
   };
   for(const [hash,expected] of Object.entries(map)){
@@ -169,4 +170,40 @@ test('canonical metadata points at the public GRIZZLY domain',()=>{
   const html=readFileSync(new URL('../public/index.html',import.meta.url),'utf8');
   assert.ok(html.includes('https://grizzly-family.online/'));
   assert.ok(html.includes('og:description'));
+});
+
+test('calendar is an independent page, not extra content on compact homepage',()=>{
+  const home=publicHtml({hash:'#home'}),calendar=publicHtml({hash:'#calendar'});
+  assert.ok(home.includes('href="#calendar"'));
+  assert.ok(!home.includes('id="calendar"'));
+  assert.ok(calendar.includes('id="calendar"'));
+  assert.ok(calendar.includes('data-action="public-calendar-prev"'));
+  assert.ok(calendar.includes('data-action="public-calendar-next"'));
+  assert.ok(calendar.includes('data-action="public-calendar-filter"'));
+  assert.ok(calendar.includes('Europe/Kyiv'));
+  assert.ok(!calendar.includes('id="apply-form"'));
+});
+test('calendar renders valid scheduled events, week days and filters, escaping public text',()=>{
+  const calendar=[
+    {id:'e1',title:'Збори GRIZZLY',description:'На маєтку',starts_at:'2026-12-05T19:00',
+      ends_at:'2026-12-05T20:00',category:'meeting',location:'Маєток'},
+    {id:'e2',title:'<script>alert(1)</script>',description:'<img src=x>',starts_at:'2026-12-10T21:30',
+      ends_at:'',category:'capt',location:'Аеропорт'}
+  ];
+  const {state,renderer,node}=context({hash:'#calendar',calendar});
+  state.calendarMonth='2026-12';
+  renderer.renderPublic();
+  assert.ok(node.innerHTML.includes('Збори GRIZZLY'));
+  assert.ok(node.innerHTML.includes('19:00–20:00'));
+  assert.ok(node.innerHTML.includes('Маєток'));
+  assert.ok(node.innerHTML.includes('gr-cal-count'));
+  assert.ok(!node.innerHTML.includes('<script>alert(1)</script>'));
+  assert.ok(!node.innerHTML.includes('<img src=x>'));
+  assert.ok(node.innerHTML.includes('&lt;script&gt;'));
+  state.calendarCategory='meeting';
+  const filtered=renderer.renderPublicCalendar();
+  assert.ok(filtered.includes('Збори GRIZZLY'));
+  assert.ok(!filtered.includes('&lt;script&gt;'));
+  state.calendarMonth='2027-01';
+  assert.ok(renderer.renderPublicCalendar().includes('немає опублікованих заходів'));
 });
