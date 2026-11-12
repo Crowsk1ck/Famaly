@@ -83,6 +83,42 @@ function discordSafe(value,limit=180){
   return str(value,limit).replace(/[\u0000-\u001f\u007f]/g,' ').replace(/@/g,'@\u200b').replace(/<(?=[@#])/g,'&lt;');
 }
 const DISCORD_NOTIFY_KINDS=['applications','decisions','events','capt','news','announcements'];
+
+const DISCORD_WEBHOOK_ROUTES={
+  applications:'DISCORD_WEBHOOK_APPLICATIONS',
+  decisions:'DISCORD_WEBHOOK_DECISIONS',
+  events:'DISCORD_WEBHOOK_EVENTS',
+  capt:'DISCORD_WEBHOOK_CAPT',
+  news:'DISCORD_WEBHOOK_NEWS',
+  announcements:'DISCORD_WEBHOOK_ANNOUNCEMENTS'
+};
+const DISCORD_LEGACY_KINDS=['applications','decisions','events'];
+function discordDestination(env,kind){
+  if(kind==='test')return env.DISCORD_WEBHOOK_URL;
+  if(!DISCORD_NOTIFY_KINDS.includes(kind))return undefined;
+  const specific=env[DISCORD_WEBHOOK_ROUTES[kind]];
+  if(typeof specific==='string'&&specific.trim())return specific;
+  return DISCORD_LEGACY_KINDS.includes(kind)?env.DISCORD_WEBHOOK_URL:undefined;
+}
+// Different Cloudflare secrets are required for the three public editorial channels.
+// Matching webhook URLs would collapse them into the same destination.
+export function discordRouteDiagnostics(env){
+  const result={};
+  const sources=Object.fromEntries(DISCORD_NOTIFY_KINDS.map(kind=>[kind,discordDestination(env,kind)]));
+  for(const kind of DISCORD_NOTIFY_KINDS){
+    const status=discordWebhookDiagnostic(sources[kind]);
+    if(status.configured&&['capt','news','announcements'].includes(kind)){
+      const raw=String(sources[kind]).trim();
+      if(Object.entries(sources).some(([other,value])=>other!==kind&&validDiscordWebhookUrl(value)&&String(value).trim()===raw)){
+        result[kind]={configured:false,reason:'duplicate'};
+        continue;
+      }
+    }
+    result[kind]=status;
+  }
+  return result;
+}
+
 function publicNewsDiscordKind(category){return category==='capt'?'capt':category==='announcement'?'announcements':'news';}
 function discordEnvAllowed(env,kind){
   return env['DISCORD_NOTIFY_'+String(kind).toUpperCase()]!=='false';
@@ -135,9 +171,13 @@ export function buildDiscordNotification(kind,info={}){
       fields,footer:{text:'GRIZZLY · Автоматичне сповіщення'},timestamp:new Date().toISOString()}]
   };
 }
-async function sendDiscordWebhook(env,kind,info){
-  const webhook=env.DISCORD_WEBHOOK_URL;
-  if(!validDiscordWebhookUrl(webhook))throw new Error('DISCORD_WEBHOOK_URL відсутній або має невірний формат');
+async function sendDiscordWebhook(env,kind,info,targetKind=kind){
+  const destinations=discordRouteDiagnostics(env);
+  if(targetKind!=='test'&&destinations[targetKind]?.reason==='duplicate')
+    throw new Error('Webhook категорії повторює інший Discord webhook');
+  const webhook=discordDestination(env,targetKind);
+  if(!validDiscordWebhookUrl(webhook))
+    throw new Error('Discord webhook для категорії '+String(targetKind)+' відсутній або має невірний формат');
   let response;
   try{
     response=await fetch(webhook.trim(),{method:'POST',
@@ -156,7 +196,7 @@ async function sendDiscordWebhook(env,kind,info){
   return true;
 }
 function queueDiscord(ctx,db,env,kind,info){
-  if(!env.DISCORD_WEBHOOK_URL||!DISCORD_NOTIFY_KINDS.includes(kind))return;
+  if(!DISCORD_NOTIFY_KINDS.includes(kind))return;
   const task=(async()=>{
     if(!await discordEnabled(db,env,kind))return;
     let failure=null;
@@ -401,7 +441,7 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
   if(path==='/api/discord/status'&&method==='GET'){
     if(user.role!=='leader')fail(403,'Лише лідер переглядає інтеграцію Discord');
     return json({...discordWebhookDiagnostic(env.DISCORD_WEBHOOK_URL),
-      worker:'famaly',...await discordPreferences(db,env)});
+      worker:'famaly',routes:discordRouteDiagnostics(env),...await discordPreferences(db,env)});
   }
   if(path==='/api/discord/preferences'&&method==='PATCH'){
     if(user.role!=='leader')fail(403,'Лише лідер змінює Discord-сповіщення');
@@ -433,20 +473,27 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
   }
   if(path==='/api/discord/test'&&method==='POST'){
     if(user.role!=='leader')fail(403,'Лише лідер може перевіряти Discord');
-    const diagnostic=discordWebhookDiagnostic(env.DISCORD_WEBHOOK_URL);
-    if(!diagnostic.configured)fail(503,diagnostic.reason==='missing'?'Worker famaly не має секрету DISCORD_WEBHOOK_URL':'Worker famaly має секрет, але URL Discord некоректний');
+    const b=await body(req);
+    const kind=b.kind||'test';
+    if(kind!=='test'&&!DISCORD_NOTIFY_KINDS.includes(kind))fail(400,'Невідома категорія Discord');
+    const diagnostic=kind==='test'?discordWebhookDiagnostic(env.DISCORD_WEBHOOK_URL):discordRouteDiagnostics(env)[kind];
+    if(!diagnostic?.configured){
+      const explanation=diagnostic?.reason==='duplicate'?'Webhook має бути окремим для кожного з CAPT, Новин та Оголошень':
+        diagnostic?.reason==='invalid'?'Некоректний URL webhook у Cloudflare':'Потрібно додати секрет webhook відповідної категорії в Cloudflare';
+      fail(503,explanation);
+    }
     const rateKey='discord:test:'+user.id;
-    await rateCheck(db,rateKey,3,10);
-    await rateFail(db,rateKey,3,10);
+    await rateCheck(db,rateKey,6,10);
+    await rateFail(db,rateKey,6,10);
     try{
-      await sendDiscordWebhook(env,'test',{});
-      await recordDiscordDelivery(db,'test');
+      await sendDiscordWebhook(env,'test',{event:kind==='test'?undefined:'Тест маршруту '+kind},kind);
+      await recordDiscordDelivery(db,kind==='test'?'test':kind);
     }catch(e){
-      await recordDiscordDelivery(db,'test',e);
+      await recordDiscordDelivery(db,kind==='test'?'test':kind,e);
       fail(502,'Не вдалося надіслати тест до Discord. '+String(e.message).slice(0,110));
     }
     await audit(db,user,'discord_test','integrations','discord');
-    return json({ok:true,message:'Тестове повідомлення прийнято Discord'});
+    return json({ok:true,message:'Тестове повідомлення прийнято Discord',kind});
   }
   if(path==='/api/settings'&&method==='GET'){const items=await settings(db,user.role!=='leader');const versions=user.role==='leader'?Object.fromEntries((await allRows(db,'SELECT key,version FROM settings')).map(r=>[r.key,r.version])):undefined;return json({items,versions});}
   if(path==='/api/settings'&&method==='PATCH'){
