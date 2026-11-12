@@ -928,7 +928,7 @@ test('Application waiting, accepted, rejected notifications each use their own w
     assert.equal(fallback.application_accepted.reason,'legacy');
     assert.equal(fallback.application_accepted.separate,false);
     assert.equal(fallback.application_accepted.configured,true);
-    const legacy=(await req('/api/applications/'+app.id,{method:'PATCH',token:leader,ctx,data:{
+    const legacy=await req('/api/applications/'+app.id,{method:'PATCH',token:leader,ctx,data:{
       version:app.version+4,status:'Прийнято'
     }});
     assert.equal(legacy.status,200);
