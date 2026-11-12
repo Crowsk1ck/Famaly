@@ -82,13 +82,13 @@ export function discordWebhookDiagnostic(value){
 function discordSafe(value,limit=180){
   return str(value,limit).replace(/[\u0000-\u001f\u007f]/g,' ').replace(/@/g,'@\u200b').replace(/<(?=[@#])/g,'&lt;');
 }
-const DISCORD_NOTIFY_KINDS=['applications','decisions','events'];
+const DISCORD_NOTIFY_KINDS=['applications','decisions','events','capt','news'];
 function discordEnvAllowed(env,kind){
   return env['DISCORD_NOTIFY_'+String(kind).toUpperCase()]!=='false';
 }
 async function discordPreferences(db,env){
   const keys=DISCORD_NOTIFY_KINDS.map(k=>'discord_notify_'+k);
-  const rows=await allRows(db,'SELECT key,value,version FROM settings WHERE key IN (?,?,?)',...keys);
+  const rows=await allRows(db,'SELECT key,value,version FROM settings WHERE key IN ('+keys.map(()=>'?').join(',')+')',...keys);
   const map=Object.fromEntries(rows.map(r=>[r.key,r]));
   const enabled=Object.fromEntries(DISCORD_NOTIFY_KINDS.map(k=>[k,map['discord_notify_'+k]?.value!=='false']));
   return {enabled,
@@ -116,20 +116,20 @@ async function recordDiscordDelivery(db,kind,error=null){
   }
 }
 export function buildDiscordNotification(kind,info={}){
-  const label={applications:'📝 Нова заявка GRIZZLY',decisions:'📋 Рішення за заявкою',events:'📅 Новий захід GRIZZLY',test:'🐻 Перевірка Discord GRIZZLY'}[kind];
+  const label={applications:'📝 Нова заявка GRIZZLY',decisions:'📋 Рішення за заявкою',events:'📅 Новий захід GRIZZLY',capt:'🎯 CAPT-оголошення GRIZZLY',news:'📰 Новина GRIZZLY',test:'🐻 Перевірка Discord GRIZZLY'}[kind];
   if(!label)throw new Error('Невідомий тип Discord-сповіщення');
   const fields=[];
   if(info.nickname)fields.push({name:'Ігровий нік',value:discordSafe(info.nickname,80),inline:true});
   if(info.gameId)fields.push({name:'Ігровий ID',value:discordSafe(info.gameId,40),inline:true});
   if(info.status)fields.push({name:'Рішення',value:discordSafe(info.status,70),inline:true});
-  if(info.event)fields.push({name:'Подія',value:discordSafe(info.event,150),inline:false});
+  if(info.event)fields.push({name:kind==='capt'?'CAPT-оголошення':kind==='news'?'Заголовок новини':'Подія',value:discordSafe(info.event,150),inline:false});
   if(info.startsAt)fields.push({name:'Час за Києвом',value:discordSafe(info.startsAt,28).replace('T',' · '),inline:true});
   if(info.location)fields.push({name:'Місце',value:discordSafe(info.location,120),inline:true});
   return {username:'GRIZZLY FAMILY',allowed_mentions:{parse:[]},
-    embeds:[{title:label,color:kind==='decisions'?0xF0A44F:kind==='events'?0xE84255:0x6D8B9E,
+    embeds:[{title:label,color:kind==='decisions'?0xF0A44F:kind==='events'||kind==='capt'?0xE84255:0x6D8B9E,
       description:kind==='test'?'З’єднання із сайтом працює. Повідомлення з’являтимуться після відповідних дій.':
         kind==='applications'?'Створено нову заявку. Перегляньте її в закритій панелі рекрутингу.':
-        kind==='decisions'?'Статус заявки оновлено керівництвом.':'Опубліковано захід у календарі сім’ї.',
+        kind==='decisions'?'Статус заявки оновлено керівництвом.':kind==='capt'?'Опубліковано CAPT-оголошення. Деталі доступні на сторінці новин сім’ї.':kind==='news'?'На сайті GRIZZLY з’явилася нова публічна новина.':'Опубліковано захід у календарі сім’ї.',
       fields,footer:{text:'GRIZZLY · Автоматичне сповіщення'},timestamp:new Date().toISOString()}]
   };
 }
@@ -208,7 +208,7 @@ function validateGalleryPayload(p){
   }))fail(400,'Для публікації потрібне пряме HTTPS-посилання ImgBB на зображення');
 }
 function validatePublicNewsPayload(p){
-  const allowed=['news','event','recruitment','achievement'];
+  const allowed=['news','event','recruitment','achievement','capt'];
   if(p.extra.news_category!==undefined&&!allowed.includes(p.extra.news_category))
     fail(400,'Некоректна категорія новини');
   if(p.extra.featured!==undefined&&typeof p.extra.featured!=='boolean')
@@ -309,7 +309,7 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
     return json({settings:s,
       gallery:gallery.map(mapRecord).sort((a,b)=>Number(!!b.extra?.featured)-Number(!!a.extra?.featured)).slice(0,48).map(r=>({id:r.id,title:r.title,details:r.details,evidence:r.evidence,extra:{gallery_category:r.extra?.gallery_category||'other',featured:r.extra?.featured===true}})),
       news:news.map(r=>({id:r.id,title:r.title,details:r.details,updated_at:r.updated_at,
-        category:['news','event','recruitment','achievement'].includes(parseJson(r.extra,{}).news_category)?parseJson(r.extra,{}).news_category:'news',
+        category:['news','event','recruitment','achievement','capt'].includes(parseJson(r.extra,{}).news_category)?parseJson(r.extra,{}).news_category:'news',
         featured:parseJson(r.extra,{}).featured===true})).sort((a,b)=>Number(b.featured)-Number(a.featured)||String(b.updated_at).localeCompare(String(a.updated_at))).slice(0,12),
       team:team.map(r=>{const x=parseJson(r.extra,{});return {id:r.id,nickname:r.title,position:str(x.position,80),bio:r.details,order:Number(x.sort_order??50),photo:parseJson(r.evidence,[])[0]||''};}).sort((a,b)=>a.order-b.order||a.nickname.localeCompare(b.nickname,'uk')).slice(0,18),
       achievements:achievements.map(r=>{const x=parseJson(r.extra,{});return {id:r.id,title:r.title,description:r.details,category:['capt','milestone','event','award'].includes(x.category)?x.category:'milestone',achieved_on:x.achieved_on||'',featured:x.featured===true,photo:parseJson(r.evidence,[])[0]||''};}).sort((a,b)=>Number(b.featured)-Number(a.featured)||String(b.achieved_on).localeCompare(String(a.achieved_on))).slice(0,40),
@@ -406,26 +406,26 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
     const b=await body(req),values=b.enabled,versions=b.versions;
     if(!values||typeof values!=='object'||Array.isArray(values)||
        DISCORD_NOTIFY_KINDS.some(k=>typeof values[k]!=='boolean'))
-      fail(400,'Потрібно обрати стан усіх трьох категорій');
+      fail(400,'Потрібно обрати стан усіх п’яти категорій');
     if(!versions||DISCORD_NOTIFY_KINDS.some(k=>!Number.isInteger(versions[k])||versions[k]<1))
       fail(428,'Оновіть налаштування перед збереженням');
     const current=await discordPreferences(db,env);
-    if(current.migrationRequired)fail(503,'Застосуйте міграцію D1 0003_discord_notifications.sql');
+    if(current.migrationRequired)fail(503,'Застосуйте міграції D1 0003 і 0004 (Discord CAPT та новини)');
     const keys=DISCORD_NOTIFY_KINDS.map(k=>'discord_notify_'+k);
     const sql='UPDATE settings SET value=CASE key '+keys.map(()=>'WHEN ? THEN ?').join(' ')+
-      ' ELSE value END,version=version+1,updated_at=? WHERE key IN (?,?,?) AND (SELECT COUNT(*) FROM settings WHERE '+
-      keys.map(()=>'key=? AND version=?').join(' OR ')+')=3';
+      ' ELSE value END,version=version+1,updated_at=? WHERE key IN ('+keys.map(()=>'?').join(',')+') AND (SELECT COUNT(*) FROM settings WHERE '+
+      keys.map(()=>'key=? AND version=?').join(' OR ')+')='+keys.length;
     const args=[...DISCORD_NOTIFY_KINDS.flatMap((k,i)=>[keys[i],values[k]?'true':'false']),now(),...keys,
       ...DISCORD_NOTIFY_KINDS.flatMap((k,i)=>[keys[i],versions[k]])];
     const outcome=await db.prepare(sql).bind(...args).run();
-    if(outcome.meta.changes!==3)fail(409,'Налаштування змінено в іншій сесії. Оновіть сторінку');
+    if(outcome.meta.changes!==keys.length)fail(409,'Налаштування змінено в іншій сесії. Оновіть сторінку');
     await audit(db,user,'discord_preferences','integrations','discord');
     return json({ok:true,...await discordPreferences(db,env)});
   }
   if(path==='/api/discord/deliveries'&&method==='GET'){
     if(user.role!=='leader')fail(403,'Лише лідер переглядає журнал Discord');
     if((await discordPreferences(db,env)).migrationRequired)
-      fail(503,'Для журналу доставки застосуйте міграцію D1 0003_discord_notifications.sql');
+      fail(503,'Для журналу доставки застосуйте міграції D1 0003 і 0004');
     return json({items:await allRows(db,
       'SELECT id,kind,status,http_status,error_code,created_at FROM discord_delivery_log ORDER BY created_at DESC LIMIT 100')});
   }
@@ -528,7 +528,7 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
     if(!id&&method==='POST'){
       const b=await body(req);const allowed=can(user,cfg.manage) || cfg.memberCreate;if(!allowed)fail(403,'Недостатньо прав для створення');const p=recordPayload(b,user,mod);if(mod==='capt_matches')captMatchPayload(p);if(mod==='gallery')validateGalleryPayload(p);if(mod==='public_news')validatePublicNewsPayload(p);if(mod==='public_team')validatePublicTeamPayload(p);if(mod==='public_achievements')validatePublicAchievementPayload(p);if(mod==='public_calendar')validatePublicCalendarPayload(p);if(!p.title)fail(400,'Додайте назву');if(mod==='promotions'&&(!Number.isInteger(Number(p.extra.requested_rank_id))||Number(p.extra.requested_rank_id)<1||Number(p.extra.requested_rank_id)>15))fail(400,'Виберіть ранг для підвищення');if(user.role==='head'&&!manageInDepartment(user,p.department_id))fail(403,'Доступ лише до свого напрямку');if(cfg.review)p.status='На перевірці';if(!can(user,cfg.manage)){p.status=cfg.review?'На перевірці':'Заплановано';p.assignee_id=user.id;p.department_id=user.department_id;}
       if(mod==='capt_attendance'&&!can(user,'capt:manage'))p.status='На перевірці';
-      const newId=uuid(),t=now();await db.prepare('INSERT INTO records(id,module,title,details,status,owner_id,assignee_id,department_id,amount,starts_at,ends_at,evidence,extra,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(newId,mod,p.title,p.details,p.status,p.owner_id,p.assignee_id,p.department_id,p.amount,p.starts_at,p.ends_at,JSON.stringify(p.evidence),JSON.stringify(p.extra),t,t).run();await audit(db,user,'create',mod,newId);if(mod==='public_calendar'&&p.status==='Погоджено')queueDiscord(ctx,db,env,'events',{event:p.title,startsAt:p.starts_at,location:p.extra.location});
+      const newId=uuid(),t=now();await db.prepare('INSERT INTO records(id,module,title,details,status,owner_id,assignee_id,department_id,amount,starts_at,ends_at,evidence,extra,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(newId,mod,p.title,p.details,p.status,p.owner_id,p.assignee_id,p.department_id,p.amount,p.starts_at,p.ends_at,JSON.stringify(p.evidence),JSON.stringify(p.extra),t,t).run();await audit(db,user,'create',mod,newId);if(mod==='public_calendar'&&p.status==='Погоджено')queueDiscord(ctx,db,env,'events',{event:p.title,startsAt:p.starts_at,location:p.extra.location});if(mod==='public_news'&&p.status==='Погоджено')queueDiscord(ctx,db,env,p.extra.news_category==='capt'?'capt':'news',{event:p.title});
       if(p.assignee_id&&p.assignee_id!==user.id)await notify(db,p.assignee_id,'Нове завдання / запис',p.title);return json({item:mapRecord(await db.prepare('SELECT * FROM records WHERE id=?').bind(newId).first())},201);
     }
     if(id){const old=await db.prepare('SELECT * FROM records WHERE id=? AND module=? AND deleted_at IS NULL').bind(id,mod).first();if(!old||!permittedRecord(user,mod,old))fail(404,'Запис не знайдено');
@@ -544,7 +544,7 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
         const b=await body(req);if(!Number.isInteger(b.version))fail(428,'Потрібна версія');const manager=permittedRecord(user,mod,old,'manage');const self=old.owner_id===user.id||old.assignee_id===user.id;
         if(!manager&&!(self&&(cfg.memberUpdate||cfg.memberCreate)))fail(403,'Недостатньо прав');if(!manager&&['Погоджено','Відхилено','Завершено'].includes(b.status))fail(403,'Погодження тільки керівником');if(cfg.review&&manager&&b.status&&b.status!==old.status&&['Погоджено','Відхилено','На доопрацювання','Завершено'].includes(b.status))fail(400,'Для рішення використовуйте спеціальне погодження');
         if(mod==='promotions'&&old.status==='Погоджено')fail(409,'Погоджене підвищення не можна змінювати');const p=recordPayload(b,user,mod,old);if(mod==='capt_matches')captMatchPayload(p,old);if(mod==='gallery')validateGalleryPayload(p);if(mod==='public_news')validatePublicNewsPayload(p);if(mod==='public_team')validatePublicTeamPayload(p);if(mod==='public_achievements')validatePublicAchievementPayload(p);if(mod==='public_calendar')validatePublicCalendarPayload(p);if(!manager){p.assignee_id=old.assignee_id;p.department_id=old.department_id;p.amount=old.amount;p.starts_at=old.starts_at;p.ends_at=old.ends_at;p.extra=parseJson(old.extra,{});p.status=cfg.review?'На перевірці':p.status;}
-        if(user.role==='head'&&!manageInDepartment(user,p.department_id))fail(403,'Напрямок недоступний');const r=await db.prepare('UPDATE records SET title=?,details=?,status=?,assignee_id=?,department_id=?,amount=?,starts_at=?,ends_at=?,evidence=?,extra=?,version=version+1,updated_at=? WHERE id=? AND version=?').bind(p.title,p.details,p.status,p.assignee_id,p.department_id,p.amount,p.starts_at,p.ends_at,JSON.stringify(p.evidence),JSON.stringify(p.extra),now(),id,b.version).run();if(r.meta.changes!==1)fail(409,'Запис змінено іншим користувачем');await audit(db,user,'update',mod,id);if(mod==='public_calendar'&&old.status!=='Погоджено'&&p.status==='Погоджено')queueDiscord(ctx,db,env,'events',{event:p.title,startsAt:p.starts_at,location:p.extra.location});return json({ok:true});
+        if(user.role==='head'&&!manageInDepartment(user,p.department_id))fail(403,'Напрямок недоступний');const r=await db.prepare('UPDATE records SET title=?,details=?,status=?,assignee_id=?,department_id=?,amount=?,starts_at=?,ends_at=?,evidence=?,extra=?,version=version+1,updated_at=? WHERE id=? AND version=?').bind(p.title,p.details,p.status,p.assignee_id,p.department_id,p.amount,p.starts_at,p.ends_at,JSON.stringify(p.evidence),JSON.stringify(p.extra),now(),id,b.version).run();if(r.meta.changes!==1)fail(409,'Запис змінено іншим користувачем');await audit(db,user,'update',mod,id);if(mod==='public_calendar'&&old.status!=='Погоджено'&&p.status==='Погоджено')queueDiscord(ctx,db,env,'events',{event:p.title,startsAt:p.starts_at,location:p.extra.location});if(mod==='public_news'&&old.status!=='Погоджено'&&p.status==='Погоджено')queueDiscord(ctx,db,env,p.extra.news_category==='capt'?'capt':'news',{event:p.title});return json({ok:true});
       }
       if(!review&&method==='DELETE'){
         if(!permittedRecord(user,mod,old,'manage'))fail(403,'Немає прав');const b=await body(req);if(!Number.isInteger(b.version))fail(428,'Потрібна версія');const r=await db.prepare('UPDATE records SET deleted_at=?,version=version+1 WHERE id=? AND version=?').bind(now(),id,b.version).run();if(r.meta.changes!==1)fail(409,'Запис змінено');await audit(db,user,'delete',mod,id);return json({ok:true});
