@@ -8,7 +8,7 @@ import worker,{payoutPreview,hashPassword,verifyPassword,validDiscordWebhookUrl,
 
 const dir=mkdtempSync(join(tmpdir(),'grizzly-test-'));
 const file=join(dir,'local.sqlite');
-const schema=readFileSync(resolve('migrations/0001_init.sql'),'utf8')+'\n'+readFileSync(resolve('migrations/0002_capt_signups.sql'),'utf8');
+const schema=['0001_init.sql','0002_capt_signups.sql','0003_discord_notifications.sql'].map(file=>readFileSync(resolve('migrations',file),'utf8')).join('\n');
 const child=spawn('python',['-u',resolve('tests/db_adapter.py')]);let pending=[],buf='';child.stdout.on('data',d=>{buf+=d.toString();let idx;while((idx=buf.indexOf('\n'))>=0){const line=buf.slice(0,idx);buf=buf.slice(idx+1);const {resolve:res,reject:rej}=pending.shift();const obj=JSON.parse(line);if(obj.error)rej(new Error(obj.error));else res(obj);}});
 function python(payload){return new Promise((res,rej)=>{pending.push({resolve:res,reject:rej});child.stdin.write(JSON.stringify({file,...payload})+'\n');});}
 await python({init:schema});
@@ -523,6 +523,86 @@ test('Discord settings and delivery enforce leader access and notify once per me
   }finally{
     delete env.DISCORD_WEBHOOK_URL;
     globalThis.fetch=oldFetch;
+  }
+});
+
+test('Discord leader preferences persist and prevent disabled alerts; delivery log records safe status only',async()=>{
+  const notLogged=await req('/api/discord/deliveries');
+  assert.equal(notLogged.status,401);
+  const memberList=await req('/api/discord/deliveries',{token:member});
+  assert.equal(memberList.status,403);
+  const memberEdit=await req('/api/discord/preferences',{method:'PATCH',token:member,data:{
+    enabled:{applications:false,decisions:false,events:false},versions:{applications:1,decisions:1,events:1}
+  }});
+  assert.equal(memberEdit.status,403);
+  const original=(await req('/api/discord/status',{token:leader})).data;
+  assert.equal(original.migrationRequired,false);
+  assert.equal(original.enabled.applications,true);
+  assert.ok(original.versions.applications>=1);
+  const bad=await req('/api/discord/preferences',{method:'PATCH',token:leader,data:{
+    enabled:{applications:'false',decisions:true,events:true},versions:original.versions
+  }});
+  assert.equal(bad.status,400);
+  const update=await req('/api/discord/preferences',{method:'PATCH',token:leader,data:{
+    enabled:{applications:false,decisions:true,events:false},versions:original.versions
+  }});
+  assert.equal(update.status,200,JSON.stringify(update.data));
+  const status=(await req('/api/discord/status',{token:leader})).data;
+  assert.equal(status.categories.applications,false);
+  assert.equal(status.categories.decisions,true);
+  assert.equal(status.categories.events,false);
+  assert.ok(status.versions.applications>original.versions.applications);
+  const stale=await req('/api/discord/preferences',{method:'PATCH',token:leader,data:{
+    enabled:{applications:true,decisions:true,events:true},versions:original.versions
+  }});
+  assert.equal(stale.status,409);
+  const webhook='https://discord.com/api/webhooks/123456789012345678/abcdefghijklmnopqrstuvwxyz_0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  const oldFetch=globalThis.fetch;
+  env.DISCORD_WEBHOOK_URL=webhook;
+  const pending=[],ctx={waitUntil(p){pending.push(p);}},sent=[];
+  globalThis.fetch=async(url,options)=>{sent.push(JSON.parse(options.body));return new Response(null,{status:204});};
+  try{
+    const before=(await req('/api/discord/deliveries',{token:leader})).data.items.length;
+    const hidden=await req('/api/apply',{method:'POST',headers:{'cf-connecting-ip':'198.51.100.108'},
+      data:{nickname:'Discord switch OFF',game_id:'42',motivation:'Test application must not notify while disabled'},ctx});
+    assert.equal(hidden.status,201,JSON.stringify(hidden.data));
+    const event=await req('/api/records/public_calendar',{method:'POST',token:leader,
+      data:{title:'Hidden Discord event',details:'Test no alert when disabled',status:'Погоджено',starts_at:'2026-12-22T19:00',
+        extra:{category:'event',location:'Маєток'}},ctx});
+    assert.equal(event.status,201);
+    await Promise.all(pending.splice(0));
+    assert.equal(sent.length,0);
+    assert.equal((await req('/api/discord/deliveries',{token:leader})).data.items.length,before);
+    const reenable=await req('/api/discord/preferences',{method:'PATCH',token:leader,data:{
+      enabled:{applications:true,decisions:true,events:true},versions:status.versions
+    }});
+    assert.equal(reenable.status,200,JSON.stringify(reenable.data));
+    const active=await req('/api/apply',{method:'POST',headers:{'cf-connecting-ip':'198.51.100.109'},
+      data:{nickname:'Discord switch ON',game_id:'43',motivation:'Test delivery success after enabled'},ctx});
+    assert.equal(active.status,201,JSON.stringify(active.data));
+    await Promise.all(pending.splice(0));
+    assert.equal(sent.length,1);
+    let entries=(await req('/api/discord/deliveries',{token:leader})).data.items;
+    assert.equal(entries[0].kind,'applications');
+    assert.equal(entries[0].status,'sent');
+    assert.equal(entries[0].http_status,null);
+    assert.ok(!JSON.stringify(entries).includes('Discord switch ON'));
+    assert.ok(!JSON.stringify(entries).includes(webhook));
+    globalThis.fetch=async()=>new Response(null,{status:404});
+    const failed=await req('/api/apply',{method:'POST',headers:{'cf-connecting-ip':'198.51.100.110'},
+      data:{nickname:'Discord failure test',game_id:'44',motivation:'Test delivery log on Discord 404'},ctx});
+    assert.equal(failed.status,201);
+    await Promise.all(pending.splice(0));
+    entries=(await req('/api/discord/deliveries',{token:leader})).data.items;
+    assert.equal(entries[0].kind,'applications');
+    assert.equal(entries[0].status,'failed');
+    assert.equal(entries[0].http_status,404);
+    assert.equal(entries[0].error_code,'http_error');
+    assert.ok(!JSON.stringify(entries).includes('Discord failure test'));
+    assert.ok(!JSON.stringify(entries).includes(webhook));
+  }finally{
+    globalThis.fetch=oldFetch;
+    delete env.DISCORD_WEBHOOK_URL;
   }
 });
 
