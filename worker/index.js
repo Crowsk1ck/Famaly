@@ -70,7 +70,7 @@ export function validDiscordWebhookUrl(value){
   if(typeof value!=='string'||!value.trim())return false;
   try{
     const u=new URL(value.trim());
-    return u.protocol==='https:'&&['discord.com','discordapp.com'].includes(u.hostname)&&u.port===''&&
+    return u.protocol==='https:'&&['discord.com','discordapp.com','canary.discord.com'].includes(u.hostname)&&u.port===''&&
       !u.username&&!u.password&&!u.search&&!u.hash&&
       /^\/api\/webhooks\/\d{17,22}\/[A-Za-z0-9._-]{30,}\/?$/.test(u.pathname);
   }catch{return false;}
