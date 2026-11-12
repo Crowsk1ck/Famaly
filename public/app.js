@@ -127,7 +127,7 @@ function renderPublicGallery(){
   return filters+(items.length?'<div class="gr-gallery-grid">'+items.map(publicPhotoCard).join('')+'</div>':'<div class="gr-gallery-filter-empty">У цій категорії ще немає фотографій.</div>');
 }
 function publicGalleryLightbox(id){
-  const list=publicGalleryFiltered();
+  const list=publicGalleryFiltered().filter(r=>galleryPhoto(r));
   const at=list.findIndex(r=>String(r.id||'')===String(id||''));
   if(at<0)return;
   const record=list[at],image=galleryPhoto(record);
@@ -427,7 +427,7 @@ async function navigate(route){const url=new URL(location.href);if(url.searchPar
 async function initial(){try{state.public=await api('/public');}catch(e){state.public={settings:{tagline:'Сила в єдності.'},gallery:[]};toast('Не вдалося отримати публічні дані. Перевірте D1 та міграції.',true);}try{state.user=(await api('/auth/me')).user;}catch{state.user=null;}if(state.user){try{state.notifications=(await api('/notifications')).items;await preload();}catch(e){toast(e.message,true);}state.route=location.hash.replace('#','')||'overview';}if(new URL(location.href).searchParams.get('view')==='public'){renderPublic();return;}await render();}
 const lines=s=>String(s||'').split(/\n/).map(x=>x.trim()).filter(Boolean);
 function formData(f){return Object.fromEntries(new FormData(f).entries());}
-async function afterSaved(msg='Збережено'){closeModal();toast(msg);if(state.user){state.notifications=(await api('/notifications')).items;await preload();}await render();}
+async function afterSaved(msg='Збережено'){closeModal();toast(msg);if(state.user){state.notifications=(await api('/notifications')).items;await preload();}if(state.route==='gallery')state.public=await api('/public');await render();}
 async function handleSubmit(e){const f=e.target;if(!f.id)return;e.preventDefault();const b=formData(f);const submit=f.querySelector('[type=submit]');if(submit)submit.disabled=true;try{switch(f.id){
   case 'apply-form':await api('/apply','POST',b);f.reset();toast('Заявку надіслано. Очікуйте рішення рекрутера.');return;
   case 'login-form':state.user=(await api('/auth/login','POST',b)).user;closeModal();state.notifications=(await api('/notifications')).items;await preload();await navigate('overview');toast('Вхід успішний');return;
