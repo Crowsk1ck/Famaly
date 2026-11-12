@@ -8,7 +8,7 @@ import worker,{payoutPreview,hashPassword,verifyPassword,validDiscordWebhookUrl,
 
 const dir=mkdtempSync(join(tmpdir(),'grizzly-test-'));
 const file=join(dir,'local.sqlite');
-const schema=['0001_init.sql','0002_capt_signups.sql','0003_discord_notifications.sql','0004_discord_capt_news.sql','0005_discord_announcements.sql'].map(file=>readFileSync(resolve('migrations',file),'utf8')).join('\n');
+const schema=['0001_init.sql','0002_capt_signups.sql','0003_discord_notifications.sql','0004_discord_capt_news.sql','0005_discord_announcements.sql','0006_application_statuses.sql'].map(file=>readFileSync(resolve('migrations',file),'utf8')).join('\n');
 const child=spawn('python',['-u',resolve('tests/db_adapter.py')]);let pending=[],buf='';child.stdout.on('data',d=>{buf+=d.toString();let idx;while((idx=buf.indexOf('\n'))>=0){const line=buf.slice(0,idx);buf=buf.slice(idx+1);const {resolve:res,reject:rej}=pending.shift();const obj=JSON.parse(line);if(obj.error)rej(new Error(obj.error));else res(obj);}});
 function python(payload){return new Promise((res,rej)=>{pending.push({resolve:res,reject:rej});child.stdin.write(JSON.stringify({file,...payload})+'\n');});}
 await python({init:schema});
@@ -493,16 +493,18 @@ test('Discord settings and delivery enforce leader access and notify once per me
     const apps=await req('/api/applications',{token:leader});
     const item=apps.data.items.find(a=>a.nickname==='@everyone Grizzly candidate');
     assert.ok(item);
+    assert.equal(item.status,'Очікує');
+    assert.ok(JSON.stringify(applicant).includes('Очікує'));
     const reviewed=await req('/api/applications/'+item.id,{method:'PATCH',token:leader,data:{
-      status:'Погоджено',comment:'PRIVATE REVIEW COMMENT',version:item.version
+      status:'Прийнято',comment:'PRIVATE REVIEW COMMENT',version:item.version
     },ctx});
     assert.equal(reviewed.status,200);
     await Promise.all(pending.splice(0));
     assert.equal(sent.length,3);
-    assert.ok(JSON.stringify(sent[2]).includes('Погоджено'));
+    assert.ok(JSON.stringify(sent[2]).includes('Прийнято'));
     assert.ok(!JSON.stringify(sent[2]).includes('PRIVATE REVIEW COMMENT'));
     const same=await req('/api/applications/'+item.id,{method:'PATCH',token:leader,data:{
-      status:'Погоджено',comment:'Other internal comment',version:item.version+1
+      status:'Прийнято',comment:'Other internal comment',version:item.version+1
     },ctx});
     assert.equal(same.status,200);
     await Promise.all(pending.splice(0));
@@ -777,6 +779,65 @@ test('General announcements use a distinct webhook, not CAPT/news or the legacy 
     delete env.DISCORD_WEBHOOK_NEWS;
     delete env.DISCORD_WEBHOOK_ANNOUNCEMENTS;
   }
+});
+
+test('Recruitment applications have only three statuses, preserve legacy decisions and enforce moderator access',async()=>{
+  const guest=await req('/api/applications');
+  assert.equal(guest.status,401);
+  const denied=await req('/api/applications',{token:member});
+  assert.equal(denied.status,403);
+  const apply=await req('/api/apply',{method:'POST',headers:{'cf-connecting-ip':'198.51.100.170'},data:{
+    nickname:'Three status candidate',game_id:'171',motivation:'Checking recruitment status workflow'
+  }});
+  assert.equal(apply.status,201,JSON.stringify(apply.data));
+  let items=(await req('/api/applications',{token:leader})).data.items;
+  const candidate=items.find(x=>x.nickname==='Three status candidate');
+  assert.ok(candidate);
+  assert.equal(candidate.status,'Очікує');
+  assert.equal((await DB1.prepare('SELECT status FROM applications WHERE id=?').bind(candidate.id).first()).status,'Очікує');
+  const rejected=await req('/api/applications/'+candidate.id,{method:'PATCH',token:leader,data:{
+    status:'Відхилено',version:candidate.version,comment:'Не відповідає вимогам'
+  }});
+  assert.equal(rejected.status,200,JSON.stringify(rejected.data));
+  items=(await req('/api/applications',{token:leader})).data.items;
+  assert.equal(items.find(x=>x.id===candidate.id).status,'Відхилено');
+  const oldStatusRejected=await req('/api/applications/'+candidate.id,{method:'PATCH',token:leader,data:{
+    status:'Погоджено',version:candidate.version+1
+  }});
+  assert.equal(oldStatusRejected.status,400);
+  const anyOtherStatus=await req('/api/applications/'+candidate.id,{method:'PATCH',token:leader,data:{
+    status:'У роботі',version:candidate.version+1
+  }});
+  assert.equal(anyOtherStatus.status,400);
+  const memberEdit=await req('/api/applications/'+candidate.id,{method:'PATCH',token:member,data:{
+    status:'Прийнято',version:candidate.version+1
+  }});
+  assert.equal(memberEdit.status,403);
+  const stale=await req('/api/applications/'+candidate.id,{method:'PATCH',token:leader,data:{
+    status:'Прийнято',version:candidate.version
+  }});
+  assert.equal(stale.status,409);
+  const accepted=await req('/api/applications/'+candidate.id,{method:'PATCH',token:leader,data:{
+    status:'Прийнято',version:candidate.version+1
+  }});
+  assert.equal(accepted.status,200);
+  const exported=(await req('/api/export?module=applications',{token:leader})).data.items.find(x=>x.id===candidate.id);
+  assert.equal(exported.status,'Прийнято');
+  // Approval never creates an account or reveals login credentials.
+  const users=(await req('/api/users',{token:leader})).data.items;
+  assert.ok(!users.some(x=>x.nickname==='Three status candidate'));
+  // Legacy records from an older deployment remain readable before migration 0006 runs.
+  const oldId=crypto.randomUUID(),time=new Date().toISOString();
+  await DB1.prepare('INSERT INTO applications(id,nickname,game_id,status,created_at,updated_at) VALUES(?,?,?,?,?,?)')
+    .bind(oldId,'Previous applicant','172','Погоджено',time,time).run();
+  const legacyList=(await req('/api/applications',{token:leader})).data.items;
+  const legacy=legacyList.find(x=>x.id===oldId);
+  assert.equal(legacy.status,'Прийнято');
+  const legacyUpdated=await req('/api/applications/'+oldId,{method:'PATCH',token:leader,data:{
+    status:'Прийнято',version:legacy.version,comment:'Зміна коментаря'
+  }});
+  assert.equal(legacyUpdated.status,200);
+  assert.equal((await DB1.prepare('SELECT status FROM applications WHERE id=?').bind(oldId).first()).status,'Прийнято');
 });
 
 // Run destructive session-revocation coverage last: other integration tests use this member's active session.
