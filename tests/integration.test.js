@@ -4,7 +4,7 @@ import {spawn} from 'node:child_process';
 import {readFileSync,mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
-import worker,{payoutPreview,hashPassword,verifyPassword} from '../worker/index.js';
+import worker,{payoutPreview,hashPassword,verifyPassword,validDiscordWebhookUrl,buildDiscordNotification} from '../worker/index.js';
 
 const dir=mkdtempSync(join(tmpdir(),'grizzly-test-'));
 const file=join(dir,'local.sqlite');
@@ -17,7 +17,7 @@ class DB {
   async batch(statements){return (await python({statements:statements.map(x=>({sql:x.sql,params:x.params})),transaction:true})).items;}
 }
 const DB1=new DB(), env={DB:DB1,BOOTSTRAP_TOKEN:'f6c5c0d3c923707c3fbf105103e943a12f533e8'};
-async function req(path,{method='GET',data,token,headers={}}={}){const h={'x-grizzly-client':'1',...headers};if(data!==undefined)h['content-type']='application/json';if(token)h.cookie=`grizzly_session=${token}`;const r=await worker.fetch(new Request('https://grizzly.example'+path,{method,headers:h,body:data===undefined?undefined:JSON.stringify(data)}),env);const out=await r.json();return {status:r.status,data:out,cookie:r.headers.get('set-cookie'),header:r.headers};}
+async function req(path,{method='GET',data,token,headers={},ctx}={}){const h={'x-grizzly-client':'1',...headers};if(data!==undefined)h['content-type']='application/json';if(token)h.cookie=`grizzly_session=${token}`;const r=await worker.fetch(new Request('https://grizzly.example'+path,{method,headers:h,body:data===undefined?undefined:JSON.stringify(data)}),env,ctx);const out=await r.json();return {status:r.status,data:out,cookie:r.headers.get('set-cookie'),header:r.headers};}
 let leader,member,memberId,reportId,contractId,contractVersion;
 test('passwords are hashed with PBKDF2 and verified',async()=>{const h=await hashPassword('longsecure_password123');assert.ok(h.startsWith('pbkdf2-sha256$100000$'));assert.ok(await verifyPassword('longsecure_password123',h));assert.ok(!(await verifyPassword('wrong-password',h)));});
 test('public home has no financial/private data',async()=>{const r=await req('/api/public');assert.equal(r.status,200);assert.equal(r.data.settings.family_name,'GRIZZLY');assert.equal(r.data.settings.treasury_percent,undefined);assert.deepEqual(r.data.gallery,[]);});
@@ -403,6 +403,107 @@ test('public calendar is opt-in and validates published events without exposing 
     title:'Missing start',details:'Test',status:'Погоджено',extra:{category:'meeting'}
   }});
   assert.equal(noDate.status,400);
+});
+
+test('Discord webhook validation and formatter forbid spoofed hosts and mentions',()=>{
+  const valid='https://discord.com/api/webhooks/123456789012345678/abcdefghijklmnopqrstuvwxyz_0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  assert.equal(validDiscordWebhookUrl(valid),true);
+  for(const url of [
+    '',null,'http://discord.com/api/webhooks/123456789012345678/abcdefghijklmnopqrstuvwxyz0123456789',
+    'https://discord.com.evil.example/api/webhooks/123456789012345678/abcdefghijklmnopqrstuvwxyz0123456789',
+    'https://discord.com@evil.example/api/webhooks/123456789012345678/abcdefghijklmnopqrstuvwxyz0123456789',
+    'https://discord.com/api/webhooks/123456789012345678/abc',
+    valid+'?wait=true'
+  ])assert.equal(validDiscordWebhookUrl(url),false,String(url));
+  const alert=buildDiscordNotification('applications',{
+    nickname:'@everyone <@123456789012345678>',gameId:'99'
+  });
+  assert.deepEqual(alert.allowed_mentions,{parse:[]});
+  assert.ok(!JSON.stringify(alert).includes('@everyone'));
+  assert.ok(JSON.stringify(alert).includes('99'));
+  assert.equal(alert.embeds.length,1);
+  assert.ok(!JSON.stringify(alert).includes('password_hash'));
+});
+test('Discord settings and delivery enforce leader access and notify once per meaningful event',async()=>{
+  const guest=await req('/api/discord/status');
+  assert.equal(guest.status,401);
+  const memberStatus=await req('/api/discord/status',{token:member});
+  assert.equal(memberStatus.status,403);
+  const disabled=await req('/api/discord/status',{token:leader});
+  assert.equal(disabled.status,200);
+  assert.equal(disabled.data.configured,false);
+  const notConfigured=await req('/api/discord/test',{method:'POST',token:leader,data:{}});
+  assert.equal(notConfigured.status,503);
+  const webhook='https://discord.com/api/webhooks/123456789012345678/abcdefghijklmnopqrstuvwxyz_0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  env.DISCORD_WEBHOOK_URL=webhook;
+  const oldFetch=globalThis.fetch;
+  const sent=[];
+  const pending=[];
+  const ctx={waitUntil(p){pending.push(p);}};
+  globalThis.fetch=async (url,init)=>{
+    assert.equal(url,webhook);
+    const body=JSON.parse(init.body);
+    sent.push(body);
+    return new Response('',{status:204});
+  };
+  try{
+    const status=await req('/api/discord/status',{token:leader});
+    assert.equal(status.status,200);
+    assert.equal(status.data.configured,true);
+    assert.ok(!JSON.stringify(status.data).includes(webhook));
+    const forbidden=await req('/api/discord/test',{method:'POST',token:member,data:{}});
+    assert.equal(forbidden.status,403);
+    const testResult=await req('/api/discord/test',{method:'POST',token:leader,data:{}});
+    assert.equal(testResult.status,200);
+    assert.equal(sent.length,1);
+    const apply=await req('/api/apply',{method:'POST',headers:{'cf-connecting-ip':'198.51.100.98'},data:{
+      nickname:'@everyone Grizzly candidate',game_id:'454',discord:'PRIVATE_CONTACT',
+      motivation:'PRIVATE MOTIVATION TEST TEXT',experience:'Private experience test 12345'
+    },ctx});
+    assert.equal(apply.status,201,JSON.stringify(apply.data));
+    await Promise.all(pending.splice(0));
+    assert.equal(sent.length,2);
+    const applicant=sent[1];
+    assert.ok(JSON.stringify(applicant).includes('454'));
+    assert.ok(JSON.stringify(applicant).includes('Grizzly candidate'));
+    assert.ok(!JSON.stringify(applicant).includes('@everyone'));
+    assert.ok(!JSON.stringify(applicant).includes('PRIVATE_CONTACT'));
+    assert.ok(!JSON.stringify(applicant).includes('PRIVATE MOTIVATION'));
+    assert.deepEqual(applicant.allowed_mentions,{parse:[]});
+    const apps=await req('/api/applications',{token:leader});
+    const item=apps.data.items.find(a=>a.nickname==='@everyone Grizzly candidate');
+    assert.ok(item);
+    const reviewed=await req('/api/applications/'+item.id,{method:'PATCH',token:leader,data:{
+      status:'Погоджено',comment:'PRIVATE REVIEW COMMENT',version:item.version
+    },ctx});
+    assert.equal(reviewed.status,200);
+    await Promise.all(pending.splice(0));
+    assert.equal(sent.length,3);
+    assert.ok(JSON.stringify(sent[2]).includes('Погоджено'));
+    assert.ok(!JSON.stringify(sent[2]).includes('PRIVATE REVIEW COMMENT'));
+    const same=await req('/api/applications/'+item.id,{method:'PATCH',token:leader,data:{
+      status:'Погоджено',comment:'Other internal comment',version:item.version+1
+    },ctx});
+    assert.equal(same.status,200);
+    await Promise.all(pending.splice(0));
+    assert.equal(sent.length,3);
+    const event=await req('/api/records/public_calendar',{method:'POST',token:leader,data:{
+      title:'GRIZZLY open event',details:'Public event details',starts_at:'2026-12-09T18:30',
+      status:'Погоджено',extra:{category:'event',location:'Маєток сім’ї'}
+    },ctx});
+    assert.equal(event.status,201,JSON.stringify(event.data));
+    await Promise.all(pending.splice(0));
+    assert.equal(sent.length,4);
+    assert.ok(JSON.stringify(sent[3]).includes('GRIZZLY open event'));
+    assert.ok(JSON.stringify(sent[3]).includes('18:30'));
+    assert.deepEqual(sent[3].allowed_mentions,{parse:[]});
+    const publicData=(await req('/api/public')).data;
+    assert.ok(!JSON.stringify(publicData).includes(webhook));
+    assert.ok(!JSON.stringify((await req('/api/settings',{token:leader})).data).includes(webhook));
+  }finally{
+    delete env.DISCORD_WEBHOOK_URL;
+    globalThis.fetch=oldFetch;
+  }
 });
 
 // Run destructive session-revocation coverage last: other integration tests use this member's active session.
