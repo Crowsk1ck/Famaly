@@ -103,10 +103,17 @@ export function buildDiscordNotification(kind,info={}){
 async function sendDiscordWebhook(env,kind,info){
   const webhook=env.DISCORD_WEBHOOK_URL;
   if(!validDiscordWebhookUrl(webhook))throw new Error('DISCORD_WEBHOOK_URL відсутній або має невірний формат');
-  const response=await fetch(webhook,{method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify(buildDiscordNotification(kind,info))
-  });
+  let response;
+  try{
+    response=await fetch(webhook,{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(buildDiscordNotification(kind,info))
+    });
+  }catch{
+    // Transport errors can contain the full URL (including webhook token).
+    // Always replace them with a safe, generic message.
+    throw new Error('Немає з’єднання з Discord');
+  }
   if(!response.ok)throw new Error('Discord відповів кодом '+response.status);
   return true;
 }
