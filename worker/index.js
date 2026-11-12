@@ -91,6 +91,17 @@ function recordPayload(b,u,mod,old){const cfg=MODULES[mod];let ex=b.extra??(old?
 }
 async function settings(db,isPublic=false){const rows=await allRows(db,'SELECT key,value FROM settings');return Object.fromEntries(rows.filter(r=>!isPublic||PUBLIC_SETTINGS.includes(r.key)).map(r=>[r.key,r.value]));}
 async function safeContractUsers(db,ids){if(!ids.length)fail(400,'Додайте щонайменше одного учасника');const rows=await allRows(db,`SELECT id,status FROM users WHERE id IN (${ids.map(()=>'?').join(',')})`,...ids);if(rows.length!==ids.length||rows.some(r=>r.status!=='active'))fail(400,'Виберіть існуючих активних учасників');}
+function validateGalleryPayload(p){
+  if(!p.evidence.length)fail(400,'Додайте посилання на фотографію ImgBB');
+  const allowed=['capt','cars','meetings','events','other'];
+  if(p.extra.gallery_category!==undefined&&!allowed.includes(p.extra.gallery_category))
+    fail(400,'Некоректна категорія галереї');
+  if(p.extra.featured!==undefined&&typeof p.extra.featured!=='boolean')
+    fail(400,'Некоректна ознака рекомендованого фото');
+  if(p.status==='Погоджено'&&!p.evidence.some(link=>{
+    try{const u=new URL(link);return u.hostname==='i.ibb.co'&&/\.(jpe?g|png|webp|gif)$/i.test(u.pathname);}catch{return false;}
+  }))fail(400,'Для публікації потрібне пряме HTTPS-посилання ImgBB на зображення');
+}
 function captMatchSize(extra) {
   const value=extra?.lineup_limit??8;
   const size=Number(value);
@@ -125,7 +136,7 @@ async function handleApi(req,env){const db=env.DB;if(!db)fail(500,'Не нала
   if(path==='/api/health'&&method==='GET')return json({ok:true,service:'grizzly',storage:'D1'});
   if(path==='/api/public'&&method==='GET'){
     const [s,gallery]=await Promise.all([settings(db,true),allRows(db,"SELECT id,title,details,evidence,extra,created_at FROM records WHERE module='gallery' AND deleted_at IS NULL AND status='Погоджено' ORDER BY created_at DESC LIMIT 100")]);
-    return json({settings:s,gallery:gallery.map(mapRecord).sort((a,b)=>Number(!!b.extra?.featured)-Number(!!a.extra?.featured)).slice(0,48)});
+    return json({settings:s,gallery:gallery.map(mapRecord).sort((a,b)=>Number(!!b.extra?.featured)-Number(!!a.extra?.featured)).slice(0,48).map(r=>({id:r.id,title:r.title,details:r.details,evidence:r.evidence,extra:{gallery_category:r.extra?.gallery_category||'other',featured:r.extra?.featured===true}}))});
   }
   if(path==='/api/apply'&&method==='POST'){
     const key='apply:'+await sha256(publicOrigin(req));await rateCheck(db,key,3,60);const b=await body(req);const nickname=str(b.nickname,80),gameId=str(b.game_id,40),motivation=str(b.motivation,1400);if(!nickname||!gameId||motivation.length<10)fail(400,'Вкажіть нік, ігровий ID та мотивацію (від 10 символів)');
@@ -287,7 +298,7 @@ async function handleApi(req,env){const db=env.DB;if(!db)fail(500,'Не нала
       const rows=await allRows(db,'SELECT * FROM records WHERE module=? AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 1000',mod);return json({items:rows.filter(r=>permittedRecord(user,mod,r)).map(mapRecord)});
     }
     if(!id&&method==='POST'){
-      const b=await body(req);const allowed=can(user,cfg.manage) || cfg.memberCreate;if(!allowed)fail(403,'Недостатньо прав для створення');const p=recordPayload(b,user,mod);if(mod==='capt_matches')captMatchPayload(p);if(!p.title)fail(400,'Додайте назву');if(mod==='promotions'&&(!Number.isInteger(Number(p.extra.requested_rank_id))||Number(p.extra.requested_rank_id)<1||Number(p.extra.requested_rank_id)>15))fail(400,'Виберіть ранг для підвищення');if(user.role==='head'&&!manageInDepartment(user,p.department_id))fail(403,'Доступ лише до свого напрямку');if(cfg.review)p.status='На перевірці';if(!can(user,cfg.manage)){p.status=cfg.review?'На перевірці':'Заплановано';p.assignee_id=user.id;p.department_id=user.department_id;}
+      const b=await body(req);const allowed=can(user,cfg.manage) || cfg.memberCreate;if(!allowed)fail(403,'Недостатньо прав для створення');const p=recordPayload(b,user,mod);if(mod==='capt_matches')captMatchPayload(p);if(mod==='gallery')validateGalleryPayload(p);if(!p.title)fail(400,'Додайте назву');if(mod==='promotions'&&(!Number.isInteger(Number(p.extra.requested_rank_id))||Number(p.extra.requested_rank_id)<1||Number(p.extra.requested_rank_id)>15))fail(400,'Виберіть ранг для підвищення');if(user.role==='head'&&!manageInDepartment(user,p.department_id))fail(403,'Доступ лише до свого напрямку');if(cfg.review)p.status='На перевірці';if(!can(user,cfg.manage)){p.status=cfg.review?'На перевірці':'Заплановано';p.assignee_id=user.id;p.department_id=user.department_id;}
       if(mod==='capt_attendance'&&!can(user,'capt:manage'))p.status='На перевірці';
       const newId=uuid(),t=now();await db.prepare('INSERT INTO records(id,module,title,details,status,owner_id,assignee_id,department_id,amount,starts_at,ends_at,evidence,extra,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(newId,mod,p.title,p.details,p.status,p.owner_id,p.assignee_id,p.department_id,p.amount,p.starts_at,p.ends_at,JSON.stringify(p.evidence),JSON.stringify(p.extra),t,t).run();await audit(db,user,'create',mod,newId);
       if(p.assignee_id&&p.assignee_id!==user.id)await notify(db,p.assignee_id,'Нове завдання / запис',p.title);return json({item:mapRecord(await db.prepare('SELECT * FROM records WHERE id=?').bind(newId).first())},201);
@@ -304,7 +315,7 @@ async function handleApi(req,env){const db=env.DB;if(!db)fail(500,'Не нала
       if(!review&&method==='PATCH'){
         const b=await body(req);if(!Number.isInteger(b.version))fail(428,'Потрібна версія');const manager=permittedRecord(user,mod,old,'manage');const self=old.owner_id===user.id||old.assignee_id===user.id;
         if(!manager&&!(self&&(cfg.memberUpdate||cfg.memberCreate)))fail(403,'Недостатньо прав');if(!manager&&['Погоджено','Відхилено','Завершено'].includes(b.status))fail(403,'Погодження тільки керівником');if(cfg.review&&manager&&b.status&&b.status!==old.status&&['Погоджено','Відхилено','На доопрацювання','Завершено'].includes(b.status))fail(400,'Для рішення використовуйте спеціальне погодження');
-        if(mod==='promotions'&&old.status==='Погоджено')fail(409,'Погоджене підвищення не можна змінювати');const p=recordPayload(b,user,mod,old);if(mod==='capt_matches')captMatchPayload(p,old);if(!manager){p.assignee_id=old.assignee_id;p.department_id=old.department_id;p.amount=old.amount;p.starts_at=old.starts_at;p.ends_at=old.ends_at;p.extra=parseJson(old.extra,{});p.status=cfg.review?'На перевірці':p.status;}
+        if(mod==='promotions'&&old.status==='Погоджено')fail(409,'Погоджене підвищення не можна змінювати');const p=recordPayload(b,user,mod,old);if(mod==='capt_matches')captMatchPayload(p,old);if(mod==='gallery')validateGalleryPayload(p);if(!manager){p.assignee_id=old.assignee_id;p.department_id=old.department_id;p.amount=old.amount;p.starts_at=old.starts_at;p.ends_at=old.ends_at;p.extra=parseJson(old.extra,{});p.status=cfg.review?'На перевірці':p.status;}
         if(user.role==='head'&&!manageInDepartment(user,p.department_id))fail(403,'Напрямок недоступний');const r=await db.prepare('UPDATE records SET title=?,details=?,status=?,assignee_id=?,department_id=?,amount=?,starts_at=?,ends_at=?,evidence=?,extra=?,version=version+1,updated_at=? WHERE id=? AND version=?').bind(p.title,p.details,p.status,p.assignee_id,p.department_id,p.amount,p.starts_at,p.ends_at,JSON.stringify(p.evidence),JSON.stringify(p.extra),now(),id,b.version).run();if(r.meta.changes!==1)fail(409,'Запис змінено іншим користувачем');await audit(db,user,'update',mod,id);return json({ok:true});
       }
       if(!review&&method==='DELETE'){
