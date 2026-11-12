@@ -83,8 +83,37 @@ function discordSafe(value,limit=180){
   return str(value,limit).replace(/[\u0000-\u001f\u007f]/g,' ').replace(/@/g,'@\u200b').replace(/<(?=[@#])/g,'&lt;');
 }
 const DISCORD_NOTIFY_KINDS=['applications','decisions','events'];
-function discordEnabled(env,kind){
+function discordEnvAllowed(env,kind){
   return env['DISCORD_NOTIFY_'+String(kind).toUpperCase()]!=='false';
+}
+async function discordPreferences(db,env){
+  const keys=DISCORD_NOTIFY_KINDS.map(k=>'discord_notify_'+k);
+  const rows=await allRows(db,'SELECT key,value,version FROM settings WHERE key IN (?,?,?)',...keys);
+  const map=Object.fromEntries(rows.map(r=>[r.key,r]));
+  const enabled=Object.fromEntries(DISCORD_NOTIFY_KINDS.map(k=>[k,map['discord_notify_'+k]?.value!=='false']));
+  return {enabled,
+    versions:Object.fromEntries(DISCORD_NOTIFY_KINDS.map(k=>[k,Number(map['discord_notify_'+k]?.version||0)])),
+    categories:Object.fromEntries(DISCORD_NOTIFY_KINDS.map(k=>[k,enabled[k]&&discordEnvAllowed(env,k)])),
+    lockedByEnvironment:Object.fromEntries(DISCORD_NOTIFY_KINDS.map(k=>[k,!discordEnvAllowed(env,k)])),
+    migrationRequired:rows.length!==keys.length};
+}
+async function discordEnabled(db,env,kind){
+  if(!DISCORD_NOTIFY_KINDS.includes(kind)||!discordEnvAllowed(env,kind))return false;
+  const row=await db.prepare('SELECT value FROM settings WHERE key=?').bind('discord_notify_'+kind).first();
+  return !row||row.value==='true';
+}
+async function recordDiscordDelivery(db,kind,error=null){
+  const match=error?String(error.message).match(/\(HTTP (\d{3})\)$/):null;
+  const httpStatus=match?Number(match[1]):null;
+  const code=error?(httpStatus?'http_error':String(error.message).includes('з’єднання')?'network_error':'configuration_error'):'';
+  try{
+    await db.prepare('INSERT INTO discord_delivery_log(id,kind,status,http_status,error_code,created_at) VALUES(?,?,?,?,?,?)')
+      .bind(uuid(),kind,error?'failed':'sent',httpStatus,code,now()).run();
+    await db.prepare('DELETE FROM discord_delivery_log WHERE id IN (SELECT id FROM discord_delivery_log ORDER BY created_at DESC LIMIT -1 OFFSET 300)').run();
+  }catch{
+    // Delivery remains functional until migration 0003 is applied; never log credentials.
+    console.error('GRIZZLY Discord log unavailable; apply D1 migration 0003');
+  }
 }
 export function buildDiscordNotification(kind,info={}){
   const label={applications:'📝 Нова заявка GRIZZLY',decisions:'📋 Рішення за заявкою',events:'📅 Новий захід GRIZZLY',test:'🐻 Перевірка Discord GRIZZLY'}[kind];
@@ -124,12 +153,15 @@ async function sendDiscordWebhook(env,kind,info){
   }
   return true;
 }
-function queueDiscord(ctx,env,kind,info){
-  if(!env.DISCORD_WEBHOOK_URL||!discordEnabled(env,kind))return;
-  const task=sendDiscordWebhook(env,kind,info).catch(err=>{
-    // Never log the webhook URL, token, applicant data or response body.
-    console.error('GRIZZLY Discord delivery:',String(err.message).slice(0,140));
-  });
+function queueDiscord(ctx,db,env,kind,info){
+  if(!env.DISCORD_WEBHOOK_URL||!DISCORD_NOTIFY_KINDS.includes(kind))return;
+  const task=(async()=>{
+    if(!await discordEnabled(db,env,kind))return;
+    let failure=null;
+    try{await sendDiscordWebhook(env,kind,info);}catch(e){failure=e;}
+    await recordDiscordDelivery(db,kind,failure);
+    if(failure)console.error('GRIZZLY Discord delivery failed:',String(failure.message).slice(0,90));
+  })().catch(()=>console.error('GRIZZLY Discord dispatch failed'));
   if(ctx&&typeof ctx.waitUntil==='function')ctx.waitUntil(task);
   return task;
 }
@@ -286,7 +318,7 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
   }
   if(path==='/api/apply'&&method==='POST'){
     const key='apply:'+await sha256(publicOrigin(req));await rateCheck(db,key,3,60);const b=await body(req);const nickname=str(b.nickname,80),gameId=str(b.game_id,40),motivation=str(b.motivation,1400);if(!nickname||!gameId||motivation.length<10)fail(400,'Вкажіть нік, ігровий ID та мотивацію (від 10 символів)');
-    const id=uuid(),t=now();await db.prepare('INSERT INTO applications(id,nickname,game_id,discord,experience,motivation,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)').bind(id,nickname,gameId,str(b.discord,120),str(b.experience,700),motivation,t,t).run();await rateFail(db,key,1000,60);queueDiscord(ctx,env,'applications',{nickname,gameId});return json({ok:true,message:'Заявку надіслано. Акаунт не створюється автоматично.'},201);
+    const id=uuid(),t=now();await db.prepare('INSERT INTO applications(id,nickname,game_id,discord,experience,motivation,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)').bind(id,nickname,gameId,str(b.discord,120),str(b.experience,700),motivation,t,t).run();await rateFail(db,key,1000,60);queueDiscord(ctx,db,env,'applications',{nickname,gameId});return json({ok:true,message:'Заявку надіслано. Акаунт не створюється автоматично.'},201);
   }
   if(path==='/api/setup/bootstrap'&&method==='POST'){
     const configured=env.BOOTSTRAP_TOKEN||'';if(configured.length<32)fail(503,'Для створення лідера налаштуйте секрет BOOTSTRAP_TOKEN (мінімум 32 символи)');
@@ -367,8 +399,35 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
   if(path==='/api/discord/status'&&method==='GET'){
     if(user.role!=='leader')fail(403,'Лише лідер переглядає інтеграцію Discord');
     return json({...discordWebhookDiagnostic(env.DISCORD_WEBHOOK_URL),
-      worker:'famaly',
-      categories:Object.fromEntries(DISCORD_NOTIFY_KINDS.map(k=>[k,discordEnabled(env,k)]))});
+      worker:'famaly',...await discordPreferences(db,env)});
+  }
+  if(path==='/api/discord/preferences'&&method==='PATCH'){
+    if(user.role!=='leader')fail(403,'Лише лідер змінює Discord-сповіщення');
+    const b=await body(req),values=b.enabled,versions=b.versions;
+    if(!values||typeof values!=='object'||Array.isArray(values)||
+       DISCORD_NOTIFY_KINDS.some(k=>typeof values[k]!=='boolean'))
+      fail(400,'Потрібно обрати стан усіх трьох категорій');
+    if(!versions||DISCORD_NOTIFY_KINDS.some(k=>!Number.isInteger(versions[k])||versions[k]<1))
+      fail(428,'Оновіть налаштування перед збереженням');
+    const current=await discordPreferences(db,env);
+    if(current.migrationRequired)fail(503,'Застосуйте міграцію D1 0003_discord_notifications.sql');
+    const keys=DISCORD_NOTIFY_KINDS.map(k=>'discord_notify_'+k);
+    const sql='UPDATE settings SET value=CASE key '+keys.map(()=>'WHEN ? THEN ?').join(' ')+
+      ' ELSE value END,version=version+1,updated_at=? WHERE key IN (?,?,?) AND (SELECT COUNT(*) FROM settings WHERE '+
+      keys.map(()=>'key=? AND version=?').join(' OR ')+')=3';
+    const args=[...DISCORD_NOTIFY_KINDS.flatMap((k,i)=>[keys[i],values[k]?'true':'false']),now(),...keys,
+      ...DISCORD_NOTIFY_KINDS.flatMap((k,i)=>[keys[i],versions[k]])];
+    const outcome=await db.prepare(sql).bind(...args).run();
+    if(outcome.meta.changes!==3)fail(409,'Налаштування змінено в іншій сесії. Оновіть сторінку');
+    await audit(db,user,'discord_preferences','integrations','discord');
+    return json({ok:true,...await discordPreferences(db,env)});
+  }
+  if(path==='/api/discord/deliveries'&&method==='GET'){
+    if(user.role!=='leader')fail(403,'Лише лідер переглядає журнал Discord');
+    if((await discordPreferences(db,env)).migrationRequired)
+      fail(503,'Для журналу доставки застосуйте міграцію D1 0003_discord_notifications.sql');
+    return json({items:await allRows(db,
+      'SELECT id,kind,status,http_status,error_code,created_at FROM discord_delivery_log ORDER BY created_at DESC LIMIT 100')});
   }
   if(path==='/api/discord/test'&&method==='POST'){
     if(user.role!=='leader')fail(403,'Лише лідер може перевіряти Discord');
@@ -377,8 +436,11 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
     const rateKey='discord:test:'+user.id;
     await rateCheck(db,rateKey,3,10);
     await rateFail(db,rateKey,3,10);
-    try{await sendDiscordWebhook(env,'test',{});}catch(e){
-      // Return just the HTTP status, never the webhook URL or Discord response body.
+    try{
+      await sendDiscordWebhook(env,'test',{});
+      await recordDiscordDelivery(db,'test');
+    }catch(e){
+      await recordDiscordDelivery(db,'test',e);
       fail(502,'Не вдалося надіслати тест до Discord. '+String(e.message).slice(0,110));
     }
     await audit(db,user,'discord_test','integrations','discord');
@@ -395,7 +457,7 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
   }
   if(path==='/api/applications'&&method==='GET'){requirePerm(user,'recruitment:manage');return json({items:await allRows(db,'SELECT * FROM applications ORDER BY created_at DESC LIMIT 500')});}
   m=path.match(/^\/api\/applications\/([\w-]+)$/);if(m&&method==='PATCH'){
-    requirePerm(user,'recruitment:manage');const b=await body(req);if(!Number.isInteger(b.version))fail(428,'Потрібна версія');const old=await db.prepare('SELECT nickname,status FROM applications WHERE id=?').bind(m[1]).first();if(!old)fail(404,'Заявку не знайдено');const status=validStatus(b.status);const r=await db.prepare('UPDATE applications SET status=?,comment=?,version=version+1,updated_at=? WHERE id=? AND version=?').bind(status,str(b.comment,1200),now(),m[1],b.version).run();if(r.meta.changes!==1)fail(409,'Заявку змінено іншим користувачем');await audit(db,user,'review','applications',m[1],status);if(old.status!==status)queueDiscord(ctx,env,'decisions',{nickname:old.nickname,status});return json({ok:true});
+    requirePerm(user,'recruitment:manage');const b=await body(req);if(!Number.isInteger(b.version))fail(428,'Потрібна версія');const old=await db.prepare('SELECT nickname,status FROM applications WHERE id=?').bind(m[1]).first();if(!old)fail(404,'Заявку не знайдено');const status=validStatus(b.status);const r=await db.prepare('UPDATE applications SET status=?,comment=?,version=version+1,updated_at=? WHERE id=? AND version=?').bind(status,str(b.comment,1200),now(),m[1],b.version).run();if(r.meta.changes!==1)fail(409,'Заявку змінено іншим користувачем');await audit(db,user,'review','applications',m[1],status);if(old.status!==status)queueDiscord(ctx,db,env,'decisions',{nickname:old.nickname,status});return json({ok:true});
   }
   // CAPT dashboard: return only records the current role can see. Payout details
   // remain limited to finance managers or the payout recipient.
@@ -466,7 +528,7 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
     if(!id&&method==='POST'){
       const b=await body(req);const allowed=can(user,cfg.manage) || cfg.memberCreate;if(!allowed)fail(403,'Недостатньо прав для створення');const p=recordPayload(b,user,mod);if(mod==='capt_matches')captMatchPayload(p);if(mod==='gallery')validateGalleryPayload(p);if(mod==='public_news')validatePublicNewsPayload(p);if(mod==='public_team')validatePublicTeamPayload(p);if(mod==='public_achievements')validatePublicAchievementPayload(p);if(mod==='public_calendar')validatePublicCalendarPayload(p);if(!p.title)fail(400,'Додайте назву');if(mod==='promotions'&&(!Number.isInteger(Number(p.extra.requested_rank_id))||Number(p.extra.requested_rank_id)<1||Number(p.extra.requested_rank_id)>15))fail(400,'Виберіть ранг для підвищення');if(user.role==='head'&&!manageInDepartment(user,p.department_id))fail(403,'Доступ лише до свого напрямку');if(cfg.review)p.status='На перевірці';if(!can(user,cfg.manage)){p.status=cfg.review?'На перевірці':'Заплановано';p.assignee_id=user.id;p.department_id=user.department_id;}
       if(mod==='capt_attendance'&&!can(user,'capt:manage'))p.status='На перевірці';
-      const newId=uuid(),t=now();await db.prepare('INSERT INTO records(id,module,title,details,status,owner_id,assignee_id,department_id,amount,starts_at,ends_at,evidence,extra,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(newId,mod,p.title,p.details,p.status,p.owner_id,p.assignee_id,p.department_id,p.amount,p.starts_at,p.ends_at,JSON.stringify(p.evidence),JSON.stringify(p.extra),t,t).run();await audit(db,user,'create',mod,newId);if(mod==='public_calendar'&&p.status==='Погоджено')queueDiscord(ctx,env,'events',{event:p.title,startsAt:p.starts_at,location:p.extra.location});
+      const newId=uuid(),t=now();await db.prepare('INSERT INTO records(id,module,title,details,status,owner_id,assignee_id,department_id,amount,starts_at,ends_at,evidence,extra,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(newId,mod,p.title,p.details,p.status,p.owner_id,p.assignee_id,p.department_id,p.amount,p.starts_at,p.ends_at,JSON.stringify(p.evidence),JSON.stringify(p.extra),t,t).run();await audit(db,user,'create',mod,newId);if(mod==='public_calendar'&&p.status==='Погоджено')queueDiscord(ctx,db,env,'events',{event:p.title,startsAt:p.starts_at,location:p.extra.location});
       if(p.assignee_id&&p.assignee_id!==user.id)await notify(db,p.assignee_id,'Нове завдання / запис',p.title);return json({item:mapRecord(await db.prepare('SELECT * FROM records WHERE id=?').bind(newId).first())},201);
     }
     if(id){const old=await db.prepare('SELECT * FROM records WHERE id=? AND module=? AND deleted_at IS NULL').bind(id,mod).first();if(!old||!permittedRecord(user,mod,old))fail(404,'Запис не знайдено');
@@ -482,7 +544,7 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
         const b=await body(req);if(!Number.isInteger(b.version))fail(428,'Потрібна версія');const manager=permittedRecord(user,mod,old,'manage');const self=old.owner_id===user.id||old.assignee_id===user.id;
         if(!manager&&!(self&&(cfg.memberUpdate||cfg.memberCreate)))fail(403,'Недостатньо прав');if(!manager&&['Погоджено','Відхилено','Завершено'].includes(b.status))fail(403,'Погодження тільки керівником');if(cfg.review&&manager&&b.status&&b.status!==old.status&&['Погоджено','Відхилено','На доопрацювання','Завершено'].includes(b.status))fail(400,'Для рішення використовуйте спеціальне погодження');
         if(mod==='promotions'&&old.status==='Погоджено')fail(409,'Погоджене підвищення не можна змінювати');const p=recordPayload(b,user,mod,old);if(mod==='capt_matches')captMatchPayload(p,old);if(mod==='gallery')validateGalleryPayload(p);if(mod==='public_news')validatePublicNewsPayload(p);if(mod==='public_team')validatePublicTeamPayload(p);if(mod==='public_achievements')validatePublicAchievementPayload(p);if(mod==='public_calendar')validatePublicCalendarPayload(p);if(!manager){p.assignee_id=old.assignee_id;p.department_id=old.department_id;p.amount=old.amount;p.starts_at=old.starts_at;p.ends_at=old.ends_at;p.extra=parseJson(old.extra,{});p.status=cfg.review?'На перевірці':p.status;}
-        if(user.role==='head'&&!manageInDepartment(user,p.department_id))fail(403,'Напрямок недоступний');const r=await db.prepare('UPDATE records SET title=?,details=?,status=?,assignee_id=?,department_id=?,amount=?,starts_at=?,ends_at=?,evidence=?,extra=?,version=version+1,updated_at=? WHERE id=? AND version=?').bind(p.title,p.details,p.status,p.assignee_id,p.department_id,p.amount,p.starts_at,p.ends_at,JSON.stringify(p.evidence),JSON.stringify(p.extra),now(),id,b.version).run();if(r.meta.changes!==1)fail(409,'Запис змінено іншим користувачем');await audit(db,user,'update',mod,id);if(mod==='public_calendar'&&old.status!=='Погоджено'&&p.status==='Погоджено')queueDiscord(ctx,env,'events',{event:p.title,startsAt:p.starts_at,location:p.extra.location});return json({ok:true});
+        if(user.role==='head'&&!manageInDepartment(user,p.department_id))fail(403,'Напрямок недоступний');const r=await db.prepare('UPDATE records SET title=?,details=?,status=?,assignee_id=?,department_id=?,amount=?,starts_at=?,ends_at=?,evidence=?,extra=?,version=version+1,updated_at=? WHERE id=? AND version=?').bind(p.title,p.details,p.status,p.assignee_id,p.department_id,p.amount,p.starts_at,p.ends_at,JSON.stringify(p.evidence),JSON.stringify(p.extra),now(),id,b.version).run();if(r.meta.changes!==1)fail(409,'Запис змінено іншим користувачем');await audit(db,user,'update',mod,id);if(mod==='public_calendar'&&old.status!=='Погоджено'&&p.status==='Погоджено')queueDiscord(ctx,db,env,'events',{event:p.title,startsAt:p.starts_at,location:p.extra.location});return json({ok:true});
       }
       if(!review&&method==='DELETE'){
         if(!permittedRecord(user,mod,old,'manage'))fail(403,'Немає прав');const b=await body(req);if(!Number.isInteger(b.version))fail(428,'Потрібна версія');const r=await db.prepare('UPDATE records SET deleted_at=?,version=version+1 WHERE id=? AND version=?').bind(now(),id,b.version).run();if(r.meta.changes!==1)fail(409,'Запис змінено');await audit(db,user,'delete',mod,id);return json({ok:true});
