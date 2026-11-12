@@ -272,3 +272,72 @@ test('public leadership profiles are opt-in, permissioned and contain no account
   const publicCard=(await req('/api/public')).data.team.find(x=>x.id===withoutPhoto.data.item.id);
   assert.equal(publicCard.photo,'');
 });
+
+
+test('public achievements respect publication status, dates, permissions and public field whitelist',async()=>{
+  const noAuth=await req('/api/records/public_achievements');
+  assert.equal(noAuth.status,401);
+  const memberWrite=await req('/api/records/public_achievements',{method:'POST',token:member,data:{
+    title:'Fake CAPT win',details:'Cannot publish',status:'Погоджено',
+    extra:{category:'capt',achieved_on:'2026-11-12'}
+  }});
+  assert.equal(memberWrite.status,403);
+  const before=(await req('/api/public')).data;
+  assert.deepEqual(before.achievements,[]);
+  const draft=await req('/api/records/public_achievements',{method:'POST',token:leader,data:{
+    title:'GRIZZLY CAPT перемога',details:'Погоджений результат CAPT складу',status:'Заплановано',
+    evidence:['https://i.ibb.co/test/victory.webp'],
+    extra:{category:'capt',achieved_on:'2026-11-12',featured:true,private_note:'NEVER_PUBLIC'}
+  }});
+  assert.equal(draft.status,201,JSON.stringify(draft.data));
+  const id=draft.data.item.id;
+  assert.equal((await req('/api/public')).data.achievements.some(x=>x.id===id),false);
+  const published=await req('/api/records/public_achievements/'+id,{method:'PATCH',token:leader,data:{
+    version:1,status:'Погоджено'
+  }});
+  assert.equal(published.status,200,JSON.stringify(published.data));
+  const publicData=(await req('/api/public')).data;
+  const ach=publicData.achievements.find(x=>x.id===id);
+  assert.ok(ach);
+  assert.equal(ach.title,'GRIZZLY CAPT перемога');
+  assert.equal(ach.description,'Погоджений результат CAPT складу');
+  assert.equal(ach.category,'capt');
+  assert.equal(ach.achieved_on,'2026-11-12');
+  assert.equal(ach.photo,'https://i.ibb.co/test/victory.webp');
+  assert.equal(ach.featured,true);
+  assert.equal(ach.private_note,undefined);
+  assert.equal(ach.extra,undefined);
+  assert.equal(ach.owner_id,undefined);
+  assert.equal(ach.assignee_id,undefined);
+  assert.equal(JSON.stringify(publicData).includes('NEVER_PUBLIC'),false);
+  const hidden=await req('/api/records/public_achievements/'+id,{method:'PATCH',token:leader,data:{
+    version:2,status:'Заплановано'
+  }});
+  assert.equal(hidden.status,200);
+  assert.equal((await req('/api/public')).data.achievements.some(x=>x.id===id),false);
+  const badDate=await req('/api/records/public_achievements',{method:'POST',token:leader,data:{
+    title:'Wrong date',details:'Invalid calendar day',
+    extra:{category:'event',achieved_on:'2026-02-30'}
+  }});
+  assert.equal(badDate.status,400);
+  const badCategory=await req('/api/records/public_achievements',{method:'POST',token:leader,data:{
+    title:'Wrong category',details:'Test',
+    extra:{category:'private',achieved_on:'2026-11-12'}
+  }});
+  assert.equal(badCategory.status,400);
+  const noText=await req('/api/records/public_achievements',{method:'POST',token:leader,data:{
+    title:'No details',status:'Погоджено',
+    extra:{category:'award',achieved_on:'2026-11-12'}
+  }});
+  assert.equal(noText.status,400);
+  const missingDate=await req('/api/records/public_achievements',{method:'POST',token:leader,data:{
+    title:'Missing date',details:'Must not publish',status:'Погоджено',
+    extra:{category:'capt'}
+  }});
+  assert.equal(missingDate.status,400);
+  const fakeImage=await req('/api/records/public_achievements',{method:'POST',token:leader,data:{
+    title:'Bad image',details:'Test',evidence:['https://ibb.co/something'],
+    extra:{category:'capt',achieved_on:'2026-11-12'}
+  }});
+  assert.equal(fakeImage.status,400);
+});
