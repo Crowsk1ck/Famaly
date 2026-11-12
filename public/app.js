@@ -145,7 +145,7 @@ async function captPage(){
   const schedule=[...d.matches.map(r=>({...r,kind:'Бій',module:'capt_matches'})),...d.trainings.map(r=>({...r,kind:'Тренування',module:'capt_training'}))];
   const upcoming=schedule.filter(r=>r.starts_at&&new Date(r.starts_at).getTime()>=Date.now()&&!['Відхилено','Завершено'].includes(r.status))
     .sort((a,b)=>a.starts_at.localeCompare(b.starts_at)).slice(0,6);
-  const results=d.matches.filter(r=>r.extra?.result?.trim()).slice(0,8);
+  const results=d.matches.filter(r=>String(r.extra?.result||'').trim()).slice(0,8);
   const pending=d.attendance.filter(r=>r.status==='Погоджено'&&r.paid===false);
   const notices=d.rates?'<div class="notice mb">Ставки CAPT: AFK — <strong>'+fmt(d.rates.afk)+'</strong>, бій — <strong>'+fmt(d.rates.battle)+'</strong> (ігрова валюта). Лідер змінює ставки у «Налаштуваннях».</div>':'';
   const upcomingRows=upcoming.map(r=>'<div class="capt-line"><div><strong>'+esc(r.title)+'</strong><div class="small muted">'+esc(r.kind)+' · '+esc(r.starts_at.replace('T',' '))+(r.extra?.opponent?' · '+esc(r.extra.opponent):'')+'</div></div><button class="btn tiny secondary" data-action="view-record" data-id="'+esc(r.id)+'" data-module="'+r.module+'">Відкрити</button></div>').join('')||empty('Поки немає запланованих боїв або тренувань');
