@@ -42,7 +42,7 @@
 
 
 /* GRIZZLY PUBLIC 2026 — cinematic home */
-.gr-public{--gr-bg:#0B0D11;--gr-surface:#13161D;--gr-stroke:#2B303B;--gr-paper:#F4F1ED;--gr-muted:#AAAEB9;--gr-accent:#E84255;--gr-accent-soft:#FF7E88;--gr-max:1240px;background:var(--gr-bg);color:var(--gr-paper);overflow:hidden;font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+.gr-public{--gr-bg:#0B0D11;--gr-surface:#13161D;--gr-stroke:#2B303B;--gr-paper:#F4F1ED;--gr-muted:#AAAEB9;--gr-accent:#E84255;--gr-accent-soft:#FF7E88;--gr-max:1240px;background:var(--gr-bg);color:var(--gr-paper);overflow:clip;font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
 .gr-public *{box-sizing:border-box}
 .gr-container{width:min(var(--gr-max),calc(100% - 72px));margin-inline:auto}
 .gr-topline{background:#1B1219;border-bottom:1px solid #5A333C;font-size:10px;line-height:1.1;font-weight:750;letter-spacing:.15em;color:#CFBCC2}
@@ -530,4 +530,43 @@
  .gr-cal-admin-stats,.gr-cal-admin-grid{grid-template-columns:1fr}
  .gr-cal-controls button{width:33px;height:33px;flex-basis:33px}
  .gr-cal-event-time{flex-basis:85px}
+}
+
+
+/* GRIZZLY FINAL MOBILE & ACCESSIBILITY PASS */
+.gr-public .gr-header{isolation:isolate}
+.gr-public .gr-mobile-menu nav{width:min(294px,calc(100vw - 24px));max-height:calc(100dvh - 108px);overflow-y:auto;z-index:60}
+.gr-public .gr-mobile-menu summary{touch-action:manipulation}
+.gr-public .gr-mobile-menu nav a,.gr-public .gr-mobile-menu nav button{min-height:44px;display:flex;align-items:center}
+.gr-public .gr-mobile-account{display:block;border:0;border-top:1px solid #594451;border-radius:0;background:transparent;color:#F7B3BE!important;padding:13px 12px;font:inherit;font-size:13px;font-weight:850;text-align:left;width:100%;cursor:pointer}
+.gr-public .gr-mobile-account:hover{background:#422936}
+.gr-public :is(a,button,input,textarea,select,summary):focus-visible{outline:2px solid #FF96A4;outline-offset:3px}
+.gr-public #gr-main:focus{outline:none}
+.gr-public .gr-hero-art.has-photo{background:#1E161D}
+.gr-public .gr-art-photo{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center;filter:brightness(.52) saturate(.82);opacity:.86;z-index:0}
+.gr-public .gr-hero-art.has-photo .gr-art-round{background:#2D1725B3;box-shadow:0 0 0 10px #501C2B7A,0 0 0 31px #3B17226B;z-index:2}
+.gr-public .gr-hero-art.has-photo .gr-art-grid{z-index:1;opacity:.55}
+.gr-public .gr-hero-art.has-photo .gr-art-corner,.gr-public .gr-hero-art.has-photo .gr-art-word{z-index:3;color:#FFF5F6;text-shadow:0 2px 15px #07060BCF}
+.gr-public .gr-hero-art.has-photo .gr-paw{color:#FFF1F3}
+.gr-public img{max-width:100%}
+@media(max-width:530px){
+ .gr-public .gr-header-inner{gap:8px}
+ .gr-public .gr-header-actions>.gr-login-btn{display:none}
+ .gr-public .gr-logo{gap:9px;min-width:0}
+ .gr-public .gr-logo-mark{width:36px;height:36px;font-size:22px;flex:0 0 36px}
+ .gr-public .gr-logo-copy strong{font-size:16px;letter-spacing:.09em}
+ .gr-public .gr-logo-copy small{font-size:7px;letter-spacing:.09em}
+ .gr-public .gr-mobile-menu summary{width:42px;height:42px}
+ .gr-public .gr-hero-inner{gap:27px;padding-top:42px}
+ .gr-public .gr-hero-art{max-width:285px}
+ .gr-public .gr-home-intro,.gr-public .gr-home-news{padding:42px 0}
+}
+@media(max-width:360px){
+ .gr-public .gr-logo-copy strong{font-size:14px}
+ .gr-public .gr-logo-copy small{font-size:6px}
+ .gr-public .gr-hero h1{font-size:clamp(2.55rem,12vw,3.25rem)}
+ .gr-public .gr-hero-art{max-width:245px}
+}
+@media(prefers-reduced-motion:reduce){
+ .gr-public .gr-hero-art.has-photo img{transition:none}
 }
