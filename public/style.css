@@ -570,3 +570,32 @@
 @media(prefers-reduced-motion:reduce){
  .gr-public .gr-hero-art.has-photo img{transition:none}
 }
+
+
+/* GRIZZLY DISCORD NOTIFICATION CONTROL */
+.gr-discord-settings{display:grid;gap:12px;margin:20px 0 25px}
+.gr-discord-switch{display:flex;align-items:center;justify-content:space-between;gap:20px;border:1px solid #3C404D;background:#1C2029;border-radius:10px;padding:15px 17px;cursor:pointer}
+.gr-discord-switch>span{display:grid;gap:6px;min-width:0}
+.gr-discord-switch strong{font-size:14px;color:#E8E9EF;font-weight:800}
+.gr-discord-switch small{font-size:12px;color:#AEB1BB;line-height:1.5}
+.gr-discord-switch input[type="checkbox"]{appearance:none;flex:none;width:46px;height:26px;background:#494C59;border:1px solid #606370;border-radius:18px;position:relative;cursor:pointer;transition:background .18s}
+.gr-discord-switch input[type="checkbox"]:before{content:"";position:absolute;left:3px;top:3px;width:18px;height:18px;border-radius:50%;background:#E7E8ED;transition:transform .18s}
+.gr-discord-switch input[type="checkbox"]:checked{background:#A64052;border-color:#DA7482}
+.gr-discord-switch input[type="checkbox"]:checked:before{transform:translateX(19px);background:#FFF}
+.gr-discord-switch input[type="checkbox"]:focus-visible{outline:2px solid #FFA0AC;outline-offset:3px}
+.gr-discord-switch input[type="checkbox"]:disabled{opacity:.45;cursor:not-allowed}
+.gr-discord-settings>.btn{justify-self:start}
+.gr-discord-log{border-top:1px solid #383C48;padding-top:20px;margin-top:19px;margin-bottom:16px}
+.gr-discord-log h3{font-size:16px;font-weight:860}
+.gr-discord-log-scroll{overflow-x:auto;margin-top:14px;border:1px solid #373B47;border-radius:9px}
+.gr-discord-table{border-collapse:collapse;min-width:550px;width:100%;font-size:12px}
+.gr-discord-table th{text-align:left;color:#BFC4CF;font-weight:800;background:#20232E;padding:13px 15px}
+.gr-discord-table td{padding:12px 15px;border-top:1px solid #383A48;color:#CDD0D9}
+.gr-discord-result{font-weight:800;white-space:nowrap}
+.gr-discord-result.is-success{color:#7DD7A8}
+.gr-discord-result.is-error{color:#F39BA8}
+@media(max-width:560px){
+ .gr-discord-switch{padding:13px;gap:12px}
+ .gr-discord-switch strong{font-size:13px}
+ .gr-discord-switch small{font-size:11px}
+}
