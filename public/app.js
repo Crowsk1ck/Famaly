@@ -808,6 +808,28 @@ const discordSettingsHtml=discord&&!discord.migrationRequired?
  ).join('')+
  '<button class="btn secondary" type="submit">Зберегти перемикачі</button></form>':
  '<div class="notice mt">Для перемикачів і журналу потрібно застосувати нову міграцію D1: <strong>0003_discord_notifications.sql та 0004_discord_capt_news.sql та 0005_discord_announcements.sql</strong>. Сповіщення продовжать працювати з поточними налаштуваннями до міграції.</div>';
+const discordRouteLabels={
+  applications:'Заявки',decisions:'Рішення',events:'Події',
+  capt:'CAPT',news:'Новини',announcements:'Оголошення'
+};
+const discordRouteSecrets={
+  applications:'DISCORD_WEBHOOK_APPLICATIONS',decisions:'DISCORD_WEBHOOK_DECISIONS',
+  events:'DISCORD_WEBHOOK_EVENTS',capt:'DISCORD_WEBHOOK_CAPT',
+  news:'DISCORD_WEBHOOK_NEWS',announcements:'DISCORD_WEBHOOK_ANNOUNCEMENTS'
+};
+const discordRoutesHtml=discord?
+ '<div class="gr-discord-routes"><h3>Окремі Discord-канали</h3>'+
+ '<p class="muted small">Для CAPT, Новин і Оголошень потрібні три різні webhook. Перші три категорії можуть використовувати чинний основний webhook або власні секрети.</p>'+
+ Object.keys(discordRouteLabels).map(kind=>{
+   const route=discord.routes?.[kind]||{configured:false,reason:'missing'};
+   const status=route.reason==='ready'?'Підключено':
+     route.reason==='duplicate'?'Повторюється webhook':
+     route.reason==='invalid'?'Некоректний URL':'Не підключено';
+   return '<div class="gr-discord-route"><div><strong>'+discordRouteLabels[kind]+'</strong>'+
+     '<small>Cloudflare Secret: <code>'+discordRouteSecrets[kind]+'</code></small></div>'+
+     '<span class="gr-discord-route-status '+(route.configured?'is-ready':'is-missing')+'">'+status+'</span>'+
+     '<button class="btn tiny secondary" type="button" data-action="discord-test-route" data-kind="'+kind+'" '+(route.configured?'':'disabled')+'>Тест каналу</button></div>';
+ }).join('')+'</div>':'';
 const discordLogsHtml=discord&&!discord.migrationRequired?
  '<div class="gr-discord-log"><div class="row space wrap"><h3>Журнал доставки</h3><span class="muted small">Останні 100 відправлень</span></div>'+
  (discordLogError?'<div class="notice">'+esc(discordLogError)+'</div>':
@@ -825,7 +847,7 @@ return `${intro('Налаштування Grizzly','Редагування пу�
     '<span class="pill">CAPT: '+(discord.categories.capt?'увімкнено':'вимкнено')+'</span>'+ 
     '<span class="pill">Новини: '+(discord.categories.news?'увімкнено':'вимкнено')+'</span>'+ 
     '<span class="pill">Оголошення: '+(discord.categories.announcements?'увімкнено':'вимкнено')+'</span></div>'+
-    discordSettingsHtml+discordLogsHtml+
+    discordRoutesHtml+discordSettingsHtml+discordLogsHtml+
     '<div class="row wrap mt"><button class="btn secondary" type="button" data-action="discord-test" '+(discord.configured?'':'disabled')+'>Надіслати тестове повідомлення</button>'+
     '<button type="button" class="btn ghost" data-action="discord-refresh">Оновити статус</button><span class="muted small">Worker: famaly · Не надсилай webhook у чат.</span></div></div>':''}<div class="notice mt">Ставки CAPT застосовуються вручну при створенні виплат, щоб керівник контролював підставу нарахування. Права заступників задаються в особових справах.</div>`;}
 async function profile(){const u=state.user;const sessions=(await api('/auth/sessions')).items;return `${intro('Мій профіль','Особисті дані, пароль та активні сесії.')}<div class="grid2"><div class="card"><h3>${esc(u.nickname||u.username)}</h3><div class="stack mt"><div>Логін: <strong>${esc(u.username)}</strong></div><div>Роль доступу: <strong>${esc(roles[u.role])}</strong></div><div>Ігровий ранг: <strong>${esc(rankName(u.rank_id))}</strong></div><div>Напрямок: <strong>${esc(departmentName(u.department_id))}</strong></div><div>Ігровий ID: <strong>${esc(u.game_id||'—')}</strong></div><div>Discord: <strong>${esc(u.discord||'—')}</strong></div></div><button class="btn tiny secondary mt" data-action="edit-user" data-id="${u.id}">Редагувати профіль</button></div><div class="card"><h3>Зміна пароля</h3><form id="password-form" class="stack mt">${field('Поточний пароль','old_password','','password',true,'required')}${field('Новий пароль (12–128 символів)','new_password','','password',true,'minlength="12" required')}<button class="btn" type="submit">Змінити пароль і завершити сесії</button></form></div></div><div class="card mt"><div class="card-head"><h3>Сесії</h3><span class="muted small">Завершення доступу з інших пристроїв</span></div>${table(['Створено','Термін дії','Пристрій','Дія'],sessions.map(x=>`<tr><td>${date(x.created_at)}</td><td>${date(x.expires_at)}</td><td class="wordwrap">${esc(x.user_agent.slice(0,100))}</td><td>${x.revoked_at?badge('Завершено'):`<button class="btn tiny danger" data-action="revoke-session" data-id="${esc(x.id)}">Завершити</button>`}</td></tr>`))}</div>`;}
@@ -913,6 +935,7 @@ document.addEventListener('click',async e=>{const back=e.target.closest('[data-b
   case 'toggle-menu':$('.shell')?.classList.toggle('menu-open');break;
   case 'refresh':await render();break;
   case 'discord-refresh':{if(state.user?.role!=='leader')throw new Error('Недостатньо прав');await render();toast('Статус Discord оновлено');break;}
+  case 'discord-test-route':{if(state.user?.role!=='leader')throw new Error('Недостатньо прав');const kind=t.dataset.kind;const result=await api('/discord/test','POST',{kind});toast(result.message||'Тест надіслано');break;}
   case 'discord-test':{if(state.user?.role!=='leader')throw new Error('Недостатньо прав');const result=await api('/discord/test','POST',{});toast(result.message||'Тест надіслано');break;}
   case 'logout':await api('/auth/logout','POST');state.user=null;state.notifications=[];state.route='overview';state.search='';location.hash='home';renderPublic();toast('Ви вийшли з панелі');break;
   case 'notifications':notifyPopup();break;
