@@ -32,6 +32,7 @@ const nav=[
   {id:'discipline',text:'Дисципліна',icon:'⚑',group:'АДМІНІСТРУВАННЯ'},
   {id:'announcements',text:'Оголошення',icon:'◉',group:'АДМІНІСТРУВАННЯ'},
   {id:'gallery',text:'Галерея',icon:'▧',group:'АДМІНІСТРУВАННЯ'},
+  {id:'public_news',text:'Новини сайту',icon:'✦',group:'АДМІНІСТРУВАННЯ'},
   {id:'stats',text:'Статистика',icon:'▥',group:'СИСТЕМА'},
   {id:'audit',text:'Журнал змін',icon:'≡',group:'СИСТЕМА'},
   {id:'settings',text:'Налаштування',icon:'⚙',group:'СИСТЕМА'},
@@ -51,7 +52,8 @@ const moduleInfo={
   blacklist:['Чорний список','Обмежений доступ для керівництва','discipline:manage'],
   notices:['Оголошення','Повідомлення для учасників','notices:manage'],
   templates:['Шаблони','Тексти з {час}, {місце}, {ім’я}','notices:manage'],
-  gallery:['Галерея','Публікація фото за посиланнями ImgBB','content:manage']
+  gallery:['Галерея','Публікація фото за посиланнями ImgBB','content:manage'],
+  public_news:['Новини сайту','Публічні оголошення для головної сторінки','content:manage']
 };
 const groupRoutes={capt:['capt_matches','capt_training','capt_attendance'],fleet:['vehicles','vehicle_loans'],discipline:['discipline','blacklist'],announcements:['notices','templates'],reports:['reports','promotions']};
 const state={user:null,route:'overview',sub:{},search:'',sort:'new',period:'week',settingsVersions:{},public:null,users:[],departments:[],ranks:[],notifications:[],filter:'',menu:false};
@@ -148,6 +150,23 @@ function publicGalleryStep(offset){
   const next=list[index+offset];
   if(next)publicGalleryLightbox(next.id);
 }
+const newsTypes=[['news','Новина'],['event','Подія'],['recruitment','Набір'],['achievement','Досягнення']];
+function newsTypeLabel(key){return newsTypes.find(([id])=>id===key)?.[1]||'Новина';}
+function renderPublicNews(){
+  const rows=Array.isArray(state.public?.news)?state.public.news:[];
+  if(!rows.length)return '<div class="gr-news-empty"><span class="gr-small-label">GRIZZLY / NEWS</span><h3>НОВИНИ ГОТУЮТЬСЯ.</h3><p>Нові публікації з’являться тут після підтвердження керівництвом.</p></div>';
+  return '<div class="gr-news-grid">'+rows.slice(0,9).map((post,i)=>{
+    const txt=String(post.details||''),shortText=txt.length>260?txt.slice(0,260).trimEnd()+'…':txt;
+    return '<article class="gr-news-card'+(post.featured?' gr-news-featured':'')+'">'+
+      '<div class="gr-news-top"><span class="gr-news-category">'+esc(newsTypeLabel(post.category))+'</span><span class="gr-news-date">'+esc(date(post.updated_at))+'</span></div>'+
+      '<div class="gr-news-count">'+String(i+1).padStart(2,'0')+' / GRIZZLY</div>'+
+      '<h3>'+esc(post.title)+'</h3><p class="gr-news-excerpt">'+esc(shortText)+'</p>'+
+      (txt.length>260?'<details class="gr-news-expand"><summary>Читати повністю <span>↗</span></summary><p>'+esc(txt)+'</p></details>':'')+
+      (post.category==='recruitment'?'<a class="gr-news-join" href="#join">Подати заявку ↗</a>':'')+
+      (post.featured?'<span class="gr-news-important">★ Важливе</span>':'')+
+      '</article>';
+  }).join('')+'</div>';
+}
 function renderPublic(){
   const settings=state.public?.settings||{};
   const gallery=Array.isArray(state.public?.gallery)?state.public.gallery:[];
@@ -162,7 +181,7 @@ function renderPublic(){
     if(d.protocol==='https:'&&['discord.gg','discord.com','www.discord.com'].includes(d.hostname))discord=d.href;
   }catch{}
   const discordLink=discord?'<a class="gr-nav-discord" href="'+esc(discord)+'" target="_blank" rel="noopener noreferrer">Discord ↗</a>':'';
-  const navLinks='<a href="#about">Про сім’ю</a><a href="#directions">Напрямки</a><a href="#rules">Кодекс</a><a href="#gallery">Галерея</a><a href="#join">Вступити</a>'+discordLink;
+  const navLinks='<a href="#about">Про сім’ю</a><a href="#directions">Напрямки</a><a href="#rules">Кодекс</a><a href="#news">Новини</a><a href="#gallery">Галерея</a><a href="#join">Вступити</a>'+discordLink;
   $('#app').innerHTML=
   '<div class="gr-public">'+
   '<div class="gr-topline"><div class="gr-container"><span><i></i> GTA 5 ROLEPLAY · LOS SANTOS</span><span>GRIZZLY FAMILY / COMMUNITY</span></div></div>'+
@@ -204,10 +223,11 @@ function renderPublic(){
     '<div class="gr-rules-grid"><article class="gr-rules-card"><div class="gr-rules-top"><span>01</span><strong>ПРАВИЛА СІМ’Ї</strong><span>↗</span></div><p class="gr-rule-copy">'+esc(rules)+'</p></article>'+
     '<article class="gr-rules-card"><div class="gr-rules-top"><span>02</span><strong>ВИМОГИ ДО УЧАСНИКІВ</strong><span>↗</span></div><p class="gr-rule-copy">'+esc(requirements)+'</p></article></div>'+
   '</div></section>'+
-  '<section class="gr-section gr-gallery" id="gallery"><div class="gr-container"><div class="gr-section-heading gr-heading-row"><div><span class="gr-kicker">04 — ЗАКАРБОВАНІ МОМЕНТИ</span><h2>НАША ІСТОРІЯ<br><span>У КАДРАХ.</span></h2></div><p>Моменти з життя сім’ї GRIZZLY — від командних боїв до спільних зустрічей.</p></div>'+
+  '<section class="gr-section gr-news" id="news"><div class="gr-container"><div class="gr-section-heading gr-heading-row"><div><span class="gr-kicker">04 — ЖИТТЯ СІМ’Ї</span><h2>НОВИНИ<br><span>GRIZZLY.</span></h2></div><p>Офіційні повідомлення, події та досягнення нашої сім’ї.</p></div>'+renderPublicNews()+'</div></section>'+
+  '<section class="gr-section gr-gallery" id="gallery"><div class="gr-container"><div class="gr-section-heading gr-heading-row"><div><span class="gr-kicker">05 — ЗАКАРБОВАНІ МОМЕНТИ</span><h2>НАША ІСТОРІЯ<br><span>У КАДРАХ.</span></h2></div><p>Моменти з життя сім’ї GRIZZLY — від командних боїв до спільних зустрічей.</p></div>'+
    '<div id="gr-gallery-content">'+renderPublicGallery()+'</div>'+
   '</div></section>'+
-  '<section class="gr-section gr-join" id="join"><div class="gr-container gr-join-layout"><div class="gr-join-info"><span class="gr-kicker">05 — ПРИЄДНАЙСЯ ДО НАС</span><h2>ТВОЄ МІСЦЕ<br><span>СЕРЕД СВОЇХ.</span></h2><p>Готовий стати частиною GRIZZLY? Заповни анкету — рекрутер розгляне твою заявку.</p><div class="gr-join-steps"><div><span>01</span><p>Заповни анкету</p></div><div><span>02</span><p>Дочекайся розгляду</p></div><div><span>03</span><p>Приєднайся до команди</p></div></div></div>'+
+  '<section class="gr-section gr-join" id="join"><div class="gr-container gr-join-layout"><div class="gr-join-info"><span class="gr-kicker">06 — ПРИЄДНАЙСЯ ДО НАС</span><h2>ТВОЄ МІСЦЕ<br><span>СЕРЕД СВОЇХ.</span></h2><p>Готовий стати частиною GRIZZLY? Заповни анкету — рекрутер розгляне твою заявку.</p><div class="gr-join-steps"><div><span>01</span><p>Заповни анкету</p></div><div><span>02</span><p>Дочекайся розгляду</p></div><div><span>03</span><p>Приєднайся до команди</p></div></div></div>'+
     '<div class="gr-join-form"><div class="gr-form-header"><span>ЗАЯВКА НА ВСТУП</span><small>GRIZZLY / RECRUITMENT</small></div>'+
      '<form id="apply-form" class="formgrid">'+
        '<div class="field"><label for="gr-nick">Ігровий нікнейм *</label><input id="gr-nick" class="input" name="nickname" required maxlength="80" autocomplete="off" placeholder="Наприклад, Player Grizzly"></div>'+
@@ -336,6 +356,41 @@ function updateGalleryFormPreview(){
   target.innerHTML=img?'<img src="'+esc(img)+'" alt="Попередній перегляд" loading="lazy">':
     '<span class="muted small">Вставте пряме HTTPS-посилання ImgBB на JPG, PNG, WEBP або GIF.</span>';
 }
+async function newsManager(){
+  const items=(await api('/records/public_news')).items;
+  const visible=applyFilters(items.filter(r=>searchMatch(r.title,r.details,newsTypeLabel(r.extra?.news_category))));
+  const published=items.filter(x=>x.status==='Погоджено').length;
+  const cards=visible.map(r=>{
+    const published=r.status==='Погоджено';
+    return '<article class="card gr-news-admin-card"><div class="row space"><span class="pill">'+esc(newsTypeLabel(r.extra?.news_category))+'</span><span class="muted small">'+esc(date(r.updated_at))+'</span></div>'+
+      '<h3>'+esc(r.title)+'</h3><p class="muted small gr-news-admin-text">'+esc(r.details.slice(0,240))+'</p>'+
+      '<div class="row space wrap"><span>'+badge(r.status)+'</span>'+(r.extra?.featured?'<span class="pill">★ Важливе</span>':'')+'</div>'+
+      '<div class="row wrap"><button class="btn tiny secondary" data-action="news-edit" data-id="'+esc(r.id)+'">Редагувати</button>'+
+      '<button class="btn tiny '+(published?'ghost':'')+'" data-action="news-publish" data-id="'+esc(r.id)+'" data-status="'+(published?'Заплановано':'Погоджено')+'">'+(published?'Приховати':'Опублікувати')+'</button></div></article>';
+  }).join('');
+  return intro('Новини GRIZZLY','Публічні повідомлення для відвідувачів. Внутрішні оголошення сюди не передаються.',
+    can('content:manage')?'<button class="btn" data-action="news-new">＋ Нова публікація</button>':'')+
+    '<div class="notice">На головній відображаються лише новини зі статусом «Погоджено». Створюйте тут тільки матеріали для відкритого доступу.</div>'+
+    '<div class="cards mt gr-news-admin-stats"><div class="card stat"><div class="muted small">Публікацій</div><div class="number">'+fmt(items.length)+'</div></div>'+
+    '<div class="card stat"><div class="muted small">На сайті</div><div class="number">'+fmt(published)+'</div></div>'+
+    '<div class="card stat"><div class="muted small">Чернеток</div><div class="number">'+fmt(items.length-published)+'</div></div></div>'+
+    '<div class="toolbar">'+searchBar()+'</div>'+
+    (visible.length?'<div class="gr-news-admin-grid">'+cards+'</div>':empty('Новин поки немає','Створи першу публічну новину GRIZZLY.'));
+}
+function newsForm(record){
+  const item=record||{},extra=item.extra||{};
+  const options=newsTypes.map(([id,name])=>'<option value="'+id+'" '+((extra.news_category||'news')===id?'selected':'')+'>'+esc(name)+'</option>').join('');
+  const statuses=['Заплановано','Погоджено'].map(s=>'<option value="'+s+'" '+((item.status||'Заплановано')===s?'selected':'')+'>'+(s==='Заплановано'?'Чернетка':'Опубліковано')+'</option>').join('');
+  modal(record?'Редагувати новину':'Нова публічна новина',
+    '<div class="notice mb">Увага: це відкрита публікація на сайті GRIZZLY. Не вказуйте внутрішню інформацію сім’ї.</div>'+
+    '<form id="news-form" class="formgrid" data-id="'+esc(item.id||'')+'">'+
+    field('Заголовок *','title',item.title||'','text',true,'required maxlength="160"')+
+    field('Текст новини *','details',item.details||'','textarea',true,'required minlength="10" maxlength="3000"')+
+    '<div class="field"><label>Категорія</label><select name="category" class="select">'+options+'</select></div>'+
+    '<div class="field"><label>Важлива публікація</label><select name="featured" class="select"><option value="false" '+(!extra.featured?'selected':'')+'>Ні</option><option value="true" '+(extra.featured?'selected':'')+'>Так ★</option></select></div>'+
+    '<div class="field full"><label>Видимість</label><select name="status" class="select">'+statuses+'</select></div>'+
+    '<div class="full form-actions"><button type="button" class="btn ghost" data-action="close-modal">Скасувати</button><button class="btn" type="submit">Зберегти новину</button></div></form>');
+}
 function moduleForm(mod,r){const cfg=moduleInfo[mod],isEdit=!!r;const canManage=can(cfg[2]);const x=r||{};const fields=`<form id="record-form" data-module="${mod}" data-id="${esc(r?.id||'')}" class="formgrid">${field('Назва / тема *','title',x.title,'text',true,'required maxlength="160"')}${field('Опис / RP-звіт','details',x.details,'textarea',true)}${recordExtraFields(mod,r)}${canManage?`${statusField(x.status||'Заплановано')}${selectField('Виконавець','assignee_id',state.users,x.assignee_id)}${selectField('Напрямок','department_id',state.departments,x.department_id)}${field('Сума / винагорода (ігрова валюта)','amount',x.amount||0,'number',false,'min="0" step="1"')}${field('Початок','starts_at',formatDateField(x.starts_at),'datetime-local')}${field('Термін / завершення','ends_at',formatDateField(x.ends_at),'datetime-local')}`:''}${field('Докази ImgBB (кожне посилання з нового рядка)','evidence',evidenceText(x),'textarea',true)}${canManage?field('Додаткові дані (JSON: склад, номер ТЗ, стан, чекліст тощо)','extra',JSON.stringify(x.extra||{},null,2),'textarea',true):''}<div class="full form-actions"><button type="button" class="btn ghost" data-action="close-modal">Скасувати</button><button type="submit" class="btn">${isEdit?'Зберегти':'Створити'}</button></div></form>`;modal(`${isEdit?'Редагувати':'Створити'} · ${cfg[0]}`,`${isEdit?`<div class="notice mb">Запис із перевіркою версії: чужі зміни не будуть перезаписані.</div>`:''}${fields}`);}
 async function viewRecord(mod,id){const rows=(await api(`/records/${mod}`)).items;const r=rows.find(x=>x.id===id);if(!r)return toast('Запис недоступний',true);const payoutState=mod==='capt_attendance'?(await api('/capt/overview')).attendance.find(x=>x.id===id):null;const canManage=can(moduleInfo[mod][2])&&(state.user.role!=='head'||r.department_id===state.user.department_id);const canEdit=canManage||((r.owner_id===state.user.id||r.assignee_id===state.user.id)&&['reports','promotions','capt_attendance','vehicle_loans','tasks'].includes(mod));const review=canManage&&['reports','promotions'].includes(mod)&&r.owner_id!==state.user.id;const status=mod==='events'?`<div class="hr"></div><div id="rsvp-content" class="muted small">Завантаження учасників…</div>`:'';modal(r.title,`<div class="stack"><div class="row space">${badge(r.status)}<span class="muted small">v${r.version} · ${date(r.updated_at)}</span></div><div class="longtext">${esc(r.details||'Опис не додано')}</div><div class="small muted">Відповідальний: ${esc(userName(r.assignee_id||r.owner_id))} · ${esc(departmentName(r.department_id))}</div>${r.amount?`<div class="small">Винагорода: <strong>${fmt(r.amount)}</strong></div>`:''}${r.starts_at?`<div class="small">Початок: ${esc(r.starts_at.replace('T',' '))}</div>`:''}${links(r)}${Object.keys(r.extra||{}).length?`<div class="card flat"><strong>Додаткова інформація</strong><div class="stack mt small">${Object.entries(r.extra).filter(([k])=>k!=='review_nonce').map(([k,v])=>`<div><span class="muted">${esc(({requested_rank_id:'Цільовий ранг',checklist_completed:'Виконані умови',opponent:'Суперник',place:'Місце',lineup:'Склад на бій',result:'Результат',attendance_type:'Тип участі',match_id:'Бій / тренування',plate:'Номер ТЗ',condition:'Стан',responsible:'Відповідальний',review_comment:'Коментар керівника'})[k]||k)}:</span> <strong>${esc(Array.isArray(v)?v.join(', '):v)}</strong></div>`).join('')}</div></div>`:''}${status}${mod==='capt_matches'?'<div class="hr"></div><section id="capt-signup-panel" class="stack"><p class="muted">Завантаження списку учасників…</p></section>':''}<div class="form-actions">${review?`<button class="btn secondary" data-action="review-record" data-module="${mod}" data-id="${id}">Перевірити</button>`:''}${canEdit?`<button class="btn" data-action="edit-record" data-module="${mod}" data-id="${id}">Редагувати</button>`:''}${mod==='templates'?`<button class="btn secondary" data-action="copy-template" data-id="${id}">Копіювати текст</button>`:''}${mod==='capt_attendance'&&payoutState?.paid===true?'<span class="pill">CAPT-виплату проведено</span>':mod==='capt_attendance'&&r.status==='Погоджено'&&can('finance:manage')?`<button class="btn" data-action="capt-pay" data-id="${id}">₴ Нарахувати CAPT</button>`:''}${canManage?`<button class="btn danger" data-action="delete-record" data-module="${mod}" data-id="${id}">Видалити</button>`:''}</div></div>`);if(mod==='capt_matches')await renderCaptSignupPanel(id);if(mod==='events'){try{const rs=await api(`/rsvp/${id}`);const el=$('#rsvp-content');if(el)el.innerHTML=`<div class="row wrap"><strong>Моя участь: ${esc(rs.own||'Не підтверджено')}</strong><span class="muted">Так: ${rs.counts.yes} · Ні: ${rs.counts.no}</span></div><div class="row mt"><button class="btn tiny" data-action="rsvp" data-id="${id}" data-value="Так">✓ Буду</button><button class="btn tiny ghost" data-action="rsvp" data-id="${id}" data-value="Ні">Не зможу</button></div>${rs.items.length?`<div class="muted small mt">${rs.items.map(i=>`${esc(userName(i.user_id))}: ${esc(i.response)}`).join(' · ')}</div>`:''}`;}catch(e){toast(e.message,true);}}}
 async function renderCaptSignupPanel(id){
@@ -422,12 +477,12 @@ async function stats(){const s=await api('/stats');const leaderboard=(state.peri
 async function auditPage(){const a=(await api('/audit')).items;return `${intro('Журнал змін','Хто, коли й що змінював. Доступ лише лідеру.')}<div class="toolbar">${searchBar()}</div>${table(['Дата','Користувач','Дія','Розділ','ID'],a.filter(x=>searchMatch(x.actor_name,x.action,x.entity,x.detail)).map(x=>`<tr><td>${esc(x.created_at.replace('T',' ').slice(0,19))}</td><td>${esc(x.actor_name)}</td><td>${esc(x.action)}<div class="muted">${esc(x.detail.slice(0,110))}</div></td><td>${esc(x.entity)}</td><td><span class="muted small">${esc(short(x.entity_id))}</span></td></tr>`))}`;}
 async function settingsPage(){const response=await api('/settings');const s=response.items;state.settingsVersions=response.versions||{};return `${intro('Налаштування Grizzly','Редагування публічного сайту, правил, Discord та фінансових параметрів.')}<div class="card"><form id="settings-form" class="formgrid">${field('Назва сім’ї','family_name',s.family_name)}${field('Гасло','tagline',s.tagline)}${field('Історія сім’ї','history',s.history,'textarea',true)}${field('Посилання Discord','discord_url',s.discord_url,'url',true,'placeholder="https://discord.gg/..."')}${field('Правила','rules',s.rules,'textarea',true)}${field('Вимоги до кандидатів','requirements',s.requirements,'textarea',true)}${field('Відсоток казни від контрактів','treasury_percent',s.treasury_percent,'number',false,'min="0" max="100"')}${field('CAPT — ставка AFK','capt_afk_rate',s.capt_afk_rate,'number',false,'min="0"')}${field('CAPT — ставка за бій','capt_battle_rate',s.capt_battle_rate,'number',false,'min="0"')}<div class="full form-actions"><button class="btn" type="submit">Зберегти налаштування</button></div></form></div><div class="notice mt">Ставки CAPT застосовуються вручну при створенні виплат, щоб керівник контролював підставу нарахування. Права заступників задаються в особових справах.</div>`;}
 async function profile(){const u=state.user;const sessions=(await api('/auth/sessions')).items;return `${intro('Мій профіль','Особисті дані, пароль та активні сесії.')}<div class="grid2"><div class="card"><h3>${esc(u.nickname||u.username)}</h3><div class="stack mt"><div>Логін: <strong>${esc(u.username)}</strong></div><div>Роль доступу: <strong>${esc(roles[u.role])}</strong></div><div>Ігровий ранг: <strong>${esc(rankName(u.rank_id))}</strong></div><div>Напрямок: <strong>${esc(departmentName(u.department_id))}</strong></div><div>Ігровий ID: <strong>${esc(u.game_id||'—')}</strong></div><div>Discord: <strong>${esc(u.discord||'—')}</strong></div></div><button class="btn tiny secondary mt" data-action="edit-user" data-id="${u.id}">Редагувати профіль</button></div><div class="card"><h3>Зміна пароля</h3><form id="password-form" class="stack mt">${field('Поточний пароль','old_password','','password',true,'required')}${field('Новий пароль (12–128 символів)','new_password','','password',true,'minlength="12" required')}<button class="btn" type="submit">Змінити пароль і завершити сесії</button></form></div></div><div class="card mt"><div class="card-head"><h3>Сесії</h3><span class="muted small">Завершення доступу з інших пристроїв</span></div>${table(['Створено','Термін дії','Пристрій','Дія'],sessions.map(x=>`<tr><td>${date(x.created_at)}</td><td>${date(x.expires_at)}</td><td class="wordwrap">${esc(x.user_agent.slice(0,100))}</td><td>${x.revoked_at?badge('Завершено'):`<button class="btn tiny danger" data-action="revoke-session" data-id="${esc(x.id)}">Завершити</button>`}</td></tr>`))}</div>`;}
-async function render(){state.menu=false;let content='';try{if(!state.user){renderPublic();return;}if(['members','ranks','departments','contracts','settings','profile'].includes(state.route))await preload();switch(state.route){case'overview':content=await overview();break;case'members':content=await members();break;case'ranks':content=await ranks();break;case'departments':content=await departments();break;case'tasks':content=await renderModule('tasks');break;case'events':content=await renderModule('events');break;case'gallery':content=await galleryManager();break;case'contracts':content=await contracts();break;case'capt':content=await captPage();break;case'fleet':case'discipline':case'announcements':case'reports':content=await groupPage(state.route);break;case'finance':content=await finance();break;case'applications':content=await applications();break;case'stats':content=await stats();break;case'audit':content=await auditPage();break;case'settings':content=await settingsPage();break;case'profile':content=await profile();break;default:state.route='overview';content=await overview();}shell(content);}catch(e){if(e.status===401){state.user=null;state.route='overview';renderPublic();toast('Сесію завершено. Увійдіть повторно.',true);return;}shell(intro('Помилка завантаження',e.message)+`<button class="btn mt" data-action="refresh">Повторити</button>`);toast(e.message,true);}}
+async function render(){state.menu=false;let content='';try{if(!state.user){renderPublic();return;}if(['members','ranks','departments','contracts','settings','profile'].includes(state.route))await preload();switch(state.route){case'overview':content=await overview();break;case'members':content=await members();break;case'ranks':content=await ranks();break;case'departments':content=await departments();break;case'tasks':content=await renderModule('tasks');break;case'events':content=await renderModule('events');break;case'gallery':content=await galleryManager();break;case'public_news':content=await newsManager();break;case'contracts':content=await contracts();break;case'capt':content=await captPage();break;case'fleet':case'discipline':case'announcements':case'reports':content=await groupPage(state.route);break;case'finance':content=await finance();break;case'applications':content=await applications();break;case'stats':content=await stats();break;case'audit':content=await auditPage();break;case'settings':content=await settingsPage();break;case'profile':content=await profile();break;default:state.route='overview';content=await overview();}shell(content);}catch(e){if(e.status===401){state.user=null;state.route='overview';renderPublic();toast('Сесію завершено. Увійдіть повторно.',true);return;}shell(intro('Помилка завантаження',e.message)+`<button class="btn mt" data-action="refresh">Повторити</button>`);toast(e.message,true);}}
 async function navigate(route){const url=new URL(location.href);if(url.searchParams.has('view')){url.searchParams.delete('view');history.replaceState(history.state,'',url.pathname+url.search+url.hash);}state.route=route;state.search='';state.sort='new';state.filter='';state.menu=false;location.hash=route;await render();}
 async function initial(){try{state.public=await api('/public');}catch(e){state.public={settings:{tagline:'Сила в єдності.'},gallery:[]};toast('Не вдалося отримати публічні дані. Перевірте D1 та міграції.',true);}try{state.user=(await api('/auth/me')).user;}catch{state.user=null;}if(state.user){try{state.notifications=(await api('/notifications')).items;await preload();}catch(e){toast(e.message,true);}state.route=location.hash.replace('#','')||'overview';}if(new URL(location.href).searchParams.get('view')==='public'){renderPublic();return;}await render();}
 const lines=s=>String(s||'').split(/\n/).map(x=>x.trim()).filter(Boolean);
 function formData(f){return Object.fromEntries(new FormData(f).entries());}
-async function afterSaved(msg='Збережено'){closeModal();toast(msg);if(state.user){state.notifications=(await api('/notifications')).items;await preload();}if(state.route==='gallery')state.public=await api('/public');await render();}
+async function afterSaved(msg='Збережено'){closeModal();toast(msg);if(state.user){state.notifications=(await api('/notifications')).items;await preload();}if(['gallery','public_news'].includes(state.route))state.public=await api('/public');await render();}
 async function handleSubmit(e){const f=e.target;if(!f.id)return;e.preventDefault();const b=formData(f);const submit=f.querySelector('[type=submit]');if(submit)submit.disabled=true;try{switch(f.id){
   case 'apply-form':await api('/apply','POST',b);f.reset();toast('Заявку надіслано. Очікуйте рішення рекрутера.');return;
   case 'login-form':state.user=(await api('/auth/login','POST',b)).user;closeModal();state.notifications=(await api('/notifications')).items;await preload();await navigate('overview');toast('Вхід успішний');return;
@@ -499,8 +554,8 @@ document.addEventListener('click',async e=>{const back=e.target.closest('[data-b
      await afterSaved(`Заповнено ${result.updated} рангів. Можна редагувати кожен окремо.`);break;}
   case 'edit-rank':rankForm(id);break;
   case 'edit-department':departmentForm(id);break;
-  case 'new-record':await preload();if(mod==='gallery')galleryForm();else moduleForm(mod);break;
-  case 'edit-record':{const r=(await api(`/records/${mod}`)).items.find(x=>x.id===id);await preload();if(mod==='gallery')galleryForm(r);else moduleForm(mod,r);break;}
+  case 'new-record':await preload();if(mod==='gallery')galleryForm();else if(mod==='public_news')newsForm();else moduleForm(mod);break;
+  case 'edit-record':{const r=(await api(`/records/${mod}`)).items.find(x=>x.id===id);await preload();if(mod==='gallery')galleryForm(r);else if(mod==='public_news')newsForm(r);else moduleForm(mod,r);break;}
   case 'gallery-new':galleryForm();break;
   case 'gallery-admin-filter':state.galleryAdminFilter=t.dataset.category||'all';await render();break;
   case 'gallery-publish':{
