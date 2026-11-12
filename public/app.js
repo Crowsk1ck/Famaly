@@ -66,14 +66,102 @@ function badge(s){const cls=['Погоджено','Завершено','active',
 function intro(title,description='',right=''){return `<div class="page-intro"><div><div class="overline">GRIZZLY / FAMILY PANEL</div><h1>${esc(title)}</h1><p>${esc(description)}</p></div>${right}</div>`;}
 function empty(label='Тут поки немає записів',desc='Створіть перший запис або змініть параметри пошуку.'){return `<div class="empty"><div><div class="empty-icon">◇</div><strong>${esc(label)}</strong>${esc(desc)}</div></div>`;}
 function itemText(obj){return esc(JSON.stringify(obj));}
-function renderPublic(){const s=state.public?.settings||{};const gallery=state.public?.gallery||[];$('#app').innerHTML=`
-  <header class="container site-nav"><a href="#home" class="brand"><span class="brand-mark">🐻</span>GRIZZLY</a><nav class="site-links"><a href="#about">Про нас</a><a href="#rules">Правила</a><a href="#join">Вступ</a><a href="#gallery">Галерея</a>${s.discord_url?`<a href="${esc(s.discord_url)}" target="_blank" rel="noopener noreferrer">Discord</a>`:''}<button class="btn tiny" data-action="show-login">Особистий кабінет ↗</button></nav></header>
-  <main><section class="hero" id="home"><div class="container hero-inner"><div><span class="overline">GTA 5 ROLEPLAY • FAMILY</span><h1 class="hero-title">NOT JUST A FAMILY.<br><span>WE ARE GRIZZLY.</span></h1><p>${esc(s.tagline||'Сила в єдності. Повага — у вчинках.')}</p><div class="row wrap"><a class="btn" href="#join">Приєднатися до сім’ї ↗</a><a class="btn ghost" href="#about">Дізнатися більше</a></div><div class="row mt small muted"><span>● Командна гра</span><span>● Дисципліна</span><span>● Взаємодопомога</span></div></div><div class="hero-logo"><div class="bear">🐻</div></div></div></section>
-  <section class="section" id="about"><div class="container"><div class="section-hd"><span class="overline">01 / ПРО НАС</span><h2>Сім’я, заснована на повазі</h2><p>${esc(s.history||'')}</p></div><div class="grid3"><div class="card feature"><span class="fi">◉</span><h3>CAPT та командна гра</h3><p>Участь у боях, тренуваннях і злагоджена робота складу.</p></div><div class="card feature"><span class="fi">▦</span><h3>Фарм і розвиток</h3><p>Спільні завдання, контракти та прозорий облік винагород.</p></div><div class="card feature"><span class="fi">♟</span><h3>Порядок і активність</h3><p>Чіткі ролі, заходи, дисципліна й підтримка учасників.</p></div></div></div></section>
-  <section class="section" style="background:#171A22" id="rules"><div class="container"><div class="section-hd"><span class="overline">02 / ПРАВИЛА</span><h2>Правила та вимоги</h2></div><div class="grid2"><div class="card"><h3>⚑ Правила сім’ї</h3><p class="longtext muted mt">${esc(s.rules||'')}</p></div><div class="card"><h3>◇ Вимоги до кандидата</h3><p class="longtext muted mt">${esc(s.requirements||'')}</p></div></div></div></section>
-  <section class="section" id="join"><div class="container"><div class="section-hd"><span class="overline">03 / ВСТУП</span><h2>Стати частиною Grizzly</h2><p>Заповни анкету. Після розгляду з тобою зв’яжеться рекрутер. Подання заявки не надає доступу до панелі.</p></div><div class="card" style="max-width:730px"><form id="apply-form" class="formgrid"><div class="field"><label>Ігровий нікнейм *</label><input class="input" required name="nickname" maxlength="80" placeholder="Ваш нікнейм"></div><div class="field"><label>Ігровий ID *</label><input class="input" required name="game_id" maxlength="40" placeholder="ID у грі"></div><div class="field"><label>Discord (необов’язково)</label><input class="input" name="discord" maxlength="120" placeholder="Нік Discord"></div><div class="field"><label>Досвід GTA RP</label><input class="input" name="experience" maxlength="700" placeholder="Де грали раніше"></div><div class="field full"><label>Чому хочеш вступити? *</label><textarea class="textarea" required minlength="10" maxlength="1400" name="motivation" placeholder="Розкажи про себе та свої цілі"></textarea></div><div class="full"><button class="btn" type="submit">Надіслати заявку →</button></div></form></div></div></section>
-  <section class="section" id="gallery" style="background:#171A22"><div class="container"><div class="section-hd"><span class="overline">04 / МОМЕНТИ</span><h2>Галерея Grizzly</h2></div>${gallery.length?`<div class="grid3">${gallery.map(r=>{const url=r.evidence?.[0]||'';return `<div class="card"><div>${url.startsWith('https://i.ibb.co/')?`<img class="mini-photo" alt="${esc(r.title)}" src="${esc(url)}" loading="lazy">`:'<div class="mini-photo" style="display:grid;place-items:center">▧ Фото Grizzly</div>'}</div><h3 class="mt">${esc(r.title)}</h3>${url?`<a class="gallery-link small" href="${esc(url)}" target="_blank" rel="noopener noreferrer">Відкрити фото ↗</a>`:''}</div>`;}).join('')}</div>`:empty('Галерея готується','Опубліковані керівником фото з’являться тут.')}</div></section></main>
-  <footer class="site-footer container"><span>© ${new Date().getFullYear()} GRIZZLY · GTA 5 RP</span><span>Внутрішні дані доступні лише учасникам</span></footer>`;}
+function publicPhotoCard(record,index){
+  const title=String(record.title||'Момент GRIZZLY');
+  const description=String(record.details||'');
+  const raw=Array.isArray(record.evidence)&&typeof record.evidence[0]==='string'?record.evidence[0]:'';
+  let photo='',link='';
+  try{
+    const parsed=new URL(raw);
+    if(parsed.protocol==='https:'&&['i.ibb.co','ibb.co'].includes(parsed.hostname)){
+      link=parsed.href;
+      if(parsed.hostname==='i.ibb.co'&&/\.(png|jpe?g|webp|gif)(\?.*)?$/i.test(parsed.href))photo=parsed.href;
+    }
+  }catch{}
+  return '<article class="gr-photo-card">'+
+    '<div class="gr-photo-frame">'+
+    (photo?'<img src="'+esc(photo)+'" alt="'+esc(title)+'" loading="lazy" decoding="async">':
+      '<div class="gr-photo-empty" aria-hidden="true"><span>GRIZZLY</span><strong>✦</strong><small>FAMILY MOMENTS</small></div>')+
+    '<span class="gr-photo-number">'+String(index+1).padStart(2,'0')+'</span></div>'+
+    '<div class="gr-photo-info"><div><h3>'+esc(title)+'</h3>'+(description?'<p>'+esc(description.slice(0,100))+'</p>':'')+'</div>'+
+    (link?'<a href="'+esc(link)+'" target="_blank" rel="noopener noreferrer" aria-label="Відкрити фото: '+esc(title)+'">↗</a>':'')+
+    '</div></article>';
+}
+function renderPublic(){
+  const settings=state.public?.settings||{};
+  const gallery=Array.isArray(state.public?.gallery)?state.public.gallery:[];
+  const history=String(settings.history||'Grizzly об’єднує гравців, для яких повага, дисципліна та взаємодопомога важливіші за гучні слова.');
+  const preview=history.length>480?history.slice(0,480).trimEnd()+'…':history;
+  const introText=String(settings.tagline||'Сила в єдності. Повага — у вчинках.');
+  const rules=String(settings.rules||'Дотримуйся правил сервера, субординації та поважай інших учасників сім’ї.');
+  const requirements=String(settings.requirements||'Активність, командна гра, дисципліна та бажання розвивати сім’ю.');
+  let discord='';
+  try{
+    const d=new URL(settings.discord_url||'');
+    if(d.protocol==='https:'&&['discord.gg','discord.com','www.discord.com'].includes(d.hostname))discord=d.href;
+  }catch{}
+  const discordLink=discord?'<a class="gr-nav-discord" href="'+esc(discord)+'" target="_blank" rel="noopener noreferrer">Discord ↗</a>':'';
+  const navLinks='<a href="#about">Про сім’ю</a><a href="#directions">Напрямки</a><a href="#rules">Кодекс</a><a href="#gallery">Галерея</a><a href="#join">Вступити</a>'+discordLink;
+  $('#app').innerHTML=
+  '<div class="gr-public">'+
+  '<div class="gr-topline"><div class="gr-container"><span><i></i> GTA 5 ROLEPLAY · LOS SANTOS</span><span>GRIZZLY FAMILY / COMMUNITY</span></div></div>'+
+  '<header class="gr-header"><div class="gr-container gr-header-inner">'+
+    '<a href="#home" class="gr-logo" aria-label="GRIZZLY — на головну"><span class="gr-logo-mark" aria-hidden="true">G<span>.</span></span><span class="gr-logo-copy"><strong>GRIZZLY</strong><small>FAMILY / GTA V RP</small></span></a>'+
+    '<nav class="gr-nav" aria-label="Основна навігація">'+navLinks+'</nav>'+
+    '<div class="gr-header-actions"><button class="gr-login-btn" data-action="show-login" type="button">Особистий кабінет <span>↗</span></button>'+
+    '<details class="gr-mobile-menu"><summary aria-label="Відкрити навігацію">☰</summary><nav aria-label="Мобільна навігація">'+navLinks+'</nav></details></div>'+
+  '</div></header>'+
+  '<main>'+
+  '<section class="gr-hero" id="home"><div class="gr-hero-grid" aria-hidden="true"></div><div class="gr-container gr-hero-inner">'+
+    '<div class="gr-hero-content"><div class="gr-eyebrow"><span class="gr-red-dot"></span> УКРАЇНСЬКА GTA 5 RP СІМ’Я <span class="gr-eyebrow-rule"></span> LOS SANTOS</div>'+
+      '<h1>БІЛЬШЕ НІЖ<br><em>СІМ’Я.</em><span> GRIZZLY.</span></h1>'+
+      '<p class="gr-hero-description">'+esc(introText)+'</p>'+
+      '<div class="gr-hero-buttons"><a class="gr-button gr-button-primary" href="#join">Стати частиною GRIZZLY <span aria-hidden="true">↗</span></a><a class="gr-button gr-button-outline" href="#about">Наша історія <span aria-hidden="true">→</span></a></div>'+
+      '<div class="gr-hero-values"><span><b>01</b> Братерство</span><span><b>02</b> Дисципліна</span><span><b>03</b> Розвиток</span></div>'+
+    '</div>'+
+    '<div class="gr-hero-art" aria-label="Емблема GRIZZLY"><div class="gr-art-grid"></div><span class="gr-art-corner gr-art-corner-top">GRZ / 001</span><div class="gr-art-round"><span class="gr-art-arc"></span>'+
+      '<svg class="gr-paw" viewBox="0 0 240 240" role="img" aria-label="Символ ведмежої лапи">'+
+       '<ellipse cx="48" cy="80" rx="18" ry="27" transform="rotate(-27 48 80)" fill="currentColor"/>'+
+       '<ellipse cx="90" cy="50" rx="19" ry="28" transform="rotate(-8 90 50)" fill="currentColor"/>'+
+       '<ellipse cx="140" cy="48" rx="19" ry="29" transform="rotate(8 140 48)" fill="currentColor"/>'+
+       '<ellipse cx="184" cy="79" rx="18" ry="27" transform="rotate(25 184 79)" fill="currentColor"/>'+
+       '<path d="M120 91c-24 0-35 19-48 34-17 18-35 29-31 51 4 19 22 31 41 27 14-3 23-11 38-11s24 8 39 11c19 4 37-8 40-27 4-22-14-33-31-51-14-15-25-34-48-34Z" fill="currentColor"/>'+
+      '</svg></div><span class="gr-art-word">STAY LOYAL.</span><span class="gr-art-corner gr-art-corner-bottom">EST. IN LOS SANTOS</span></div>'+
+    '</div><div class="gr-hero-footer"><div class="gr-container"><span>SCROLL TO EXPLORE <b>↓</b></span><span>GRIZZLY · STRENGTH IN UNITY</span></div></div></section>'+
+  '<section class="gr-section gr-about" id="about"><div class="gr-container"><div class="gr-section-heading"><span class="gr-kicker">01 — НАША ІСТОРІЯ</span><h2>ПОВАГА НЕ ДАЄТЬСЯ.<br><span>ЇЇ ЗАСЛУГОВУЮТЬ.</span></h2></div>'+
+   '<div class="gr-about-layout"><div class="gr-about-identity"><div class="gr-identity-symbol" aria-hidden="true">G<span>✦</span></div><p>ЄДНІСТЬ <em>·</em> ВІДДАНІСТЬ <em>·</em> СИЛА</p></div>'+
+   '<div class="gr-about-story"><span class="gr-small-label">ХТО МИ</span><p class="gr-story-preview">'+esc(preview)+'</p>'+
+   (history.length>480?'<details class="gr-story-expand"><summary>Читати повну історію <span>＋</span></summary><div class="gr-story-full">'+esc(history)+'</div></details>':'')+
+   '<a class="gr-text-link" href="#directions">Дізнайся, чим живе сім’я <span>↗</span></a></div></div></div></section>'+
+  '<section class="gr-section gr-directions" id="directions"><div class="gr-container"><div class="gr-section-heading gr-heading-row"><div><span class="gr-kicker">02 — НАШІ НАПРЯМКИ</span><h2>ОДНА СІМ’Я.<br><span>БАГАТО МОЖЛИВОСТЕЙ.</span></h2></div><p>У кожного своя сильна сторона. Разом ми досягаємо більшого.</p></div>'+
+   '<div class="gr-direction-grid">'+
+     '<article class="gr-direction-card"><span class="gr-direction-index">01 / CAPT</span><div class="gr-direction-icon" aria-hidden="true">✧</div><h3>CAPT СКЛАД</h3><p>Командні бої, тренування, тактика й злагоджена гра.</p><span class="gr-direction-footer">КОМАНДА / НАВИЧКИ</span></article>'+
+     '<article class="gr-direction-card"><span class="gr-direction-index">02 / DEVELOPMENT</span><div class="gr-direction-icon" aria-hidden="true">▥</div><h3>ФАРМ І РОЗВИТОК</h3><p>Контракти, спільна активність та підтримка розвитку сім’ї.</p><span class="gr-direction-footer">АКТИВНІСТЬ / ПРОГРЕС</span></article>'+
+     '<article class="gr-direction-card"><span class="gr-direction-index">03 / COMMUNITY</span><div class="gr-direction-icon" aria-hidden="true">◎</div><h3>СІМ’Я ТА ІВЕНТИ</h3><p>Збори, спільні виїзди, події та взаємодопомога.</p><span class="gr-direction-footer">ЄДНІСТЬ / ДОВІРА</span></article>'+
+   '</div></div></section>'+
+  '<section class="gr-section gr-rules" id="rules"><div class="gr-container"><div class="gr-section-heading gr-heading-row"><div><span class="gr-kicker">03 — НАШ КОДЕКС</span><h2>СИЛА — У ПОРЯДКУ.</h2></div><p>Прозорі правила для тих, хто грає в команді.</p></div>'+
+    '<div class="gr-rules-grid"><article class="gr-rules-card"><div class="gr-rules-top"><span>01</span><strong>ПРАВИЛА СІМ’Ї</strong><span>↗</span></div><p class="gr-rule-copy">'+esc(rules)+'</p></article>'+
+    '<article class="gr-rules-card"><div class="gr-rules-top"><span>02</span><strong>ВИМОГИ ДО УЧАСНИКІВ</strong><span>↗</span></div><p class="gr-rule-copy">'+esc(requirements)+'</p></article></div>'+
+  '</div></section>'+
+  '<section class="gr-section gr-gallery" id="gallery"><div class="gr-container"><div class="gr-section-heading gr-heading-row"><div><span class="gr-kicker">04 — ЗАКАРБОВАНІ МОМЕНТИ</span><h2>НАША ІСТОРІЯ<br><span>У КАДРАХ.</span></h2></div><p>Моменти з життя сім’ї GRIZZLY — від командних боїв до спільних зустрічей.</p></div>'+
+   (gallery.length?'<div class="gr-gallery-grid">'+gallery.map(publicPhotoCard).join('')+'</div>':
+    '<div class="gr-gallery-placeholder"><div class="gr-placeholder-mark" aria-hidden="true">✦</div><div><span class="gr-small-label">GRIZZLY / GALLERY</span><h3>НАШІ НАЙКРАЩІ МОМЕНТИ<br>ЩЕ ПОПЕРЕДУ.</h3><p>Коли керівництво опублікує фото в розділі «Галерея», вони автоматично з’являться тут.</p></div></div>')+
+  '</div></section>'+
+  '<section class="gr-section gr-join" id="join"><div class="gr-container gr-join-layout"><div class="gr-join-info"><span class="gr-kicker">05 — ПРИЄДНАЙСЯ ДО НАС</span><h2>ТВОЄ МІСЦЕ<br><span>СЕРЕД СВОЇХ.</span></h2><p>Готовий стати частиною GRIZZLY? Заповни анкету — рекрутер розгляне твою заявку.</p><div class="gr-join-steps"><div><span>01</span><p>Заповни анкету</p></div><div><span>02</span><p>Дочекайся розгляду</p></div><div><span>03</span><p>Приєднайся до команди</p></div></div></div>'+
+    '<div class="gr-join-form"><div class="gr-form-header"><span>ЗАЯВКА НА ВСТУП</span><small>GRIZZLY / RECRUITMENT</small></div>'+
+     '<form id="apply-form" class="formgrid">'+
+       '<div class="field"><label for="gr-nick">Ігровий нікнейм *</label><input id="gr-nick" class="input" name="nickname" required maxlength="80" autocomplete="off" placeholder="Наприклад, Player Grizzly"></div>'+
+       '<div class="field"><label for="gr-game-id">Ігровий ID *</label><input id="gr-game-id" class="input" name="game_id" required maxlength="40" placeholder="Ваш ID у грі"></div>'+
+       '<div class="field"><label for="gr-discord">Discord</label><input id="gr-discord" class="input" name="discord" maxlength="120" autocomplete="off" placeholder="Ваш Discord"></div>'+
+       '<div class="field"><label for="gr-experience">Досвід GTA RP</label><input id="gr-experience" class="input" name="experience" maxlength="700" placeholder="Де грали раніше"></div>'+
+       '<div class="field full"><label for="gr-motivation">Чому хочеш вступити? *</label><textarea id="gr-motivation" class="textarea" name="motivation" required minlength="10" maxlength="1400" placeholder="Розкажи про себе, свій досвід та цілі"></textarea></div>'+
+       '<button class="gr-button gr-button-primary gr-submit full" type="submit">Надіслати заявку <span>↗</span></button>'+
+       '<p class="gr-form-note full">Заявка не створює акаунт автоматично. Дані доступу видає керівництво після рішення.</p>'+
+     '</form></div></div></section>'+
+  '</main>'+
+  '<footer class="gr-footer"><div class="gr-container"><div class="gr-footer-top"><a href="#home" class="gr-footer-brand">GRIZZLY<span>.</span></a><p>Сила в єдності.<br>Повага — у вчинках.</p><a href="#home" class="gr-back-top">НАГОРУ ↑</a></div><div class="gr-footer-bottom"><span>© '+new Date().getFullYear()+' GRIZZLY FAMILY · GTA 5 RP</span><span>MADE FOR THE FAMILY. BUILT ON LOYALTY.</span>'+(discord?'<a href="'+esc(discord)+'" target="_blank" rel="noopener noreferrer">DISCORD ↗</a>':'<a href="#join">ВСТУПИТИ ↗</a>')+'</div></div></footer>'+
+  '</div>';
+}
 function loginModal(){modal('Вхід до панелі',`<p class="modal-desc">Логін і пароль видає керівник сім’ї. Реєстрація після заявки не відбувається автоматично.</p><form id="login-form" class="stack"><div class="field"><label>Логін</label><input class="input" name="username" autocomplete="username" required autofocus></div><div class="field"><label>Пароль</label><input class="input" type="password" name="password" autocomplete="current-password" required></div><button type="submit" class="btn">Увійти →</button></form>`);}
 function modal(title,html){$('#modal-root').innerHTML=`<div class="modal-backdrop" data-backdrop="1"><div class="modal" role="dialog" aria-modal="true" aria-label="${esc(title)}"><div class="modal-head"><h3>${esc(title)}</h3><button type="button" data-action="close-modal" class="iconbtn">✕</button></div><div class="modal-body">${html}</div></div></div>`;const first=$('#modal-root input:not([type=hidden])');if(first)setTimeout(()=>first.focus(),20);}
 function closeModal(){$('#modal-root').innerHTML='';}
