@@ -91,6 +91,41 @@ test('unconfigured or duplicate webhooks cannot be tested from the UI',async()=>
   assert.ok(html.includes('Некоректний URL'));
 });
 
+test('application status webhooks display separate destinations and test buttons',async()=>{
+  const applicationRoutes={
+    application_waiting:{configured:true,reason:'ready',separate:true},
+    application_accepted:{configured:true,reason:'ready',separate:true},
+    application_rejected:{configured:true,reason:'ready',separate:true}
+  };
+  const {html}=await ui({...ready,applicationRoutes});
+  for(const [status,secret] of [
+    ['application_waiting','DISCORD_WEBHOOK_APPLICATIONS_WAITING'],
+    ['application_accepted','DISCORD_WEBHOOK_APPLICATIONS_ACCEPTED'],
+    ['application_rejected','DISCORD_WEBHOOK_APPLICATIONS_REJECTED']
+  ]){
+    assert.ok(html.includes(secret));
+    assert.ok(html.includes('data-action="discord-test-route" data-kind="'+status+'"'));
+  }
+  assert.ok(html.includes('Заявка: Очікує'));
+  assert.ok(html.includes('Заявка: Прийнято'));
+  assert.ok(html.includes('Заявка: Відхилено'));
+  assert.equal((html.match(/Окремий підключено/g)||[]).length,3);
+});
+test('legacy waiting webhook is clearly labeled, invalid and duplicate status webhooks cannot be tested',async()=>{
+  const applicationRoutes={
+    application_waiting:{configured:true,reason:'legacy',separate:false},
+    application_accepted:{configured:false,reason:'duplicate',separate:false},
+    application_rejected:{configured:false,reason:'invalid',separate:false}
+  };
+  const {html}=await ui({...ready,applicationRoutes});
+  assert.ok(html.includes('Загальний webhook'));
+  assert.ok(html.includes('Webhook повторюється'));
+  assert.ok(html.includes('Некоректний URL'));
+  assert.ok(html.includes('data-action="discord-test-route" data-kind="application_waiting" '));
+  for(const kind of ['application_accepted','application_rejected'])
+    assert.ok(html.includes('data-action="discord-test-route" data-kind="'+kind+'" disabled'));
+});
+
 test('non-leader cannot see Discord integration controls in settings',async()=>{
   const {html,calls}=await ui(ready,[],'member');
   assert.ok(!html.includes('id="discord-preferences-form"'));
