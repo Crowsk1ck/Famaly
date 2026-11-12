@@ -15,7 +15,7 @@ const date=v=>v?new Date(v).toLocaleDateString('uk-UA',{day:'2-digit',month:'2-d
 const short=v=>String(v||'').slice(0,18);
 const roles={leader:'Лідер',deputy:'Заступник',head:'Керівник напрямку',member:'Учасник'};
 const statuses=['Заплановано','У роботі','На перевірці','На доопрацювання','Погоджено','Відхилено','Завершено'];
-const permissionNames={'members:read':'Перегляд складу','members:write':'Керування складом','tasks:manage':'Завдання','reports:review':'Перевірка звітів','promotions:review':'Підвищення','events:manage':'Заходи','capt:manage':'CAPT','fleet:manage':'Автопарк','recruitment:manage':'Рекрутинг','notices:manage':'Оголошення','content:manage':'Галерея','finance:read':'Перегляд фінансів','finance:manage':'Нарахування й фінанси','discipline:manage':'Дисципліна','stats:read':'Статистика'};
+const permissionNames={'members:read':'Перегляд складу','members:write':'Керування складом','tasks:manage':'Завдання','reports:review':'Перевірка звітів','promotions:review':'Підвищення','events:manage':'Заходи','capt:manage':'CAPT','fleet:manage':'Автопарк','recruitment:manage':'Рекрутинг','notices:manage':'Оголошення','content:manage':'Публічний контент','finance:read':'Перегляд фінансів','finance:manage':'Нарахування й фінанси','discipline:manage':'Дисципліна','stats:read':'Статистика'};
 const nav=[
   {id:'overview',text:'Огляд',icon:'◫',group:'РОБОТА'},
   {id:'members',text:'Склад сім’ї',icon:'♟',group:'РОБОТА'},
@@ -428,7 +428,7 @@ async function teamManager(){
       '<span class="gr-admin-team-role">'+esc(r.extra?.position||'Посаду не вказано')+'</span>'+
       '<h3>'+esc(r.title)+'</h3><p class="muted small">'+esc(String(r.details||'').slice(0,145))+'</p>'+
       '<div class="row wrap gr-admin-team-actions"><button class="btn tiny secondary" data-action="team-edit" data-id="'+esc(r.id)+'">Редагувати</button>'+
-      '<button class="btn tiny '+(isPublic?'ghost':'')+'" data-action="team-publish" data-id="'+esc(r.id)+'" data-status="'+(isPublic?'Заплановано':'Погоджено')+'">'+(isPublic?'Приховати':'Опублікувати')+'</button></div>'+
+      '<button class="btn tiny '+(isPublic?'ghost':'')+'" data-action="team-publish" data-id="'+esc(r.id)+'" data-status="'+(isPublic?'Заплановано':'Погоджено')+'">'+(isPublic?'Приховати':'Опублікувати')+'</button>'+'<button class="btn tiny danger" data-action="team-delete" data-id="'+esc(r.id)+'">Видалити</button></div>'+
       '</div></article>';
   }).join('');
   return intro('Керівництво сайту','Публічні RP-профілі керівників сім’ї. Вони не пов’язані з приватними даними акаунтів.',
@@ -655,6 +655,13 @@ document.addEventListener('click',async e=>{const back=e.target.closest('[data-b
     if(!can('content:manage'))throw new Error('Недостатньо прав');
     const item=(await api('/records/public_team')).items.find(x=>x.id===id);
     if(!item)throw new Error('Профіль не знайдено');teamForm(item);break;}
+  case 'team-delete':{
+    if(!can('content:manage'))throw new Error('Недостатньо прав');
+    if(!confirm('Назавжди видалити цей публічний профіль?'))break;
+    const item=(await api('/records/public_team')).items.find(x=>x.id===id);
+    if(!item)throw new Error('Профіль не знайдено');
+    await api('/records/public_team/'+encodeURIComponent(id),'DELETE',{version:item.version});
+    await afterSaved('Профіль видалено');break;}
   case 'team-publish':{
     if(!can('content:manage'))throw new Error('Недостатньо прав');
     const item=(await api('/records/public_team')).items.find(x=>x.id===id);
