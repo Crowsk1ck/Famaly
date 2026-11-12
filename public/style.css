@@ -417,3 +417,62 @@
  .gr-ach-filter{padding:8px 10px;font-size:11px}
  .gr-ach-empty{padding:25px}
 }
+
+
+/* GRIZZLY COMPACT PUBLIC HOME */
+.gr-public .gr-nav a[aria-current="page"]{color:#FFF;border-bottom:2px solid #E84255;padding-bottom:9px}
+.gr-public .gr-mobile-menu a[aria-current="page"]{background:#47232E;color:#FFF}
+.gr-public .gr-hero{min-height:0}
+.gr-public .gr-hero-inner{min-height:495px;padding:52px 0 48px}
+.gr-public .gr-hero-art{width:min(380px,100%);aspect-ratio:1}
+.gr-public .gr-hero h1{font-size:clamp(3.4rem,6vw,6.7rem)}
+.gr-public .gr-hero-values{margin-top:33px}
+.gr-home-intro,.gr-home-news{padding:66px 0}
+.gr-home-intro{background:#12151D}
+.gr-home-news{background:#0F1117;border-top:1px solid #36323B}
+.gr-home-intro .gr-section-heading,.gr-home-news .gr-section-heading{margin-bottom:22px}
+.gr-home-intro .gr-section-heading h2,.gr-home-news .gr-section-heading h2{font-size:clamp(2rem,3.7vw,4.1rem)}
+.gr-home-story{max-width:950px;color:#BEC1CC;font-size:16px;line-height:1.85;white-space:pre-wrap;overflow-wrap:anywhere}
+.gr-home-intro .gr-text-link{margin-top:17px}
+.gr-home-features{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-top:37px}
+.gr-home-features article{min-width:0;background:#1D2029;border:1px solid #49404B;padding:23px 24px;display:flex;flex-direction:column;gap:9px}
+.gr-home-features article>span{font-size:10px;letter-spacing:.14em;color:#EC8A98;font-weight:900}
+.gr-home-features h3{font-size:18px;font-weight:920;letter-spacing:-.03em}
+.gr-home-features p{font-size:13px;color:#B6BAC5;line-height:1.6}
+.gr-home-news-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.gr-home-news-card{min-width:0;border:1px solid #53404B;background:linear-gradient(145deg,#24202A,#1A1C25);padding:23px;display:flex;flex-direction:column;gap:14px}
+.gr-home-news-meta{display:flex;align-items:center;justify-content:space-between;gap:12px;font-weight:810;letter-spacing:.07em;font-size:10px;color:#EAA1AC}
+.gr-home-news-meta time{color:#9CA0AB;white-space:nowrap;font-weight:650}
+.gr-home-news-card h3{font-size:21px;line-height:1.23;letter-spacing:-.035em;overflow-wrap:anywhere}
+.gr-home-news-card p{font-size:13px;line-height:1.75;color:#BBC0CB;white-space:pre-wrap;overflow-wrap:anywhere;flex:1}
+.gr-home-news-card a,.gr-home-news-empty a{color:#F19DA7;font-weight:830;font-size:12px;letter-spacing:.03em;align-self:flex-start}
+.gr-home-news-empty{padding:28px;border:1px dashed #654352;background:#1C1922;display:flex;align-items:center;justify-content:space-between;gap:25px}
+.gr-home-news-empty p{font-size:14px;color:#B7B8C1;line-height:1.6}
+.gr-home-cta{background:radial-gradient(ellipse at 90% 40%,#70273B88,transparent 70%),linear-gradient(100deg,#301B2A,#161821);border-block:1px solid #633B4A;padding:60px 0}
+.gr-home-cta-layout{display:flex;align-items:center;justify-content:space-between;gap:36px}
+.gr-home-cta h2{font-size:clamp(2rem,4vw,4.25rem);letter-spacing:-.055em;line-height:1.04;font-weight:970}
+.gr-home-cta h2 span{color:#F2808D}
+.gr-home-cta p{margin-top:17px;color:#CCC2CC;line-height:1.75;font-size:14px}
+.gr-home-cta .gr-button{white-space:nowrap;flex-shrink:0}
+.gr-public .gr-footer{padding-top:38px}
+.gr-public .gr-footer-top{padding-bottom:31px}
+@media(max-width:1040px){
+ .gr-home-news-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .gr-public .gr-hero-inner{gap:32px}
+ .gr-public .gr-hero-art{width:min(315px,100%)}
+}
+@media(max-width:780px){
+ .gr-home-intro,.gr-home-news{padding:52px 0}
+ .gr-public .gr-hero-inner{grid-template-columns:1fr;min-height:auto;padding:64px 0 42px}
+ .gr-home-features{grid-template-columns:1fr;gap:10px;margin-top:27px}
+ .gr-home-features article{padding:19px}
+ .gr-home-news-grid{grid-template-columns:1fr}
+ .gr-home-cta-layout{align-items:flex-start;flex-direction:column;gap:24px}
+ .gr-home-news-empty{align-items:flex-start;flex-direction:column}
+}
+@media(max-width:530px){
+ .gr-public .gr-hero h1{font-size:clamp(2.9rem,12vw,4.7rem)}
+ .gr-home-cta{padding:45px 0}
+ .gr-home-cta .gr-button{width:100%}
+ .gr-home-news-card{padding:19px}
+}
