@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 
 const source=readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
-const start=source.indexOf('function publicPhotoCard(');
+const start=source.indexOf('const galleryCategories=');
 const end=source.indexOf('function loginModal(){',start);
 assert.ok(start>=0&&end>start,'public renderer exists');
 
