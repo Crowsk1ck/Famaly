@@ -8,7 +8,7 @@ import worker,{payoutPreview,hashPassword,verifyPassword,validDiscordWebhookUrl,
 
 const dir=mkdtempSync(join(tmpdir(),'grizzly-test-'));
 const file=join(dir,'local.sqlite');
-const schema=['0001_init.sql','0002_capt_signups.sql','0003_discord_notifications.sql'].map(file=>readFileSync(resolve('migrations',file),'utf8')).join('\n');
+const schema=['0001_init.sql','0002_capt_signups.sql','0003_discord_notifications.sql','0004_discord_capt_news.sql'].map(file=>readFileSync(resolve('migrations',file),'utf8')).join('\n');
 const child=spawn('python',['-u',resolve('tests/db_adapter.py')]);let pending=[],buf='';child.stdout.on('data',d=>{buf+=d.toString();let idx;while((idx=buf.indexOf('\n'))>=0){const line=buf.slice(0,idx);buf=buf.slice(idx+1);const {resolve:res,reject:rej}=pending.shift();const obj=JSON.parse(line);if(obj.error)rej(new Error(obj.error));else res(obj);}});
 function python(payload){return new Promise((res,rej)=>{pending.push({resolve:res,reject:rej});child.stdin.write(JSON.stringify({file,...payload})+'\n');});}
 await python({init:schema});
@@ -532,28 +532,32 @@ test('Discord leader preferences persist and prevent disabled alerts; delivery l
   const memberList=await req('/api/discord/deliveries',{token:member});
   assert.equal(memberList.status,403);
   const memberEdit=await req('/api/discord/preferences',{method:'PATCH',token:member,data:{
-    enabled:{applications:false,decisions:false,events:false},versions:{applications:1,decisions:1,events:1}
+    enabled:{applications:false,decisions:false,events:false,capt:false,news:false},versions:{applications:1,decisions:1,events:1,capt:1,news:1}
   }});
   assert.equal(memberEdit.status,403);
   const original=(await req('/api/discord/status',{token:leader})).data;
   assert.equal(original.migrationRequired,false);
   assert.equal(original.enabled.applications,true);
+  assert.equal(original.enabled.capt,true);
+  assert.equal(original.enabled.news,true);
   assert.ok(original.versions.applications>=1);
   const bad=await req('/api/discord/preferences',{method:'PATCH',token:leader,data:{
-    enabled:{applications:'false',decisions:true,events:true},versions:original.versions
+    enabled:{applications:'false',decisions:true,events:true,capt:true,news:true},versions:original.versions
   }});
   assert.equal(bad.status,400);
   const update=await req('/api/discord/preferences',{method:'PATCH',token:leader,data:{
-    enabled:{applications:false,decisions:true,events:false},versions:original.versions
+    enabled:{applications:false,decisions:true,events:false,capt:true,news:true},versions:original.versions
   }});
   assert.equal(update.status,200,JSON.stringify(update.data));
   const status=(await req('/api/discord/status',{token:leader})).data;
   assert.equal(status.categories.applications,false);
   assert.equal(status.categories.decisions,true);
   assert.equal(status.categories.events,false);
+  assert.equal(status.categories.capt,true);
+  assert.equal(status.categories.news,true);
   assert.ok(status.versions.applications>original.versions.applications);
   const stale=await req('/api/discord/preferences',{method:'PATCH',token:leader,data:{
-    enabled:{applications:true,decisions:true,events:true},versions:original.versions
+    enabled:{applications:true,decisions:true,events:true,capt:true,news:true},versions:original.versions
   }});
   assert.equal(stale.status,409);
   const webhook='https://discord.com/api/webhooks/123456789012345678/abcdefghijklmnopqrstuvwxyz_0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
@@ -574,7 +578,7 @@ test('Discord leader preferences persist and prevent disabled alerts; delivery l
     assert.equal(sent.length,0);
     assert.equal((await req('/api/discord/deliveries',{token:leader})).data.items.length,before);
     const reenable=await req('/api/discord/preferences',{method:'PATCH',token:leader,data:{
-      enabled:{applications:true,decisions:true,events:true},versions:status.versions
+      enabled:{applications:true,decisions:true,events:true,capt:true,news:true},versions:status.versions
     }});
     assert.equal(reenable.status,200,JSON.stringify(reenable.data));
     const active=await req('/api/apply',{method:'POST',headers:{'cf-connecting-ip':'198.51.100.109'},
@@ -603,6 +607,85 @@ test('Discord leader preferences persist and prevent disabled alerts; delivery l
   }finally{
     globalThis.fetch=oldFetch;
     delete env.DISCORD_WEBHOOK_URL;
+  }
+});
+
+
+test('CAPT announcements and family news notify only on explicit public-news publication',async()=>{
+  const hook='https://discord.com/api/webhooks/123456789012345678/abcdefghijklmnopqrstuvwxyz_0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  const oldFetch=globalThis.fetch;
+  const sent=[],pending=[],ctx={waitUntil(p){pending.push(p);}};
+  env.DISCORD_WEBHOOK_URL=hook;
+  globalThis.fetch=async(_url,opt)=>{sent.push(JSON.parse(opt.body));return new Response(null,{status:204});};
+  try{
+    const initial=(await req('/api/discord/status',{token:leader})).data;
+    assert.equal(initial.migrationRequired,false);
+    assert.equal(initial.categories.capt,true);
+    assert.equal(initial.categories.news,true);
+    const captDraft=await req('/api/records/public_news',{method:'POST',token:leader,ctx,data:{
+      title:'CAPT збори <@123456789012345678>',details:'PUBLIC_CAPT_DETAILS',
+      status:'Заплановано',extra:{news_category:'capt',featured:false,secret:'PRIVATE_CAPT_NOTE'}
+    }});
+    assert.equal(captDraft.status,201,JSON.stringify(captDraft.data));
+    await Promise.all(pending.splice(0));
+    assert.equal(sent.length,0);
+    const id=captDraft.data.item.id;
+    const captLive=await req('/api/records/public_news/'+id,{method:'PATCH',token:leader,ctx,data:{
+      version:1,status:'Погоджено'
+    }});
+    assert.equal(captLive.status,200,JSON.stringify(captLive.data));
+    await Promise.all(pending.splice(0));
+    assert.equal(sent.length,1);
+    assert.ok(sent[0].embeds[0].title.includes('CAPT'));
+    assert.ok(JSON.stringify(sent[0]).includes('CAPT збори'));
+    assert.ok(!JSON.stringify(sent[0]).includes('PUBLIC_CAPT_DETAILS'));
+    assert.ok(!JSON.stringify(sent[0]).includes('PRIVATE_CAPT_NOTE'));
+    assert.deepEqual(sent[0].allowed_mentions,{parse:[]});
+    assert.ok(!JSON.stringify(sent[0]).includes('<@123456789012345678>'));
+    const sameStatus=await req('/api/records/public_news/'+id,{method:'PATCH',token:leader,ctx,data:{
+      version:2,status:'Погоджено',title:'CAPT збори оновлено'
+    }});
+    assert.equal(sameStatus.status,200,JSON.stringify(sameStatus.data));
+    await Promise.all(pending.splice(0));
+    assert.equal(sent.length,1);
+    const newsPost=await req('/api/records/public_news',{method:'POST',token:leader,ctx,data:{
+      title:'Сімейні новини GRIZZLY',details:'PUBLIC_NEWS_DETAILS',status:'Погоджено',
+      extra:{news_category:'news',private_comment:'SECRET_NEWS_COMMENT'}
+    }});
+    assert.equal(newsPost.status,201,JSON.stringify(newsPost.data));
+    await Promise.all(pending.splice(0));
+    assert.equal(sent.length,2);
+    assert.ok(sent[1].embeds[0].title.includes('Новина'));
+    assert.ok(JSON.stringify(sent[1]).includes('Сімейні новини GRIZZLY'));
+    assert.ok(!JSON.stringify(sent[1]).includes('PUBLIC_NEWS_DETAILS'));
+    assert.ok(!JSON.stringify(sent[1]).includes('SECRET_NEWS_COMMENT'));
+    let log=(await req('/api/discord/deliveries',{token:leader})).data.items;
+    assert.ok(log.some(x=>x.kind==='capt'&&x.status==='sent'));
+    assert.ok(log.some(x=>x.kind==='news'&&x.status==='sent'));
+    assert.ok(!JSON.stringify(log).includes('CAPT збори'));
+    const toggles=await req('/api/discord/preferences',{method:'PATCH',token:leader,data:{
+      enabled:{...initial.enabled,capt:false,news:false},versions:initial.versions
+    }});
+    assert.equal(toggles.status,200,JSON.stringify(toggles.data));
+    const disabledCapt=await req('/api/records/public_news',{method:'POST',token:leader,ctx,data:{
+      title:'CAPT без Discord',details:'Публічне оголошення без сповіщення',status:'Погоджено',
+      extra:{news_category:'capt'}
+    }});
+    assert.equal(disabledCapt.status,201,JSON.stringify(disabledCapt.data));
+    const disabledNews=await req('/api/records/public_news',{method:'POST',token:leader,ctx,data:{
+      title:'Новина без Discord',details:'Публічний текст без сповіщення',status:'Погоджено',
+      extra:{news_category:'news'}
+    }});
+    assert.equal(disabledNews.status,201,JSON.stringify(disabledNews.data));
+    await Promise.all(pending.splice(0));
+    assert.equal(sent.length,2);
+    const restored=await req('/api/discord/preferences',{method:'PATCH',token:leader,data:{
+      enabled:initial.enabled,versions:toggles.data.versions
+    }});
+    assert.equal(restored.status,200,JSON.stringify(restored.data));
+  }finally{
+    delete env.DISCORD_WEBHOOK_URL;
+    globalThis.fetch=oldFetch;
   }
 });
 
