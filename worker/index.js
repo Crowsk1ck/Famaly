@@ -91,6 +91,33 @@ function recordPayload(b,u,mod,old){const cfg=MODULES[mod];let ex=b.extra??(old?
 }
 async function settings(db,isPublic=false){const rows=await allRows(db,'SELECT key,value FROM settings');return Object.fromEntries(rows.filter(r=>!isPublic||PUBLIC_SETTINGS.includes(r.key)).map(r=>[r.key,r.value]));}
 async function safeContractUsers(db,ids){if(!ids.length)fail(400,'Додайте щонайменше одного учасника');const rows=await allRows(db,`SELECT id,status FROM users WHERE id IN (${ids.map(()=>'?').join(',')})`,...ids);if(rows.length!==ids.length||rows.some(r=>r.status!=='active'))fail(400,'Виберіть існуючих активних учасників');}
+function captMatchSize(extra) {
+  const value=extra?.lineup_limit??8;
+  const size=Number(value);
+  if(!Number.isInteger(size)||size<1||size>50)fail(400,'Розмір CAPT-складу має бути від 1 до 50');
+  return size;
+}
+function captMatchPayload(record,old) {
+  const extra=record.extra;
+  if(extra.outcome!==undefined && !['','win','loss','draw','cancelled'].includes(extra.outcome))
+    fail(400,'Некоректний результат CAPT');
+  captMatchSize(extra);
+  // Keep the auto-generated roster separate from legacy free-text lineup.
+  return record;
+}
+function captResults(records) {
+  const summary={wins:0,losses:0,draws:0,cancelled:0,played:0,win_rate:0};
+  for(const r of records){
+    if(r.status!=='Завершено')continue;
+    const outcome=r.extra?.outcome;
+    if(outcome==='win'){summary.wins++;summary.played++;}
+    else if(outcome==='loss'){summary.losses++;summary.played++;}
+    else if(outcome==='draw'){summary.draws++;summary.played++;}
+    else if(outcome==='cancelled')summary.cancelled++;
+  }
+  summary.win_rate=summary.played?Math.round(summary.wins*100/summary.played):0;
+  return summary;
+}
 function contractView(c){return {...c,participant_ids:parseJson(c.participant_ids,[]),evidence:parseJson(c.evidence,[])};}
 export function payoutPreview(amount,rate,ids){const total=money(amount),pct=percent(rate);const members=uniqueIds(ids);if(!members.length)fail(400,'Контракт без учасників');const treasuryBase=Math.floor(total*pct/100),pool=total-treasuryBase,each=Math.floor(pool/members.length),remainder=pool-each*members.length;return {amount:total,treasury_percent:pct,treasury:treasuryBase+remainder,per_member:each,participants:members.length,distributable:each*members.length,rounding_remainder:remainder,allocations:members.map(user_id=>({user_id,amount:each}))};}
 
@@ -219,8 +246,31 @@ async function handleApi(req,env){const db=env.DB;if(!db)fail(500,'Не нала
         paid_at:canSeePayout&&payment?payment.created_at:null};
     });
     const s=financeManager?await settings(db):null;
-    return json({matches,trainings,attendance:visibleAttendance,
+    return json({matches,trainings,attendance:visibleAttendance,results:captResults(matches),
       rates:financeManager?{afk:Number(s.capt_afk_rate||0),battle:Number(s.capt_battle_rate||0)}:null});
+  }
+  // Members may register themselves for scheduled CAPT matches. Roster is
+  // computed deterministically from registration order, never from arbitrary
+  // player names in the match's free-text notes.
+  m=path.match(/^\/api\/capt\/matches\/([\\w-]+)\/signups$/);
+  if(m&&(method==='GET'||method==='POST')){
+    const match=await db.prepare("SELECT * FROM records WHERE id=? AND module='capt_matches' AND deleted_at IS NULL").bind(m[1]).first();
+    if(!match||!permittedRecord(user,'capt_matches',match))fail(404,'Бій CAPT не знайдено');
+    const isOpen=['Заплановано','У роботі'].includes(match.status);
+    if(method==='POST'){
+      const b=await body(req),action=str(b.action,20);
+      if(!['join','leave'].includes(action))fail(400,'Оберіть запис або скасування запису');
+      if(!isOpen)fail(409,'Запис на цей бій уже закрито');
+      if(action==='join'){
+        await db.prepare('INSERT OR IGNORE INTO capt_signups(match_id,user_id,joined_at) VALUES(?,?,?)').bind(match.id,user.id,now()).run();
+      }else{
+        await db.prepare('DELETE FROM capt_signups WHERE match_id=? AND user_id=?').bind(match.id,user.id).run();
+      }
+      await audit(db,user,action==='join'?'capt_signup':'capt_leave','capt_matches',match.id);
+    }
+    const roster=await allRows(db,"SELECT s.user_id,s.joined_at,COALESCE(NULLIF(u.nickname,''),u.username) nickname FROM capt_signups s JOIN users u ON u.id=s.user_id WHERE s.match_id=? AND u.status='active' ORDER BY s.joined_at ASC,s.user_id ASC",match.id);
+    const limit=captMatchSize(parseJson(match.extra,{})),lineup=roster.slice(0,limit),reserve=roster.slice(limit);
+    return json({match_id:match.id,limit,total:roster.length,lineup,reserve,own:roster.some(x=>x.user_id===user.id),open:isOpen});
   }
   m=path.match(/^\/api\/capt-pay\/([\w-]+)$/);
   if(m&&method==='POST'){
@@ -237,7 +287,7 @@ async function handleApi(req,env){const db=env.DB;if(!db)fail(500,'Не нала
       const rows=await allRows(db,'SELECT * FROM records WHERE module=? AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 1000',mod);return json({items:rows.filter(r=>permittedRecord(user,mod,r)).map(mapRecord)});
     }
     if(!id&&method==='POST'){
-      const b=await body(req);const allowed=can(user,cfg.manage) || cfg.memberCreate;if(!allowed)fail(403,'Недостатньо прав для створення');const p=recordPayload(b,user,mod);if(!p.title)fail(400,'Додайте назву');if(mod==='promotions'&&(!Number.isInteger(Number(p.extra.requested_rank_id))||Number(p.extra.requested_rank_id)<1||Number(p.extra.requested_rank_id)>15))fail(400,'Виберіть ранг для підвищення');if(user.role==='head'&&!manageInDepartment(user,p.department_id))fail(403,'Доступ лише до свого напрямку');if(cfg.review)p.status='На перевірці';if(!can(user,cfg.manage)){p.status=cfg.review?'На перевірці':'Заплановано';p.assignee_id=user.id;p.department_id=user.department_id;}
+      const b=await body(req);const allowed=can(user,cfg.manage) || cfg.memberCreate;if(!allowed)fail(403,'Недостатньо прав для створення');const p=recordPayload(b,user,mod);if(mod==='capt_matches')captMatchPayload(p);if(!p.title)fail(400,'Додайте назву');if(mod==='promotions'&&(!Number.isInteger(Number(p.extra.requested_rank_id))||Number(p.extra.requested_rank_id)<1||Number(p.extra.requested_rank_id)>15))fail(400,'Виберіть ранг для підвищення');if(user.role==='head'&&!manageInDepartment(user,p.department_id))fail(403,'Доступ лише до свого напрямку');if(cfg.review)p.status='На перевірці';if(!can(user,cfg.manage)){p.status=cfg.review?'На перевірці':'Заплановано';p.assignee_id=user.id;p.department_id=user.department_id;}
       if(mod==='capt_attendance'&&!can(user,'capt:manage'))p.status='На перевірці';
       const newId=uuid(),t=now();await db.prepare('INSERT INTO records(id,module,title,details,status,owner_id,assignee_id,department_id,amount,starts_at,ends_at,evidence,extra,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(newId,mod,p.title,p.details,p.status,p.owner_id,p.assignee_id,p.department_id,p.amount,p.starts_at,p.ends_at,JSON.stringify(p.evidence),JSON.stringify(p.extra),t,t).run();await audit(db,user,'create',mod,newId);
       if(p.assignee_id&&p.assignee_id!==user.id)await notify(db,p.assignee_id,'Нове завдання / запис',p.title);return json({item:mapRecord(await db.prepare('SELECT * FROM records WHERE id=?').bind(newId).first())},201);
@@ -254,7 +304,7 @@ async function handleApi(req,env){const db=env.DB;if(!db)fail(500,'Не нала
       if(!review&&method==='PATCH'){
         const b=await body(req);if(!Number.isInteger(b.version))fail(428,'Потрібна версія');const manager=permittedRecord(user,mod,old,'manage');const self=old.owner_id===user.id||old.assignee_id===user.id;
         if(!manager&&!(self&&(cfg.memberUpdate||cfg.memberCreate)))fail(403,'Недостатньо прав');if(!manager&&['Погоджено','Відхилено','Завершено'].includes(b.status))fail(403,'Погодження тільки керівником');if(cfg.review&&manager&&b.status&&b.status!==old.status&&['Погоджено','Відхилено','На доопрацювання','Завершено'].includes(b.status))fail(400,'Для рішення використовуйте спеціальне погодження');
-        if(mod==='promotions'&&old.status==='Погоджено')fail(409,'Погоджене підвищення не можна змінювати');const p=recordPayload(b,user,mod,old);if(!manager){p.assignee_id=old.assignee_id;p.department_id=old.department_id;p.amount=old.amount;p.starts_at=old.starts_at;p.ends_at=old.ends_at;p.extra=parseJson(old.extra,{});p.status=cfg.review?'На перевірці':p.status;}
+        if(mod==='promotions'&&old.status==='Погоджено')fail(409,'Погоджене підвищення не можна змінювати');const p=recordPayload(b,user,mod,old);if(mod==='capt_matches')captMatchPayload(p,old);if(!manager){p.assignee_id=old.assignee_id;p.department_id=old.department_id;p.amount=old.amount;p.starts_at=old.starts_at;p.ends_at=old.ends_at;p.extra=parseJson(old.extra,{});p.status=cfg.review?'На перевірці':p.status;}
         if(user.role==='head'&&!manageInDepartment(user,p.department_id))fail(403,'Напрямок недоступний');const r=await db.prepare('UPDATE records SET title=?,details=?,status=?,assignee_id=?,department_id=?,amount=?,starts_at=?,ends_at=?,evidence=?,extra=?,version=version+1,updated_at=? WHERE id=? AND version=?').bind(p.title,p.details,p.status,p.assignee_id,p.department_id,p.amount,p.starts_at,p.ends_at,JSON.stringify(p.evidence),JSON.stringify(p.extra),now(),id,b.version).run();if(r.meta.changes!==1)fail(409,'Запис змінено іншим користувачем');await audit(db,user,'update',mod,id);return json({ok:true});
       }
       if(!review&&method==='DELETE'){
