@@ -53,3 +53,28 @@ test('metadata has correct canonical host and indexable public description',()=>
   assert.ok(html.includes('https://grizzly-family.online/'));
   assert.ok(html.includes('og:description'));
 });
+
+test('gallery categories remain filterable and captions are escaped',()=>{
+  const html=publicHtml({},[
+    {id:'a',title:'Тренування CAPT',details:'Бойовий склад',extra:{gallery_category:'capt',featured:true},evidence:['https://i.ibb.co/abc/photo.webp']},
+    {id:'b',title:'Автопарк',extra:{gallery_category:'cars'},evidence:['https://i.ibb.co/abc/car.jpg']},
+    {id:'c',title:'Небезпечне <img src=x onerror=1>',extra:{gallery_category:'other'},evidence:['https://i.ibb.co/abc/c.jpg']}
+  ]);
+  assert.ok(html.includes('data-action="gallery-filter"'));
+  assert.ok(html.includes('data-category="capt"'));
+  assert.ok(html.includes('data-category="cars"'));
+  assert.ok(html.includes('data-action="gallery-open"'));
+  assert.ok(html.includes('gr-photo-featured'));
+  assert.ok(html.includes('&lt;img src=x onerror=1&gt;'));
+  assert.ok(!html.includes('<img src=x onerror=1>'));
+});
+test('gallery links reject unrelated domains and userinfo lookalikes',()=>{
+  const html=publicHtml({},[
+    {id:'a',title:'Підробка',evidence:['https://i.ibb.co@evil.test/photo.jpg']},
+    {id:'b',title:'Інший сайт',evidence:['https://evil.test/img.jpg']},
+    {id:'c',title:'Фото',evidence:['https://i.ibb.co/file.png']}
+  ]);
+  assert.ok(!html.includes('src="https://i.ibb.co@evil.test'));
+  assert.ok(!html.includes('src="https://evil.test'));
+  assert.ok(html.includes('src="https://i.ibb.co/file.png"'));
+});
