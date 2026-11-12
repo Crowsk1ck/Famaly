@@ -193,6 +193,35 @@ async function handleApi(req,env){const db=env.DB;if(!db)fail(500,'Не нала
   m=path.match(/^\/api\/applications\/([\w-]+)$/);if(m&&method==='PATCH'){
     requirePerm(user,'recruitment:manage');const b=await body(req);if(!Number.isInteger(b.version))fail(428,'Потрібна версія');const r=await db.prepare('UPDATE applications SET status=?,comment=?,version=version+1,updated_at=? WHERE id=? AND version=?').bind(validStatus(b.status),str(b.comment,1200),now(),m[1],b.version).run();if(r.meta.changes!==1)fail(409,'Заявку змінено іншим користувачем');await audit(db,user,'review','applications',m[1],b.status);return json({ok:true});
   }
+  // CAPT dashboard: return only records the current role can see. Payout details
+  // remain limited to finance managers or the payout recipient.
+  if(path==='/api/capt/overview'&&method==='GET'){
+    const [rawMatches,rawTraining,rawAttendance]=await Promise.all([
+      allRows(db,"SELECT * FROM records WHERE module='capt_matches' AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 1000"),
+      allRows(db,"SELECT * FROM records WHERE module='capt_training' AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 1000"),
+      allRows(db,"SELECT * FROM records WHERE module='capt_attendance' AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 1000")
+    ]);
+    const matches=rawMatches.filter(r=>permittedRecord(user,'capt_matches',r)).map(mapRecord);
+    const trainings=rawTraining.filter(r=>permittedRecord(user,'capt_training',r)).map(mapRecord);
+    const attendance=rawAttendance.filter(r=>permittedRecord(user,'capt_attendance',r));
+    const financeManager=can(user,'finance:manage');
+    const payoutRows=financeManager
+      ?await allRows(db,"SELECT reference,recipient_id,amount,created_at FROM ledger WHERE kind='capt' AND reference LIKE 'capt_attendance:%' ORDER BY created_at DESC LIMIT 2000")
+      :await allRows(db,"SELECT reference,recipient_id,amount,created_at FROM ledger WHERE kind='capt' AND recipient_id=? AND reference LIKE 'capt_attendance:%' ORDER BY created_at DESC LIMIT 2000",user.id);
+    const paidByRef=new Map(payoutRows.map(r=>[r.reference,r]));
+    const visibleAttendance=attendance.map(r=>{
+      const item=mapRecord(r);
+      const ownPayout=r.assignee_id===user.id||(!r.assignee_id&&r.owner_id===user.id);
+      const canSeePayout=financeManager||ownPayout;
+      const payment=canSeePayout?paidByRef.get('capt_attendance:'+r.id):undefined;
+      return {...item,paid:canSeePayout?!!payment:null,
+        paid_amount:canSeePayout&&payment?payment.amount:null,
+        paid_at:canSeePayout&&payment?payment.created_at:null};
+    });
+    const s=financeManager?await settings(db):null;
+    return json({matches,trainings,attendance:visibleAttendance,
+      rates:financeManager?{afk:Number(s.capt_afk_rate||0),battle:Number(s.capt_battle_rate||0)}:null});
+  }
   m=path.match(/^\/api\/capt-pay\/([\w-]+)$/);
   if(m&&method==='POST'){
     requirePerm(user,'finance:manage');const r=await db.prepare("SELECT * FROM records WHERE id=? AND module='capt_attendance' AND deleted_at IS NULL").bind(m[1]).first();if(!r)fail(404,'Запис CAPT не знайдено');if(r.status!=='Погоджено')fail(409,'Спершу погодьте відвідування CAPT');const extra=parseJson(r.extra,{}),mode=extra.attendance_type;if(!['afk','battle'].includes(mode))fail(400,'У записі потрібно вказати тип участі: afk або battle');const payee=r.assignee_id||r.owner_id;if(!await db.prepare("SELECT id FROM users WHERE id=? AND status='active'").bind(payee).first())fail(400,'Учасник недоступний');const s=await settings(db);const amount=money(mode==='afk'?s.capt_afk_rate:s.capt_battle_rate);const id=uuid(),t=now();try{
