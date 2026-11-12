@@ -102,8 +102,6 @@ function galleryCategoryLabel(category){
 }
 function publicGalleryFiltered(){
   const gallery=Array.isArray(state.public?.gallery)?state.public.gallery:[];
-  const highlighted=gallery.find(r=>r?.extra?.featured&&galleryPhoto(r))||gallery.find(r=>galleryPhoto(r));
-  const heroPhoto=highlighted?galleryPhoto(highlighted):'';
   const category=state.galleryFilter||'all';
   return category==='all'?gallery:gallery.filter(r=>galleryCategory(r)===category);
 }
@@ -300,6 +298,8 @@ function renderPublic(){
   }
   const settings=state.public?.settings||{};
   const gallery=Array.isArray(state.public?.gallery)?state.public.gallery:[];
+  const highlighted=gallery.find(r=>r?.extra?.featured&&galleryPhoto(r))||gallery.find(r=>galleryPhoto(r));
+  const heroPhoto=highlighted?galleryPhoto(highlighted):'';
   const history=String(settings.history||'Grizzly об’єднує гравців, для яких повага, дисципліна та взаємодопомога важливіші за гучні слова.');
   const preview=history.length>480?history.slice(0,480).trimEnd()+'…':history;
   const introText=String(settings.tagline||'Сила в єдності. Повага — у вчинках.');
