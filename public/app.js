@@ -159,7 +159,7 @@ function newsTypeLabel(key){return newsTypes.find(([id])=>id===key)?.[1]||'Но�
 function renderPublicNews(){
   const rows=Array.isArray(state.public?.news)?state.public.news:[];
   if(!rows.length)return '<div class="gr-news-empty"><span class="gr-small-label">GRIZZLY / NEWS</span><h3>НОВИНИ ГОТУЮТЬСЯ.</h3><p>Нові публікації з’являться тут після підтвердження керівництвом.</p></div>';
-  return '<div class="gr-news-grid">'+rows.slice(0,9).map((post,i)=>{
+  return '<div class="gr-news-grid">'+rows.map((post,i)=>{
     const txt=String(post.details||''),shortText=txt.length>260?txt.slice(0,260).trimEnd()+'…':txt;
     return '<article class="gr-news-card'+(post.featured?' gr-news-featured':'')+'">'+
       '<div class="gr-news-top"><span class="gr-news-category">'+esc(newsTypeLabel(post.category))+'</span><span class="gr-news-date">'+esc(date(post.updated_at))+'</span></div>'+
@@ -218,7 +218,19 @@ function renderPublicAchievements(){
     '<div><strong>'+counts.award+'</strong><span>Нагород</span></div></div>'+
     tabs+(shown.length?'<div class="gr-ach-grid">'+cards+'</div>':'<div class="gr-ach-empty"><p>У цій категорії поки немає записів.</p></div>');
 }
+const grPublicRoutes={home:'home',about:'about',team:'about',directions:'about',rules:'about',news:'news',achievements:'achievements',gallery:'gallery',join:'join'};
+function publicPageFromHash(hash){return grPublicRoutes[String(hash||'').replace(/^#/,'').toLowerCase()]||'home';}
+function renderPublicNewsPreview(){
+  const posts=Array.isArray(state.public?.news)?state.public.news.slice(0,3):[];
+  if(!posts.length)return '<div class="gr-home-news-empty"><p>Новини сім’ї скоро з’являться тут.</p><a href="#news">Переглянути новини ↗</a></div>';
+  return '<div class="gr-home-news-grid">'+posts.map(p=>{
+    const description=String(p.details||''),excerpt=description.length>130?description.slice(0,130).trimEnd()+'…':description;
+    return '<article class="gr-home-news-card"><div class="gr-home-news-meta"><span>'+esc(newsTypeLabel(p.category))+'</span><time>'+esc(date(p.updated_at))+'</time></div>'+
+      '<h3>'+esc(p.title)+'</h3><p>'+esc(excerpt)+'</p><a href="#news">Усі новини ↗</a></article>';
+  }).join('')+'</div>';
+}
 function renderPublic(){
+  const page=publicPageFromHash(location.hash);
   const settings=state.public?.settings||{};
   const gallery=Array.isArray(state.public?.gallery)?state.public.gallery:[];
   const history=String(settings.history||'Grizzly об’єднує гравців, для яких повага, дисципліна та взаємодопомога важливіші за гучні слова.');
@@ -232,7 +244,7 @@ function renderPublic(){
     if(d.protocol==='https:'&&['discord.gg','discord.com','www.discord.com'].includes(d.hostname))discord=d.href;
   }catch{}
   const discordLink=discord?'<a class="gr-nav-discord" href="'+esc(discord)+'" target="_blank" rel="noopener noreferrer">Discord ↗</a>':'';
-  const navLinks='<a href="#about">Про сім’ю</a><a href="#team">Керівництво</a><a href="#directions">Напрямки</a><a href="#rules">Кодекс</a><a href="#news">Новини</a><a href="#achievements">Досягнення</a><a href="#gallery">Галерея</a><a href="#join">Вступити</a>'+discordLink;
+  const navLinks=[['home','Головна'],['about','Про сім’ю'],['news','Новини'],['achievements','Досягнення'],['gallery','Галерея'],['join','Вступити']].map(([route,label])=>'<a href="#'+route+'"'+(page===route?' aria-current="page"':'')+'>'+label+'</a>').join('')+discordLink;
   $('#app').innerHTML=
   '<div class="gr-public">'+
   '<div class="gr-topline"><div class="gr-container"><span><i></i> GTA 5 ROLEPLAY · LOS SANTOS</span><span>GRIZZLY FAMILY / COMMUNITY</span></div></div>'+
@@ -243,7 +255,8 @@ function renderPublic(){
     '<details class="gr-mobile-menu"><summary aria-label="Відкрити навігацію">☰</summary><nav aria-label="Мобільна навігація">'+navLinks+'</nav></details></div>'+
   '</div></header>'+
   '<main>'+
-  '<section class="gr-hero" id="home"><div class="gr-hero-grid" aria-hidden="true"></div><div class="gr-container gr-hero-inner">'+
+  (page==='home'?(
+    ('<section class="gr-hero" id="home"><div class="gr-hero-grid" aria-hidden="true"></div><div class="gr-container gr-hero-inner">'+
     '<div class="gr-hero-content"><div class="gr-eyebrow"><span class="gr-red-dot"></span> УКРАЇНСЬКА GTA 5 RP СІМ’Я <span class="gr-eyebrow-rule"></span> LOS SANTOS</div>'+
       '<h1>БІЛЬШЕ НІЖ<br><em>СІМ’Я.</em><span> GRIZZLY.</span></h1>'+
       '<p class="gr-hero-description">'+esc(introText)+'</p>'+
@@ -258,29 +271,35 @@ function renderPublic(){
        '<ellipse cx="184" cy="79" rx="18" ry="27" transform="rotate(25 184 79)" fill="currentColor"/>'+
        '<path d="M120 91c-24 0-35 19-48 34-17 18-35 29-31 51 4 19 22 31 41 27 14-3 23-11 38-11s24 8 39 11c19 4 37-8 40-27 4-22-14-33-31-51-14-15-25-34-48-34Z" fill="currentColor"/>'+
       '</svg></div><span class="gr-art-word">STAY LOYAL.</span><span class="gr-art-corner gr-art-corner-bottom">EST. IN LOS SANTOS</span></div>'+
-    '</div><div class="gr-hero-footer"><div class="gr-container"><span>SCROLL TO EXPLORE <b>↓</b></span><span>GRIZZLY · STRENGTH IN UNITY</span></div></div></section>'+
-  '<section class="gr-section gr-about" id="about"><div class="gr-container"><div class="gr-section-heading"><span class="gr-kicker">01 — НАША ІСТОРІЯ</span><h2>ПОВАГА НЕ ДАЄТЬСЯ.<br><span>ЇЇ ЗАСЛУГОВУЮТЬ.</span></h2></div>'+
+    '</div><div class="gr-hero-footer"><div class="gr-container"><span>SCROLL TO EXPLORE <b>↓</b></span><span>GRIZZLY · STRENGTH IN UNITY</span></div></div></section>')+
+    ('<section class="gr-section gr-home-intro" id="home-intro"><div class="gr-container"><span class="gr-kicker">01 — ПРО НАС</span><div class="gr-section-heading gr-heading-row"><h2>ОДНА СІМ’Я.<br><span>ОДИН ХАРАКТЕР.</span></h2><p>Сила в єдності. Повага — у вчинках.</p></div><p class="gr-home-story">'+esc(history.length>320?history.slice(0,320).trimEnd()+'…':history)+'</p><a class="gr-text-link" href="#about">Читати нашу історію <span>↗</span></a><div class="gr-home-features"><article><span>01 / CAPT</span><h3>КОМАНДНА ГРА</h3><p>Тренування, бої та командна тактика.</p></article><article><span>02 / FAMILY</span><h3>СВОЇ ЛЮДИ</h3><p>Довіра, повага та взаємодопомога.</p></article><article><span>03 / PROGRESS</span><h3>РОЗВИТОК</h3><p>Контракти, івенти й спільна активність.</p></article></div></div></section>')+
+    ('<section class="gr-section gr-home-news" id="home-news"><div class="gr-container"><div class="gr-section-heading gr-heading-row"><div><span class="gr-kicker">02 — ЖИТТЯ СІМ’Ї</span><h2>ОСТАННІ <span>НОВИНИ.</span></h2></div><a href="#news" class="gr-text-link">Усі новини <span>↗</span></a></div>'+renderPublicNewsPreview()+'</div></section>')+
+    ('<section class="gr-home-cta" id="home-join"><div class="gr-container gr-home-cta-layout"><div><span class="gr-kicker">03 — ПРИЄДНАЙСЯ ДО НАС</span><h2>СТАНЬ ЧАСТИНОЮ<br><span>GRIZZLY FAMILY.</span></h2><p>Твоя команда чекає. Заповни коротку анкету для вступу.</p></div><a class="gr-button gr-button-primary" href="#join">Подати заявку <span>↗</span></a></div></section>')
+  ):'')+
+  (page==='about'?(
+    ('<section class="gr-section gr-about" id="about"><div class="gr-container"><div class="gr-section-heading"><span class="gr-kicker">01 — НАША ІСТОРІЯ</span><h2>ПОВАГА НЕ ДАЄТЬСЯ.<br><span>ЇЇ ЗАСЛУГОВУЮТЬ.</span></h2></div>'+
    '<div class="gr-about-layout"><div class="gr-about-identity"><div class="gr-identity-symbol" aria-hidden="true">G<span>✦</span></div><p>ЄДНІСТЬ <em>·</em> ВІДДАНІСТЬ <em>·</em> СИЛА</p></div>'+
    '<div class="gr-about-story"><span class="gr-small-label">ХТО МИ</span><p class="gr-story-preview">'+esc(preview)+'</p>'+
    (history.length>480?'<details class="gr-story-expand"><summary>Читати повну історію <span>＋</span></summary><div class="gr-story-full">'+esc(history)+'</div></details>':'')+
-   '<a class="gr-text-link" href="#directions">Дізнайся, чим живе сім’я <span>↗</span></a></div></div></div></section>'+
-  '<section class="gr-section gr-team" id="team"><div class="gr-container"><div class="gr-section-heading gr-heading-row"><div><span class="gr-kicker">02 — КЕРІВНИЦТВО</span><h2>ЛЮДИ, ЯКІ<br><span>ВЕДУТЬ GRIZZLY.</span></h2></div><p>Ігрові профілі представників сім’ї. Кожна посада — відповідальність перед командою.</p></div>'+renderPublicTeam()+'</div></section>'+
-  '<section class="gr-section gr-directions" id="directions"><div class="gr-container"><div class="gr-section-heading gr-heading-row"><div><span class="gr-kicker">03 — НАШІ НАПРЯМКИ</span><h2>ОДНА СІМ’Я.<br><span>БАГАТО МОЖЛИВОСТЕЙ.</span></h2></div><p>У кожного своя сильна сторона. Разом ми досягаємо більшого.</p></div>'+
+   '<a class="gr-text-link" href="#directions">Дізнайся, чим живе сім’я <span>↗</span></a></div></div></div></section>')+
+    ('<section class="gr-section gr-team" id="team"><div class="gr-container"><div class="gr-section-heading gr-heading-row"><div><span class="gr-kicker">02 — КЕРІВНИЦТВО</span><h2>ЛЮДИ, ЯКІ<br><span>ВЕДУТЬ GRIZZLY.</span></h2></div><p>Ігрові профілі представників сім’ї. Кожна посада — відповідальність перед командою.</p></div>'+renderPublicTeam()+'</div></section>')+
+    ('<section class="gr-section gr-directions" id="directions"><div class="gr-container"><div class="gr-section-heading gr-heading-row"><div><span class="gr-kicker">03 — НАШІ НАПРЯМКИ</span><h2>ОДНА СІМ’Я.<br><span>БАГАТО МОЖЛИВОСТЕЙ.</span></h2></div><p>У кожного своя сильна сторона. Разом ми досягаємо більшого.</p></div>'+
    '<div class="gr-direction-grid">'+
      '<article class="gr-direction-card"><span class="gr-direction-index">01 / CAPT</span><div class="gr-direction-icon" aria-hidden="true">✧</div><h3>CAPT СКЛАД</h3><p>Командні бої, тренування, тактика й злагоджена гра.</p><span class="gr-direction-footer">КОМАНДА / НАВИЧКИ</span></article>'+
      '<article class="gr-direction-card"><span class="gr-direction-index">02 / DEVELOPMENT</span><div class="gr-direction-icon" aria-hidden="true">▥</div><h3>ФАРМ І РОЗВИТОК</h3><p>Контракти, спільна активність та підтримка розвитку сім’ї.</p><span class="gr-direction-footer">АКТИВНІСТЬ / ПРОГРЕС</span></article>'+
      '<article class="gr-direction-card"><span class="gr-direction-index">03 / COMMUNITY</span><div class="gr-direction-icon" aria-hidden="true">◎</div><h3>СІМ’Я ТА ІВЕНТИ</h3><p>Збори, спільні виїзди, події та взаємодопомога.</p><span class="gr-direction-footer">ЄДНІСТЬ / ДОВІРА</span></article>'+
-   '</div></div></section>'+
-  '<section class="gr-section gr-rules" id="rules"><div class="gr-container"><div class="gr-section-heading gr-heading-row"><div><span class="gr-kicker">04 — НАШ КОДЕКС</span><h2>СИЛА — У ПОРЯДКУ.</h2></div><p>Прозорі правила для тих, хто грає в команді.</p></div>'+
+   '</div></div></section>')+
+    ('<section class="gr-section gr-rules" id="rules"><div class="gr-container"><div class="gr-section-heading gr-heading-row"><div><span class="gr-kicker">04 — НАШ КОДЕКС</span><h2>СИЛА — У ПОРЯДКУ.</h2></div><p>Прозорі правила для тих, хто грає в команді.</p></div>'+
     '<div class="gr-rules-grid"><article class="gr-rules-card"><div class="gr-rules-top"><span>01</span><strong>ПРАВИЛА СІМ’Ї</strong><span>↗</span></div><p class="gr-rule-copy">'+esc(rules)+'</p></article>'+
     '<article class="gr-rules-card"><div class="gr-rules-top"><span>02</span><strong>ВИМОГИ ДО УЧАСНИКІВ</strong><span>↗</span></div><p class="gr-rule-copy">'+esc(requirements)+'</p></article></div>'+
-  '</div></section>'+
-  '<section class="gr-section gr-news" id="news"><div class="gr-container"><div class="gr-section-heading gr-heading-row"><div><span class="gr-kicker">05 — ЖИТТЯ СІМ’Ї</span><h2>НОВИНИ<br><span>GRIZZLY.</span></h2></div><p>Офіційні повідомлення, події та досягнення нашої сім’ї.</p></div>'+renderPublicNews()+'</div></section>'+
-  '<section class="gr-section gr-achievements" id="achievements"><div class="gr-container"><div class="gr-section-heading gr-heading-row"><div><span class="gr-kicker">06 — НАША ГОРДІСТЬ</span><h2>ДОСЯГНЕННЯ<br><span>GRIZZLY.</span></h2></div><p>Перемоги, нагороди й визначні моменти, які формують нашу історію.</p></div><div id="gr-achievements-content">'+renderPublicAchievements()+'</div></div></section>'+
-  '<section class="gr-section gr-gallery" id="gallery"><div class="gr-container"><div class="gr-section-heading gr-heading-row"><div><span class="gr-kicker">07 — ЗАКАРБОВАНІ МОМЕНТИ</span><h2>НАША ІСТОРІЯ<br><span>У КАДРАХ.</span></h2></div><p>Моменти з життя сім’ї GRIZZLY — від командних боїв до спільних зустрічей.</p></div>'+
+  '</div></section>')
+  ):'')+
+  (page==='news'?('<section class="gr-section gr-news" id="news"><div class="gr-container"><div class="gr-section-heading gr-heading-row"><div><span class="gr-kicker">05 — ЖИТТЯ СІМ’Ї</span><h2>НОВИНИ<br><span>GRIZZLY.</span></h2></div><p>Офіційні повідомлення, події та досягнення нашої сім’ї.</p></div>'+renderPublicNews()+'</div></section>'):'')+
+  (page==='achievements'?('<section class="gr-section gr-achievements" id="achievements"><div class="gr-container"><div class="gr-section-heading gr-heading-row"><div><span class="gr-kicker">06 — НАША ГОРДІСТЬ</span><h2>ДОСЯГНЕННЯ<br><span>GRIZZLY.</span></h2></div><p>Перемоги, нагороди й визначні моменти, які формують нашу історію.</p></div><div id="gr-achievements-content">'+renderPublicAchievements()+'</div></div></section>'):'')+
+  (page==='gallery'?('<section class="gr-section gr-gallery" id="gallery"><div class="gr-container"><div class="gr-section-heading gr-heading-row"><div><span class="gr-kicker">07 — ЗАКАРБОВАНІ МОМЕНТИ</span><h2>НАША ІСТОРІЯ<br><span>У КАДРАХ.</span></h2></div><p>Моменти з життя сім’ї GRIZZLY — від командних боїв до спільних зустрічей.</p></div>'+
    '<div id="gr-gallery-content">'+renderPublicGallery()+'</div>'+
-  '</div></section>'+
-  '<section class="gr-section gr-join" id="join"><div class="gr-container gr-join-layout"><div class="gr-join-info"><span class="gr-kicker">08 — ПРИЄДНАЙСЯ ДО НАС</span><h2>ТВОЄ МІСЦЕ<br><span>СЕРЕД СВОЇХ.</span></h2><p>Готовий стати частиною GRIZZLY? Заповни анкету — рекрутер розгляне твою заявку.</p><div class="gr-join-steps"><div><span>01</span><p>Заповни анкету</p></div><div><span>02</span><p>Дочекайся розгляду</p></div><div><span>03</span><p>Приєднайся до команди</p></div></div></div>'+
+  '</div></section>'):'')+
+  (page==='join'?('<section class="gr-section gr-join" id="join"><div class="gr-container gr-join-layout"><div class="gr-join-info"><span class="gr-kicker">08 — ПРИЄДНАЙСЯ ДО НАС</span><h2>ТВОЄ МІСЦЕ<br><span>СЕРЕД СВОЇХ.</span></h2><p>Готовий стати частиною GRIZZLY? Заповни анкету — рекрутер розгляне твою заявку.</p><div class="gr-join-steps"><div><span>01</span><p>Заповни анкету</p></div><div><span>02</span><p>Дочекайся розгляду</p></div><div><span>03</span><p>Приєднайся до команди</p></div></div></div>'+
     '<div class="gr-join-form"><div class="gr-form-header"><span>ЗАЯВКА НА ВСТУП</span><small>GRIZZLY / RECRUITMENT</small></div>'+
      '<form id="apply-form" class="formgrid">'+
        '<div class="field"><label for="gr-nick">Ігровий нікнейм *</label><input id="gr-nick" class="input" name="nickname" required maxlength="80" autocomplete="off" placeholder="Наприклад, Player Grizzly"></div>'+
@@ -290,10 +309,17 @@ function renderPublic(){
        '<div class="field full"><label for="gr-motivation">Чому хочеш вступити? *</label><textarea id="gr-motivation" class="textarea" name="motivation" required minlength="10" maxlength="1400" placeholder="Розкажи про себе, свій досвід та цілі"></textarea></div>'+
        '<button class="gr-button gr-button-primary gr-submit full" type="submit">Надіслати заявку <span>↗</span></button>'+
        '<p class="gr-form-note full">Заявка не створює акаунт автоматично. Дані доступу видає керівництво після рішення.</p>'+
-     '</form></div></div></section>'+
-  '</main>'+
+     '</form></div></div></section>'):'')+
+    '</main>'+
   '<footer class="gr-footer"><div class="gr-container"><div class="gr-footer-top"><a href="#home" class="gr-footer-brand">GRIZZLY<span>.</span></a><p>Сила в єдності.<br>Повага — у вчинках.</p><a href="#home" class="gr-back-top">НАГОРУ ↑</a></div><div class="gr-footer-bottom"><span>© '+new Date().getFullYear()+' GRIZZLY FAMILY · GTA 5 RP</span><span>MADE FOR THE FAMILY. BUILT ON LOYALTY.</span>'+(discord?'<a href="'+esc(discord)+'" target="_blank" rel="noopener noreferrer">DISCORD ↗</a>':'<a href="#join">ВСТУПИТИ ↗</a>')+'</div></div></footer>'+
   '</div>';
+  if(typeof window!=='undefined'&&typeof window.requestAnimationFrame==='function'){
+    window.requestAnimationFrame(()=>{
+      const anchor=String(location.hash||'').replace(/^#/,'');
+      if(['team','directions','rules'].includes(anchor))document.getElementById(anchor)?.scrollIntoView();
+      else if(window.scrollY>0)window.scrollTo(0,0);
+    });
+  }
 }
 function loginModal(){modal('Вхід до панелі',`<p class="modal-desc">Логін і пароль видає керівник сім’ї. Реєстрація після заявки не відбувається автоматично.</p><form id="login-form" class="stack"><div class="field"><label>Логін</label><input class="input" name="username" autocomplete="username" required autofocus></div><div class="field"><label>Пароль</label><input class="input" type="password" name="password" autocomplete="current-password" required></div><button type="submit" class="btn">Увійти →</button></form>`);}
 function modal(title,html){$('#modal-root').innerHTML=`<div class="modal-backdrop" data-backdrop="1"><div class="modal" role="dialog" aria-modal="true" aria-label="${esc(title)}"><div class="modal-head"><h3>${esc(title)}</h3><button type="button" data-action="close-modal" class="iconbtn">✕</button></div><div class="modal-body">${html}</div></div></div>`;const first=$('#modal-root input:not([type=hidden])');if(first)setTimeout(()=>first.focus(),20);}
@@ -852,4 +878,7 @@ document.addEventListener('click',async e=>{const back=e.target.closest('[data-b
   case 'rsvp':await api(`/rsvp/${id}`,'POST',{response:t.dataset.value});await viewRecord('events',id);toast('Участь оновлено');break;
   case 'revoke-session':await api(`/auth/sessions/${id}`,'DELETE');await render();toast('Сесію завершено');break;
 }}catch(err){toast(err.message,true);if(err.status===409)toast('Дані вже змінені. Оновіть розділ.',true);}});
+window.addEventListener('hashchange',()=>{
+  if(!state.user||new URL(location.href).searchParams.get('view')==='public')renderPublic();
+});
 initial();
