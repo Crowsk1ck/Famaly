@@ -124,8 +124,8 @@ export function payoutPreview(amount,rate,ids){const total=money(amount),pct=per
 async function handleApi(req,env){const db=env.DB;if(!db)fail(500,'Не налаштовано D1');const url=new URL(req.url),path=url.pathname,method=req.method;writeSafety(req);
   if(path==='/api/health'&&method==='GET')return json({ok:true,service:'grizzly',storage:'D1'});
   if(path==='/api/public'&&method==='GET'){
-    const [s,gallery]=await Promise.all([settings(db,true),allRows(db,"SELECT id,title,details,evidence FROM records WHERE module='gallery' AND deleted_at IS NULL AND status='Погоджено' ORDER BY created_at DESC LIMIT 24")]);
-    return json({settings:s,gallery:gallery.map(mapRecord)});
+    const [s,gallery]=await Promise.all([settings(db,true),allRows(db,"SELECT id,title,details,evidence,extra,created_at FROM records WHERE module='gallery' AND deleted_at IS NULL AND status='Погоджено' ORDER BY created_at DESC LIMIT 100")]);
+    return json({settings:s,gallery:gallery.map(mapRecord).sort((a,b)=>Number(!!b.extra?.featured)-Number(!!a.extra?.featured)).slice(0,48)});
   }
   if(path==='/api/apply'&&method==='POST'){
     const key='apply:'+await sha256(publicOrigin(req));await rateCheck(db,key,3,60);const b=await body(req);const nickname=str(b.nickname,80),gameId=str(b.game_id,40),motivation=str(b.motivation,1400);if(!nickname||!gameId||motivation.length<10)fail(400,'Вкажіть нік, ігровий ID та мотивацію (від 10 символів)');
