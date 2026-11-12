@@ -599,3 +599,21 @@
  .gr-discord-switch strong{font-size:13px}
  .gr-discord-switch small{font-size:11px}
 }
+
+
+/* GRIZZLY DISCORD DISTINCT WEBHOOKS */
+.gr-discord-routes{border:1px solid #393D49;border-radius:12px;background:#181C26;padding:17px;margin:19px 0 23px;display:grid;gap:13px}
+.gr-discord-routes h3{font-size:16px;font-weight:850}
+.gr-discord-routes>p{line-height:1.6}
+.gr-discord-route{display:grid;grid-template-columns:minmax(140px,1fr) auto auto;align-items:center;gap:15px;border-top:1px solid #353945;padding-top:13px}
+.gr-discord-route>div{display:grid;gap:6px;min-width:0}
+.gr-discord-route strong{font-size:13px;color:#E6E7ED}
+.gr-discord-route small{color:#9B9FAA;font-size:11px;line-height:1.6;overflow-wrap:anywhere}
+.gr-discord-route small code{color:#B6C2D9}
+.gr-discord-route-status{white-space:nowrap;font-size:11px;font-weight:850}
+.gr-discord-route-status.is-ready{color:#7DD7A8}
+.gr-discord-route-status.is-missing{color:#F4A5B2}
+@media(max-width:650px){
+ .gr-discord-route{grid-template-columns:minmax(0,1fr) auto;gap:8px}
+ .gr-discord-route .btn{grid-column:1/-1;justify-self:start}
+}
