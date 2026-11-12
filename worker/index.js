@@ -105,12 +105,53 @@ const DISCORD_WEBHOOK_ROUTES={
   announcements:'DISCORD_WEBHOOK_ANNOUNCEMENTS'
 };
 const DISCORD_LEGACY_KINDS=['applications','decisions','events'];
+const APPLICATION_WEBHOOK_ROUTES={
+  application_waiting:'DISCORD_WEBHOOK_APPLICATIONS_WAITING',
+  application_accepted:'DISCORD_WEBHOOK_APPLICATIONS_ACCEPTED',
+  application_rejected:'DISCORD_WEBHOOK_APPLICATIONS_REJECTED'
+};
+function applicationWebhookKind(status){
+  return status==='Прийнято'?'application_accepted':status==='Відхилено'?'application_rejected':'application_waiting';
+}
 function discordDestination(env,kind){
   if(kind==='test')return env.DISCORD_WEBHOOK_URL;
+  if(Object.hasOwn(APPLICATION_WEBHOOK_ROUTES,kind)){
+    const specific=env[APPLICATION_WEBHOOK_ROUTES[kind]];
+    if(typeof specific==='string'&&specific.trim())return specific;
+    // Preserve existing recruitment notifications until all dedicated secrets are configured.
+    return discordDestination(env,kind==='application_waiting'?'applications':'decisions');
+  }
   if(!DISCORD_NOTIFY_KINDS.includes(kind))return undefined;
   const specific=env[DISCORD_WEBHOOK_ROUTES[kind]];
   if(typeof specific==='string'&&specific.trim())return specific;
   return DISCORD_LEGACY_KINDS.includes(kind)?env.DISCORD_WEBHOOK_URL:undefined;
+}
+export function applicationRouteDiagnostics(env){
+  const result={};
+  const existing=Object.fromEntries(DISCORD_NOTIFY_KINDS.map(kind=>[kind,discordDestination(env,kind)]));
+  for(const kind of Object.keys(APPLICATION_WEBHOOK_ROUTES)){
+    const raw=env[APPLICATION_WEBHOOK_ROUTES[kind]];
+    const explicit=typeof raw==='string'&&!!raw.trim();
+    const source=discordDestination(env,kind);
+    const checked=discordWebhookDiagnostic(source);
+    if(!explicit){
+      result[kind]=checked.configured?{configured:true,reason:'legacy',separate:false}:checked;
+      continue;
+    }
+    if(checked.configured){
+      const url=String(source).trim();
+      const duplicates=Object.keys(APPLICATION_WEBHOOK_ROUTES).filter(k=>k!==kind&&
+        validDiscordWebhookUrl(env[APPLICATION_WEBHOOK_ROUTES[k]])&&
+        String(env[APPLICATION_WEBHOOK_ROUTES[k]]).trim()===url);
+      const shared=Object.values(existing).some(v=>validDiscordWebhookUrl(v)&&String(v).trim()===url);
+      if(duplicates.length||shared){
+        result[kind]={configured:false,reason:'duplicate',separate:false};
+        continue;
+      }
+    }
+    result[kind]={...checked,separate:checked.configured};
+  }
+  return result;
 }
 // Different Cloudflare secrets are required for the three public editorial channels.
 // Matching webhook URLs would collapse them into the same destination.
@@ -184,7 +225,8 @@ export function buildDiscordNotification(kind,info={}){
   };
 }
 async function sendDiscordWebhook(env,kind,info,targetKind=kind){
-  const destinations=discordRouteDiagnostics(env);
+  const destinations=Object.hasOwn(APPLICATION_WEBHOOK_ROUTES,targetKind)?
+    applicationRouteDiagnostics(env):discordRouteDiagnostics(env);
   if(targetKind!=='test'&&destinations[targetKind]?.reason==='duplicate')
     throw new Error('Webhook категорії повторює інший Discord webhook');
   const webhook=discordDestination(env,targetKind);
@@ -207,12 +249,12 @@ async function sendDiscordWebhook(env,kind,info,targetKind=kind){
   }
   return true;
 }
-function queueDiscord(ctx,db,env,kind,info){
+function queueDiscord(ctx,db,env,kind,info,targetKind=kind){
   if(!DISCORD_NOTIFY_KINDS.includes(kind))return;
   const task=(async()=>{
     if(!await discordEnabled(db,env,kind))return;
     let failure=null;
-    try{await sendDiscordWebhook(env,kind,info);}catch(e){failure=e;}
+    try{await sendDiscordWebhook(env,kind,info,targetKind);}catch(e){failure=e;}
     await recordDiscordDelivery(db,kind,failure);
     if(failure)console.error('GRIZZLY Discord delivery failed:',String(failure.message).slice(0,90));
   })().catch(()=>console.error('GRIZZLY Discord dispatch failed'));
@@ -372,7 +414,7 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
   }
   if(path==='/api/apply'&&method==='POST'){
     const key='apply:'+await sha256(publicOrigin(req));await rateCheck(db,key,3,60);const b=await body(req);const nickname=str(b.nickname,80),gameId=str(b.game_id,40),motivation=str(b.motivation,1400);if(!nickname||!gameId||motivation.length<10)fail(400,'Вкажіть нік, ігровий ID та мотивацію (від 10 символів)');
-    const id=uuid(),t=now();await db.prepare('INSERT INTO applications(id,nickname,game_id,discord,experience,motivation,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)').bind(id,nickname,gameId,str(b.discord,120),str(b.experience,700),motivation,'Очікує',t,t).run();await rateFail(db,key,1000,60);queueDiscord(ctx,db,env,'applications',{nickname,gameId,status:'Очікує'});return json({ok:true,message:'Заявку надіслано. Акаунт не створюється автоматично.'},201);
+    const id=uuid(),t=now();await db.prepare('INSERT INTO applications(id,nickname,game_id,discord,experience,motivation,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)').bind(id,nickname,gameId,str(b.discord,120),str(b.experience,700),motivation,'Очікує',t,t).run();await rateFail(db,key,1000,60);queueDiscord(ctx,db,env,'applications',{nickname,gameId,status:'Очікує'},applicationWebhookKind('Очікує'));return json({ok:true,message:'Заявку надіслано. Акаунт не створюється автоматично.'},201);
   }
   if(path==='/api/setup/bootstrap'&&method==='POST'){
     const configured=env.BOOTSTRAP_TOKEN||'';if(configured.length<32)fail(503,'Для створення лідера налаштуйте секрет BOOTSTRAP_TOKEN (мінімум 32 символи)');
@@ -453,7 +495,7 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
   if(path==='/api/discord/status'&&method==='GET'){
     if(user.role!=='leader')fail(403,'Лише лідер переглядає інтеграцію Discord');
     return json({...discordWebhookDiagnostic(env.DISCORD_WEBHOOK_URL),
-      worker:'famaly',routes:discordRouteDiagnostics(env),...await discordPreferences(db,env)});
+      worker:'famaly',routes:discordRouteDiagnostics(env),applicationRoutes:applicationRouteDiagnostics(env),...await discordPreferences(db,env)});
   }
   if(path==='/api/discord/preferences'&&method==='PATCH'){
     if(user.role!=='leader')fail(403,'Лише лідер змінює Discord-сповіщення');
@@ -487,10 +529,11 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
     if(user.role!=='leader')fail(403,'Лише лідер може перевіряти Discord');
     const b=await body(req);
     const kind=b.kind||'test';
-    if(kind!=='test'&&!DISCORD_NOTIFY_KINDS.includes(kind))fail(400,'Невідома категорія Discord');
-    const diagnostic=kind==='test'?discordWebhookDiagnostic(env.DISCORD_WEBHOOK_URL):discordRouteDiagnostics(env)[kind];
+    if(kind!=='test'&&!DISCORD_NOTIFY_KINDS.includes(kind)&&!Object.hasOwn(APPLICATION_WEBHOOK_ROUTES,kind))fail(400,'Невідома категорія Discord');
+    const diagnostic=kind==='test'?discordWebhookDiagnostic(env.DISCORD_WEBHOOK_URL):
+      Object.hasOwn(APPLICATION_WEBHOOK_ROUTES,kind)?applicationRouteDiagnostics(env)[kind]:discordRouteDiagnostics(env)[kind];
     if(!diagnostic?.configured){
-      const explanation=diagnostic?.reason==='duplicate'?'Webhook має бути окремим для кожного з CAPT, Новин та Оголошень':
+      const explanation=diagnostic?.reason==='duplicate'?'Webhook має бути унікальним для цього статусу та інших категорій Discord':
         diagnostic?.reason==='invalid'?'Некоректний URL webhook у Cloudflare':'Потрібно додати секрет webhook відповідної категорії в Cloudflare';
       fail(503,explanation);
     }
@@ -499,9 +542,9 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
     await rateFail(db,rateKey,6,10);
     try{
       await sendDiscordWebhook(env,'test',{event:kind==='test'?undefined:'Тест маршруту '+kind},kind);
-      await recordDiscordDelivery(db,kind==='test'?'test':kind);
+      await recordDiscordDelivery(db,Object.hasOwn(APPLICATION_WEBHOOK_ROUTES,kind)?(kind==='application_waiting'?'applications':'decisions'):(kind==='test'?'test':kind));
     }catch(e){
-      await recordDiscordDelivery(db,kind==='test'?'test':kind,e);
+      await recordDiscordDelivery(db,Object.hasOwn(APPLICATION_WEBHOOK_ROUTES,kind)?(kind==='application_waiting'?'applications':'decisions'):(kind==='test'?'test':kind),e);
       fail(502,'Не вдалося надіслати тест до Discord. '+String(e.message).slice(0,110));
     }
     await audit(db,user,'discord_test','integrations','discord');
@@ -518,7 +561,7 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
   }
   if(path==='/api/applications'&&method==='GET'){requirePerm(user,'recruitment:manage');return json({items:(await allRows(db,'SELECT * FROM applications ORDER BY created_at DESC LIMIT 500')).map(applicationView)});}
   m=path.match(/^\/api\/applications\/([\w-]+)$/);if(m&&method==='PATCH'){
-    requirePerm(user,'recruitment:manage');const b=await body(req);if(!Number.isInteger(b.version))fail(428,'Потрібна версія');const old=await db.prepare('SELECT nickname,status FROM applications WHERE id=?').bind(m[1]).first();if(!old)fail(404,'Заявку не знайдено');const status=validApplicationStatus(b.status);const r=await db.prepare('UPDATE applications SET status=?,comment=?,version=version+1,updated_at=? WHERE id=? AND version=?').bind(status,str(b.comment,1200),now(),m[1],b.version).run();if(r.meta.changes!==1)fail(409,'Заявку змінено іншим користувачем');await audit(db,user,'review','applications',m[1],status);if(applicationStatus(old.status)!==status)queueDiscord(ctx,db,env,'decisions',{nickname:old.nickname,status});return json({ok:true});
+    requirePerm(user,'recruitment:manage');const b=await body(req);if(!Number.isInteger(b.version))fail(428,'Потрібна версія');const old=await db.prepare('SELECT nickname,status FROM applications WHERE id=?').bind(m[1]).first();if(!old)fail(404,'Заявку не знайдено');const status=validApplicationStatus(b.status);const r=await db.prepare('UPDATE applications SET status=?,comment=?,version=version+1,updated_at=? WHERE id=? AND version=?').bind(status,str(b.comment,1200),now(),m[1],b.version).run();if(r.meta.changes!==1)fail(409,'Заявку змінено іншим користувачем');await audit(db,user,'review','applications',m[1],status);if(applicationStatus(old.status)!==status)queueDiscord(ctx,db,env,'decisions',{nickname:old.nickname,status},applicationWebhookKind(status));return json({ok:true});
   }
   // CAPT dashboard: return only records the current role can see. Payout details
   // remain limited to finance managers or the payout recipient.
