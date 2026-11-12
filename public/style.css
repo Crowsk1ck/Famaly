@@ -243,3 +243,55 @@
 @media(prefers-reduced-motion:reduce){
   .gr-public *{scroll-behavior:auto!important;transition:none!important;animation:none!important}
 }
+
+
+/* GRIZZLY GALLERY MANAGEMENT */
+.gr-gallery-filters{display:flex;flex-wrap:wrap;align-items:center;gap:9px;margin:-4px 0 28px}
+.gr-gallery-filter{display:inline-flex;align-items:center;gap:10px;border:1px solid #3F414A;color:#B8B9C1;background:#1A1B22;border-radius:4px;padding:10px 14px;font-size:12px;font-weight:780;transition:background .18s,border-color .18s,color .18s}
+.gr-gallery-filter:hover{border-color:#9A515F;color:#fff}
+.gr-gallery-filter.active{border-color:#E84255;background:#49212C;color:#fff}
+.gr-gallery-filter span{font-size:10px;color:#B9A5AA}
+.gr-photo-frame{isolation:isolate}
+.gr-photo-category{position:absolute;bottom:14px;left:14px;border:1px solid #FFFFFF30;background:#0D0D13D9;padding:6px 10px;color:#F6EEF0;font-size:10px;font-weight:800;letter-spacing:.09em}
+.gr-photo-view{position:absolute;inset:auto 14px 50px 14px;width:calc(100% - 28px);min-height:44px;border:1px solid #E27482;background:#D33B52E8;color:#fff;font-size:12px;font-weight:850;border-radius:4px;opacity:0;transform:translateY(10px);transition:opacity .18s,transform .18s}
+.gr-photo-card:hover .gr-photo-view,.gr-photo-view:focus-visible{opacity:1;transform:translateY(0)}
+.gr-photo-featured{border-color:#9D5361;box-shadow:0 0 0 1px #E8425522}
+.gr-gallery-filter-empty{min-height:160px;display:grid;place-items:center;padding:25px;border:1px dashed #5D4750;color:#BBB8C0;text-align:center}
+.gr-gallery-lightbox-image{display:grid;place-items:center;background:#0A0B0F;border:1px solid #3F404A;min-height:130px;max-height:65vh}
+.gr-gallery-lightbox-image img{display:block;max-width:100%;max-height:65vh;width:auto;height:auto;object-fit:contain}
+.gr-gallery-lightbox-details{padding-top:18px}
+.gr-gallery-lightbox-details>strong{display:block;font-size:18px;font-weight:850;color:#F1F0F4;margin-bottom:10px}
+.gr-gallery-lightbox-details p{color:#B8B8C3;line-height:1.7;white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px}
+.gr-gallery-lightbox-controls{display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-top:19px}
+.gr-gallery-manager-stats{grid-template-columns:repeat(3,minmax(0,1fr))}
+.gr-admin-gallery-toolbar{flex-wrap:wrap;justify-content:flex-start}
+.gr-admin-gallery-toolbar .input{flex:1 1 240px}
+.gr-admin-gallery-toolbar>.row{flex:2 1 450px}
+.gr-admin-gallery-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+.gr-admin-photo-card{padding:0;overflow:hidden}
+.gr-admin-photo-image{position:relative;aspect-ratio:16/10;background:#191A22;overflow:hidden}
+.gr-admin-photo-image img{width:100%;height:100%;display:block;object-fit:cover}
+.gr-admin-photo-placeholder{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;font-size:48px;color:#AD6471}
+.gr-admin-photo-placeholder small{font-size:12px;color:#B3AAB4}
+.gr-admin-photo-status{position:absolute;top:11px;left:11px;padding:5px 9px;font-size:11px;font-weight:850;color:white;background:#273E39F0;border:1px solid #46856D;border-radius:6px}
+.gr-admin-photo-placeholder+.gr-admin-photo-status{background:#3E3035;border-color:#72434D}
+.gr-admin-photo-body{display:flex;flex-direction:column;gap:10px;padding:18px}
+.gr-admin-photo-body h3{font-size:17px;overflow-wrap:anywhere}
+.gr-admin-photo-body>p{line-height:1.6;overflow-wrap:anywhere}
+.gr-admin-photo-actions{margin-top:7px}
+.gr-gallery-form-preview{border:1px dashed #555764;border-radius:9px;padding:12px;background:#171922;display:grid;place-items:center;min-height:145px}
+.gr-gallery-form-preview img{max-width:100%;width:auto;max-height:245px;object-fit:contain;border-radius:6px}
+@media(max-width:1180px){.gr-admin-gallery-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:780px){
+ .gr-admin-gallery-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .gr-admin-gallery-toolbar{align-items:stretch}
+ .gr-admin-gallery-toolbar .input{max-width:100%}
+ .gr-photo-view{opacity:1;transform:none;bottom:48px}
+}
+@media(max-width:540px){
+ .gr-admin-gallery-grid{grid-template-columns:1fr}
+ .gr-gallery-manager-stats{grid-template-columns:1fr}
+ .gr-gallery-filter{padding:8px 10px;font-size:11px}
+ .gr-gallery-lightbox-controls .btn{flex:1}
+}
+@media(prefers-reduced-motion:reduce){.gr-photo-view{transform:none;transition:none}}
