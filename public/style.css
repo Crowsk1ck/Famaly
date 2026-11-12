@@ -12,3 +12,14 @@
 .credential-tools .small{flex-basis:100%;line-height:1.5}
 .credential-tools .btn{white-space:normal}
 @media(max-width:520px){.credential-tools .btn{flex:1 1 100%}}
+
+/* CAPT operations overview */
+.capt-grid{margin:16px 0}
+.capt-attendance-card{margin-bottom:18px}
+.capt-line{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:13px 0;border-bottom:1px solid var(--border);min-width:0}
+.capt-line:last-child{border-bottom:0}
+.capt-line>div:first-child{min-width:0;overflow-wrap:anywhere}
+.capt-line .small{margin-top:3px}
+.capt-actions{display:flex;align-items:center;justify-content:flex-end;gap:7px;flex-wrap:wrap}
+.capt-result{font-size:.8rem;font-weight:700;max-width:45%;overflow-wrap:anywhere;color:var(--fg);border:1px solid var(--border);border-radius:9px;padding:5px 9px}
+@media(max-width:500px){.capt-line{align-items:flex-start;flex-direction:column}.capt-result{max-width:100%}.capt-actions{justify-content:flex-start}}
