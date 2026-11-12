@@ -10,16 +10,16 @@ assert.ok(start>=0&&end>start,'public renderer exists');
 const escapeHtml=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const compile=new Function('state','
 
-function publicHtml(settings={},gallery=[],user=null,news=[]){
+function publicHtml(settings={},gallery=[],user=null,news=[],team=[]){
   const app={innerHTML:''};
-  const state={public:{settings,gallery,news},user};
+  const state={public:{settings,gallery,news,team},user};
   const render=compile(state,s=>s==='#app'?app:null,escapeHtml,URL,iso=>iso?new Date(iso).toLocaleDateString('uk-UA'):'—');
   render();
   return app.innerHTML;
 }
 test('public landing page has navigation, safe sections and working application fields',()=>{
   const html=publicHtml({tagline:'Разом сильніші',history:'Наш шлях',rules:'Правила',requirements:'Умови'});
-  for(const section of ['home','about','directions','rules','gallery','join'])assert.ok(html.includes('id="'+section+'"'),section);
+  for(const section of ['home','about','team','directions','rules','news','gallery','join'])assert.ok(html.includes('id="'+section+'"'),section);
   for(const field of ['nickname','game_id','discord','experience','motivation'])assert.ok(html.includes('name="'+field+'"'),field);
   assert.ok(html.includes('id="apply-form"'));
   assert.ok(html.includes('data-action="show-login"'));
@@ -168,4 +168,27 @@ test('empty public news does not invent family announcements',()=>{
   const html=publicHtml();
   assert.ok(html.includes('НОВИНИ ГОТУЮТЬСЯ'));
   assert.ok(!html.includes('CAPT набір'));
+});
+
+test('public team is opt-in and renders RP role profiles without leaking markup',()=>{
+  const home=publicHtml({},[],null,[],[
+    {id:'1',nickname:'Andrii Grizzly',position:'Лідер',bio:'Засновник GRIZZLY',photo:'https://i.ibb.co/test/photo.jpg',order:1},
+    {id:'2',nickname:'<script>x</script>',position:'<img src=x onerror=1>',bio:'<svg onload=1>',photo:'javascript:alert(1)',order:2}
+  ]);
+  assert.ok(home.includes('id="team"'));
+  assert.ok(home.includes('href="#team"'));
+  assert.ok(home.includes('Andrii Grizzly'));
+  assert.ok(home.includes('Засновник GRIZZLY'));
+  assert.ok(home.includes('gr-team-portrait'));
+  assert.ok(home.includes('src="https://i.ibb.co/test/photo.jpg"'));
+  assert.ok(!home.includes('src="javascript:'));
+  assert.ok(!home.includes('<script>x</script>'));
+  assert.ok(home.includes('&lt;script&gt;'));
+  assert.ok(!home.includes('<img src=x onerror=1>'));
+  assert.ok(home.includes('gr-team-placeholder'));
+});
+test('empty leadership profiles show an honest empty state instead of made-up people',()=>{
+  const home=publicHtml();
+  assert.ok(home.includes('Профілі керівництва з’являться після публікації'));
+  assert.ok(!home.includes('Andrii Grizzly'));
 });
