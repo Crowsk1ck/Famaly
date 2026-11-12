@@ -25,10 +25,10 @@ function ui(discord,items=[],role='leader'){
 }
 const ready={
   configured:true,reason:'ready',worker:'famaly',
-  enabled:{applications:true,decisions:false,events:true},
-  versions:{applications:2,decisions:3,events:4},
-  categories:{applications:true,decisions:false,events:true},
-  lockedByEnvironment:{applications:false,decisions:false,events:false},
+  enabled:{applications:true,decisions:false,events:true,capt:true,news:false},
+  versions:{applications:2,decisions:3,events:4,capt:5,news:6},
+  categories:{applications:true,decisions:false,events:true,capt:true,news:false},
+  lockedByEnvironment:{applications:false,decisions:false,events:false,capt:false,news:false},
   migrationRequired:false
 };
 test('leader sees persistent Discord switches and successful/failed delivery history',async()=>{
@@ -40,6 +40,10 @@ test('leader sees persistent Discord switches and successful/failed delivery his
   assert.ok(html.includes('name="applications" checked'));
   assert.ok(!html.includes('name="decisions" checked'));
   assert.ok(html.includes('name="events" checked'));
+  assert.ok(html.includes('name="capt" checked'));
+  assert.ok(!html.includes('name="news" checked'));
+  assert.ok(html.includes('CAPT-оголошення'));
+  assert.ok(html.includes('Новини сім’ї'));
   assert.ok(html.includes('Журнал доставки'));
   assert.ok(html.includes('HTTP 404'));
   assert.ok(html.includes('Надіслано'));
@@ -51,10 +55,11 @@ test('missing migration shows instructions instead of attempting to access nonex
   const {html,calls}=await ui({...ready,migrationRequired:true});
   assert.ok(!html.includes('id="discord-preferences-form"'));
   assert.ok(html.includes('0003_discord_notifications.sql'));
+  assert.ok(html.includes('0004_discord_capt_news.sql'));
   assert.ok(!calls.includes('/discord/deliveries'));
 });
 test('environment-locked notification has disabled switch and reason',async()=>{
-  const {html}=await ui({...ready,lockedByEnvironment:{applications:false,decisions:false,events:true}});
+  const {html}=await ui({...ready,lockedByEnvironment:{applications:false,decisions:false,events:true,capt:false,news:false}});
   assert.ok(html.includes('name="events" checked disabled'));
   assert.ok(html.includes('Вимкнено у змінних Cloudflare'));
 });
