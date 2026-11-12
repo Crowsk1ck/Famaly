@@ -499,6 +499,70 @@ function updateTeamFormPreview(){
   target.innerHTML=img?'<img alt="Попередній перегляд персонажа" src="'+esc(img)+'" loading="lazy">':
     '<span class="muted small">'+(raw?'Вкажіть пряме HTTPS-посилання ImgBB на зображення.':'Фото можна додати пізніше.')+'</span>';
 }
+async function achievementsManager(){
+  const data=(await api('/records/public_achievements')).items;
+  const visible=applyFilters(data.filter(a=>searchMatch(a.title,a.details,achievementTypeLabel(a.extra?.category),a.extra?.achieved_on)));
+  const cat=state.achievementAdminFilter||'all';
+  const shown=cat==='all'?visible:visible.filter(a=>(a.extra?.category||'milestone')===cat);
+  const published=data.filter(a=>a.status==='Погоджено').length;
+  const tabs=achievementTypes.map(([key,title])=>'<button type="button" class="btn tiny '+(key===cat?'':'ghost')+'" data-action="achievement-admin-filter" data-category="'+key+'">'+esc(title)+'</button>').join('');
+  const cards=shown.map(a=>{
+    const photo=galleryPhoto(a),active=a.status==='Погоджено',category=a.extra?.category||'milestone';
+    const label=achievementTypeLabel(category);
+    return '<article class="card gr-admin-ach-card"><div class="gr-admin-ach-media">'+(photo?'<img src="'+esc(photo)+'" alt="'+esc(a.title)+'" loading="lazy">':
+      '<div class="gr-admin-ach-symbol">★</div>')+'<span class="gr-admin-ach-flag">'+esc(label)+'</span></div>'+
+      '<div class="gr-admin-ach-body"><div class="row space wrap">'+badge(a.status)+'<span class="muted small">'+esc(a.extra?.achieved_on||'Дата не вказана')+'</span></div>'+
+      '<h3>'+esc(a.title)+'</h3><p class="muted small">'+esc(a.details.slice(0,170))+'</p>'+
+      (a.extra?.featured?'<span class="pill">★ Вибране</span>':'')+
+      '<div class="row wrap gr-admin-ach-actions">'+
+      '<button class="btn tiny secondary" data-action="achievement-edit" data-id="'+esc(a.id)+'">Редагувати</button>'+
+      '<button class="btn tiny '+(active?'ghost':'')+'" data-action="achievement-publish" data-id="'+esc(a.id)+'" data-status="'+(active?'Заплановано':'Погоджено')+'">'+(active?'Приховати':'Опублікувати')+'</button>'+
+      '<button class="btn tiny danger" data-action="achievement-delete" data-id="'+esc(a.id)+'">Видалити</button>'+
+      '</div></div></article>';
+  }).join('');
+  return intro('Досягнення GRIZZLY','Публічна історія CAPT-перемог, нагород і визначних подій сім’ї.',
+    '<button class="btn" data-action="achievement-new">＋ Додати досягнення</button>')+
+    '<div class="notice">Досягнення не імпортуються з внутрішнього CAPT автоматично. Для головної сторінки публікуйте лише перевірені результати.</div>'+
+    '<div class="cards gr-admin-ach-stats mt"><div class="card stat"><div class="muted small">Усього записів</div><div class="number">'+fmt(data.length)+'</div></div>'+
+    '<div class="card stat"><div class="muted small">На головній</div><div class="number">'+fmt(published)+'</div></div>'+
+    '<div class="card stat"><div class="muted small">Чернеток</div><div class="number">'+fmt(data.length-published)+'</div></div></div>'+
+    '<div class="toolbar gr-admin-ach-toolbar">'+searchBar()+'<div class="row wrap">'+tabs+'</div></div>'+
+    (shown.length?'<div class="gr-admin-ach-grid">'+cards+'</div>':empty('У вибраній категорії немає досягнень','Створи перший запис або зміни фільтр.'));
+}
+function achievementForm(record){
+  const r=record||{},x=r.extra||{};
+  const categories=achievementTypes.filter(([key])=>key!=='all').map(([key,name])=>
+    '<option value="'+key+'" '+((x.category||'milestone')===key?'selected':'')+'>'+esc(name)+'</option>').join('');
+  const options=['Заплановано','Погоджено'].map(s=>
+    '<option value="'+s+'" '+((r.status||'Заплановано')===s?'selected':'')+'>'+(s==='Погоджено'?'Опубліковано':'Чернетка')+'</option>').join('');
+  const img=galleryPhoto(r);
+  modal(record?'Редагувати досягнення':'Додати досягнення',
+    '<div class="notice mb">Перевір достовірність результату перед публікацією. Внутрішні записи CAPT залишаються приватними.</div>'+
+    '<form id="achievement-form" class="formgrid" data-id="'+esc(r.id||'')+'">'+
+      field('Назва досягнення *','title',r.title||'','text',true,'required maxlength="160"')+
+      field('Опис досягнення *','description',r.details||'','textarea',true,'required maxlength="3000"')+
+      '<div class="field"><label>Категорія</label><select class="select" name="category">'+categories+'</select></div>'+
+      field('Дата досягнення *','achieved_on',x.achieved_on||'','date',false,'required')+
+      '<div class="field"><label>Важливе досягнення</label><select class="select" name="featured">'+
+      '<option value="false" '+(!x.featured?'selected':'')+'>Ні</option>'+
+      '<option value="true" '+(x.featured?'selected':'')+'>Так ★</option></select></div>'+
+      '<div class="field"><label>Публікація</label><select class="select" name="status">'+options+'</select></div>'+
+      '<div class="field full"><label>Обкладинка ImgBB (необов’язково)</label>'+
+      '<input type="url" class="input" name="photo_url" placeholder="https://i.ibb.co/.../trophy.webp" value="'+esc(img||galleryLink(r))+'">'+
+      '<small>Використовуй пряме HTTPS-посилання на зображення. Без фото буде емблема досягнення.</small></div>'+
+      '<div class="full gr-gallery-form-preview" id="achievement-live-preview">'+
+      (img?'<img src="'+esc(img)+'" alt="Попередній перегляд" loading="lazy">':'<span class="muted small">Обкладинка не додана.</span>')+'</div>'+
+      '<div class="full form-actions"><button type="button" class="btn ghost" data-action="close-modal">Скасувати</button>'+
+      '<button type="submit" class="btn">Зберегти досягнення</button></div></form>');
+}
+function updateAchievementPreview(){
+  const form=$('#achievement-form'),node=$('#achievement-live-preview');
+  if(!form||!node)return;
+  const raw=form.querySelector('[name="photo_url"]')?.value.trim()||'';
+  const img=galleryPhoto({evidence:[raw]});
+  node.innerHTML=img?'<img src="'+esc(img)+'" alt="Попередній перегляд" loading="lazy">':
+    '<span class="muted small">'+(raw?'Потрібне пряме посилання ImgBB на JPG, PNG, WEBP або GIF.':'Обкладинка не додана.')+'</span>';
+}
 function moduleForm(mod,r){const cfg=moduleInfo[mod],isEdit=!!r;const canManage=can(cfg[2]);const x=r||{};const fields=`<form id="record-form" data-module="${mod}" data-id="${esc(r?.id||'')}" class="formgrid">${field('Назва / тема *','title',x.title,'text',true,'required maxlength="160"')}${field('Опис / RP-звіт','details',x.details,'textarea',true)}${recordExtraFields(mod,r)}${canManage?`${statusField(x.status||'Заплановано')}${selectField('Виконавець','assignee_id',state.users,x.assignee_id)}${selectField('Напрямок','department_id',state.departments,x.department_id)}${field('Сума / винагорода (ігрова валюта)','amount',x.amount||0,'number',false,'min="0" step="1"')}${field('Початок','starts_at',formatDateField(x.starts_at),'datetime-local')}${field('Термін / завершення','ends_at',formatDateField(x.ends_at),'datetime-local')}`:''}${field('Докази ImgBB (кожне посилання з нового рядка)','evidence',evidenceText(x),'textarea',true)}${canManage?field('Додаткові дані (JSON: склад, номер ТЗ, стан, чекліст тощо)','extra',JSON.stringify(x.extra||{},null,2),'textarea',true):''}<div class="full form-actions"><button type="button" class="btn ghost" data-action="close-modal">Скасувати</button><button type="submit" class="btn">${isEdit?'Зберегти':'Створити'}</button></div></form>`;modal(`${isEdit?'Редагувати':'Створити'} · ${cfg[0]}`,`${isEdit?`<div class="notice mb">Запис із перевіркою версії: чужі зміни не будуть перезаписані.</div>`:''}${fields}`);}
 async function viewRecord(mod,id){const rows=(await api(`/records/${mod}`)).items;const r=rows.find(x=>x.id===id);if(!r)return toast('Запис недоступний',true);const payoutState=mod==='capt_attendance'?(await api('/capt/overview')).attendance.find(x=>x.id===id):null;const canManage=can(moduleInfo[mod][2])&&(state.user.role!=='head'||r.department_id===state.user.department_id);const canEdit=canManage||((r.owner_id===state.user.id||r.assignee_id===state.user.id)&&['reports','promotions','capt_attendance','vehicle_loans','tasks'].includes(mod));const review=canManage&&['reports','promotions'].includes(mod)&&r.owner_id!==state.user.id;const status=mod==='events'?`<div class="hr"></div><div id="rsvp-content" class="muted small">Завантаження учасників…</div>`:'';modal(r.title,`<div class="stack"><div class="row space">${badge(r.status)}<span class="muted small">v${r.version} · ${date(r.updated_at)}</span></div><div class="longtext">${esc(r.details||'Опис не додано')}</div><div class="small muted">Відповідальний: ${esc(userName(r.assignee_id||r.owner_id))} · ${esc(departmentName(r.department_id))}</div>${r.amount?`<div class="small">Винагорода: <strong>${fmt(r.amount)}</strong></div>`:''}${r.starts_at?`<div class="small">Початок: ${esc(r.starts_at.replace('T',' '))}</div>`:''}${links(r)}${Object.keys(r.extra||{}).length?`<div class="card flat"><strong>Додаткова інформація</strong><div class="stack mt small">${Object.entries(r.extra).filter(([k])=>k!=='review_nonce').map(([k,v])=>`<div><span class="muted">${esc(({requested_rank_id:'Цільовий ранг',checklist_completed:'Виконані умови',opponent:'Суперник',place:'Місце',lineup:'Склад на бій',result:'Результат',attendance_type:'Тип участі',match_id:'Бій / тренування',plate:'Номер ТЗ',condition:'Стан',responsible:'Відповідальний',review_comment:'Коментар керівника'})[k]||k)}:</span> <strong>${esc(Array.isArray(v)?v.join(', '):v)}</strong></div>`).join('')}</div></div>`:''}${status}${mod==='capt_matches'?'<div class="hr"></div><section id="capt-signup-panel" class="stack"><p class="muted">Завантаження списку учасників…</p></section>':''}<div class="form-actions">${review?`<button class="btn secondary" data-action="review-record" data-module="${mod}" data-id="${id}">Перевірити</button>`:''}${canEdit?`<button class="btn" data-action="edit-record" data-module="${mod}" data-id="${id}">Редагувати</button>`:''}${mod==='templates'?`<button class="btn secondary" data-action="copy-template" data-id="${id}">Копіювати текст</button>`:''}${mod==='capt_attendance'&&payoutState?.paid===true?'<span class="pill">CAPT-виплату проведено</span>':mod==='capt_attendance'&&r.status==='Погоджено'&&can('finance:manage')?`<button class="btn" data-action="capt-pay" data-id="${id}">₴ Нарахувати CAPT</button>`:''}${canManage?`<button class="btn danger" data-action="delete-record" data-module="${mod}" data-id="${id}">Видалити</button>`:''}</div></div>`);if(mod==='capt_matches')await renderCaptSignupPanel(id);if(mod==='events'){try{const rs=await api(`/rsvp/${id}`);const el=$('#rsvp-content');if(el)el.innerHTML=`<div class="row wrap"><strong>Моя участь: ${esc(rs.own||'Не підтверджено')}</strong><span class="muted">Так: ${rs.counts.yes} · Ні: ${rs.counts.no}</span></div><div class="row mt"><button class="btn tiny" data-action="rsvp" data-id="${id}" data-value="Так">✓ Буду</button><button class="btn tiny ghost" data-action="rsvp" data-id="${id}" data-value="Ні">Не зможу</button></div>${rs.items.length?`<div class="muted small mt">${rs.items.map(i=>`${esc(userName(i.user_id))}: ${esc(i.response)}`).join(' · ')}</div>`:''}`;}catch(e){toast(e.message,true);}}}
 async function renderCaptSignupPanel(id){
