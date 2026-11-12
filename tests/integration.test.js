@@ -840,5 +840,108 @@ test('Recruitment applications have only three statuses, preserve legacy decisio
   assert.equal((await DB1.prepare('SELECT status FROM applications WHERE id=?').bind(oldId).first()).status,'Прийнято');
 });
 
+test('Application waiting, accepted, rejected notifications each use their own webhook and preserve legacy fallback',async()=>{
+  const root='https://discord.com/api/webhooks/123456789012345678/abcdefghijklmnopqrstuvwxyz_0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  const waiting=root.replace('123456789012345678','523456789012345678');
+  const accepted=root.replace('123456789012345678','623456789012345678');
+  const rejected=root.replace('123456789012345678','723456789012345678');
+  const oldFetch=globalThis.fetch;
+  const deliveries=[],pending=[],ctx={waitUntil(p){pending.push(p);}};
+  env.DISCORD_WEBHOOK_URL=root;
+  env.DISCORD_WEBHOOK_APPLICATIONS_WAITING=waiting;
+  env.DISCORD_WEBHOOK_APPLICATIONS_ACCEPTED=accepted;
+  env.DISCORD_WEBHOOK_APPLICATIONS_REJECTED=rejected;
+  globalThis.fetch=async(url,options)=>{
+    deliveries.push({url,payload:JSON.parse(options.body)});
+    return new Response(null,{status:204});
+  };
+  try{
+    const status=await req('/api/discord/status',{token:leader});
+    assert.equal(status.status,200);
+    for(const kind of ['application_waiting','application_accepted','application_rejected'])
+      assert.deepEqual(status.data.applicationRoutes[kind],{configured:true,reason:'ready',separate:true});
+    assert.ok(!JSON.stringify(status.data).includes(waiting));
+    assert.ok(!JSON.stringify(status.data).includes(accepted));
+    assert.ok(!JSON.stringify(status.data).includes(rejected));
+
+    const newApp=await req('/api/apply',{method:'POST',headers:{'cf-connecting-ip':'198.51.100.220'},ctx,data:{
+      nickname:'Status route player',game_id:'321',motivation:'Testing routing to different webhook destinations'
+    }});
+    assert.equal(newApp.status,201,JSON.stringify(newApp.data));
+    await Promise.all(pending.splice(0));
+    assert.equal(deliveries.length,1);
+    assert.equal(deliveries[0].url,waiting);
+    assert.ok(JSON.stringify(deliveries[0].payload).includes('Очікує'));
+
+    const all=(await req('/api/applications',{token:leader})).data.items;
+    const app=all.find(x=>x.nickname==='Status route player');
+    assert.equal(app.status,'Очікує');
+    const approved=await req('/api/applications/'+app.id,{method:'PATCH',token:leader,ctx,data:{
+      version:app.version,status:'Прийнято',comment:'Private application review'
+    }});
+    assert.equal(approved.status,200);
+    await Promise.all(pending.splice(0));
+    assert.equal(deliveries.length,2);
+    assert.equal(deliveries[1].url,accepted);
+    assert.ok(JSON.stringify(deliveries[1].payload).includes('Прийнято'));
+    assert.ok(!JSON.stringify(deliveries[1].payload).includes('Private application review'));
+
+    const declined=await req('/api/applications/'+app.id,{method:'PATCH',token:leader,ctx,data:{
+      version:app.version+1,status:'Відхилено',comment:'Confidential'
+    }});
+    assert.equal(declined.status,200);
+    await Promise.all(pending.splice(0));
+    assert.equal(deliveries.length,3);
+    assert.equal(deliveries[2].url,rejected);
+    assert.ok(JSON.stringify(deliveries[2].payload).includes('Відхилено'));
+
+    const updateOnly=await req('/api/applications/'+app.id,{method:'PATCH',token:leader,ctx,data:{
+      version:app.version+2,status:'Відхилено',comment:'Second internal note'
+    }});
+    assert.equal(updateOnly.status,200);
+    await Promise.all(pending.splice(0));
+    assert.equal(deliveries.length,3);
+
+    const returnedToWaiting=await req('/api/applications/'+app.id,{method:'PATCH',token:leader,ctx,data:{
+      version:app.version+3,status:'Очікує',comment:'Pending again'
+    }});
+    assert.equal(returnedToWaiting.status,200);
+    await Promise.all(pending.splice(0));
+    assert.equal(deliveries.length,4);
+    assert.equal(deliveries[3].url,waiting);
+
+    const routeTest=await req('/api/discord/test',{method:'POST',token:leader,data:{kind:'application_accepted'}});
+    assert.equal(routeTest.status,200,JSON.stringify(routeTest.data));
+    assert.equal(deliveries[4].url,accepted);
+
+    env.DISCORD_WEBHOOK_APPLICATIONS_ACCEPTED=waiting;
+    const duplicate=(await req('/api/discord/status',{token:leader})).data.applicationRoutes;
+    assert.equal(duplicate.application_accepted.reason,'duplicate');
+    assert.equal(duplicate.application_waiting.reason,'duplicate');
+    const blocked=await req('/api/discord/test',{method:'POST',token:leader,data:{kind:'application_accepted'}});
+    assert.equal(blocked.status,503);
+    assert.equal(deliveries.length,5);
+
+    // Unconfigured statuses use the legacy decision hook rather than disappearing silently.
+    delete env.DISCORD_WEBHOOK_APPLICATIONS_ACCEPTED;
+    const fallback=(await req('/api/discord/status',{token:leader})).data.applicationRoutes;
+    assert.equal(fallback.application_accepted.reason,'legacy');
+    assert.equal(fallback.application_accepted.separate,false);
+    assert.equal(fallback.application_accepted.configured,true);
+    const legacy=(await req('/api/applications/'+app.id,{method:'PATCH',token:leader,ctx,data:{
+      version:app.version+4,status:'Прийнято'
+    }});
+    assert.equal(legacy.status,200);
+    await Promise.all(pending.splice(0));
+    assert.equal(deliveries[5].url,root);
+  }finally{
+    globalThis.fetch=oldFetch;
+    delete env.DISCORD_WEBHOOK_URL;
+    delete env.DISCORD_WEBHOOK_APPLICATIONS_WAITING;
+    delete env.DISCORD_WEBHOOK_APPLICATIONS_ACCEPTED;
+    delete env.DISCORD_WEBHOOK_APPLICATIONS_REJECTED;
+  }
+});
+
 // Run destructive session-revocation coverage last: other integration tests use this member's active session.
 test('blocking user revokes sessions and stops access',async()=>{const u=(await req('/api/users',{token:leader})).data.items.find(x=>x.id===memberId);const r=await req(`/api/users/${memberId}`,{method:'PATCH',token:leader,data:{...u,status:'blocked'}});assert.equal(r.status,200,JSON.stringify(r.data));assert.equal((await req('/api/auth/me',{token:member})).status,401);});
