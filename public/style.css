@@ -476,3 +476,58 @@
  .gr-home-cta .gr-button{width:100%}
  .gr-home-news-card{padding:19px}
 }
+
+
+/* GRIZZLY PUBLIC CALENDAR */
+.gr-public-calendar{background:linear-gradient(135deg,#101117,#1A1620 80%);min-height:58vh}
+.gr-cal-filterbar{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:25px}
+.gr-cal-filter{min-height:38px;border:1px solid #524450;color:#C8C2CB;background:#211F2A;border-radius:5px;padding:7px 14px;font-size:12px;font-weight:850}
+.gr-cal-filter.active,.gr-cal-filter:hover{border-color:#F16B7D;background:#502A37;color:#FFF}
+.gr-cal-layout{display:grid;grid-template-columns:minmax(0,1.14fr) minmax(300px,.86fr);gap:22px;align-items:start}
+.gr-cal-month,.gr-cal-sidebar{border:1px solid #52434E;background:#1B1D27;padding:25px;min-width:0}
+.gr-cal-controls{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-bottom:20px}
+.gr-cal-controls h3{font-size:clamp(18px,2.4vw,27px);font-weight:950;letter-spacing:-.035em;text-transform:capitalize}
+.gr-cal-controls button{flex:0 0 40px;width:40px;height:40px;border:1px solid #614B59;border-radius:5px;background:#292431;color:#F2ABB4;font-size:18px;transition:background .2s}
+.gr-cal-controls button:hover{background:#562A39}
+.gr-cal-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px}
+.gr-cal-weekday{font-size:10px;font-weight:900;color:#E1A7B0;text-align:center;padding:8px 0}
+.gr-cal-pad{min-height:85px}
+.gr-cal-cell{min-height:85px;border:1px solid #42404A;background:#242530;padding:8px;display:flex;flex-direction:column;gap:8px;overflow:hidden}
+.gr-cal-cell>span{font-size:12px;color:#B5B8C2;font-weight:750}
+.gr-cal-cell.has-event{background:#412634;border-color:#B45164}
+.gr-cal-cell.is-today{outline:1px solid #F4A1AC;outline-offset:-1px}
+.gr-cal-cell.has-event>span{color:#F7D9DE}
+.gr-cal-count{display:block;max-width:100%;color:#F6C8CF;font-weight:870;font-size:10px;overflow-wrap:anywhere;border-left:2px solid #F16978;padding-left:5px}
+.gr-cal-count:hover{color:#FFF}
+.gr-cal-note{font-size:11px;color:#A7ABB5;margin-top:18px;line-height:1.6}
+.gr-cal-sidebar-head{padding-bottom:20px;border-bottom:1px solid #544652;margin-bottom:17px}
+.gr-cal-sidebar-head .gr-kicker{margin-bottom:8px}
+.gr-cal-sidebar-head h3{font-size:21px;letter-spacing:-.04em}
+.gr-cal-event{padding:16px 0;display:flex;gap:16px;border-bottom:1px solid #3E3B45;overflow-wrap:anywhere}
+.gr-cal-event-time{flex:0 0 95px;display:flex;flex-direction:column;gap:7px}
+.gr-cal-event-time>span{font-size:11px;color:#C2B2BC;line-height:1.5}
+.gr-cal-event-time>strong{color:#F4A5AF;font-size:13px;font-weight:940}
+.gr-cal-event-body{min-width:0;display:flex;flex-direction:column;gap:7px}
+.gr-cal-event-type{font-size:10px;color:#E88795;letter-spacing:.14em;font-weight:900;text-transform:uppercase}
+.gr-cal-event-body h3{font-size:17px;line-height:1.35;font-weight:900}
+.gr-cal-event-body p{color:#B8BCC7;font-size:13px;line-height:1.65;white-space:pre-wrap}
+.gr-cal-event-location{color:#E4BDC5;font-size:12px;margin-top:4px}
+.gr-cal-empty{border:1px dashed #684653;color:#AEB1BD;padding:22px;font-size:13px;line-height:1.8}
+.gr-cal-admin-stats{grid-template-columns:repeat(3,minmax(0,1fr))}
+.gr-cal-admin-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:15px;margin-top:18px}
+.gr-cal-admin-card{display:flex;flex-direction:column;gap:14px;min-width:0}
+.gr-cal-admin-card h3{font-size:19px;overflow-wrap:anywhere}
+.gr-cal-admin-card p{line-height:1.65;white-space:pre-wrap;overflow-wrap:anywhere;flex:1}
+.gr-cal-admin-card strong{font-size:13px;color:#E9A1AD}
+@media(max-width:1100px){.gr-cal-layout{grid-template-columns:1fr}.gr-cal-admin-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:600px){
+ .gr-cal-month,.gr-cal-sidebar{padding:14px}
+ .gr-cal-grid{gap:3px}
+ .gr-cal-cell,.gr-cal-pad{min-height:57px}
+ .gr-cal-cell{padding:5px;gap:4px}
+ .gr-cal-count{font-size:8px;padding-left:3px}
+ .gr-cal-weekday{font-size:9px}
+ .gr-cal-admin-stats,.gr-cal-admin-grid{grid-template-columns:1fr}
+ .gr-cal-controls button{width:33px;height:33px;flex-basis:33px}
+ .gr-cal-event-time{flex-basis:85px}
+}
