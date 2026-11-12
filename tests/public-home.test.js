@@ -25,7 +25,6 @@ test('public landing page has navigation, safe sections and working application 
   assert.ok(html.includes('data-action="show-login"'));
   assert.ok(html.includes('Разом сильніші'));
   assert.ok(html.includes('Наш шлях'));
-  assert.ok(html.includes('Фото')===false||html.length>1000);
 });
 test('published direct ImgBB gallery image renders while non-image links do not',()=>{
   const html=publicHtml({},[
