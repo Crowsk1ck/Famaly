@@ -102,6 +102,8 @@ function galleryCategoryLabel(category){
 }
 function publicGalleryFiltered(){
   const gallery=Array.isArray(state.public?.gallery)?state.public.gallery:[];
+  const highlighted=gallery.find(r=>r?.extra?.featured&&galleryPhoto(r))||gallery.find(r=>galleryPhoto(r));
+  const heroPhoto=highlighted?galleryPhoto(highlighted):'';
   const category=state.galleryFilter||'all';
   return category==='all'?gallery:gallery.filter(r=>galleryCategory(r)===category);
 }
@@ -289,6 +291,13 @@ function renderPublicCalendar(){
 }
 function renderPublic(){
   const page=publicPageFromHash(location.hash);
+  const routeKey=String(location.hash||'#home');
+  const publicRouteChanged=state.publicLastRoute!==undefined&&state.publicLastRoute!==routeKey;
+  state.publicLastRoute=routeKey;
+  const publicTitles={home:'Головна',about:'Про сім’ю',news:'Новини',achievements:'Досягнення',gallery:'Галерея',calendar:'Календар заходів',join:'Вступити'};
+  if(typeof document!=='undefined'){
+    document.title=(publicTitles[page]||'Головна')+' — GRIZZLY Family | GTA 5 RP';
+  }
   const settings=state.public?.settings||{};
   const gallery=Array.isArray(state.public?.gallery)?state.public.gallery:[];
   const history=String(settings.history||'Grizzly об’єднує гравців, для яких повага, дисципліна та взаємодопомога важливіші за гучні слова.');
@@ -310,9 +319,11 @@ function renderPublic(){
     '<a href="#home" class="gr-logo" aria-label="GRIZZLY — на головну"><span class="gr-logo-mark" aria-hidden="true">G<span>.</span></span><span class="gr-logo-copy"><strong>GRIZZLY</strong><small>FAMILY / GTA V RP</small></span></a>'+
     '<nav class="gr-nav" aria-label="Основна навігація">'+navLinks+'</nav>'+
     '<div class="gr-header-actions">'+(state.user?'<a class="gr-login-btn" href="/#overview">Відкрити панель <span>↗</span></a>':'<button class="gr-login-btn" data-action="show-login" type="button">Особистий кабінет <span>↗</span></button>')+
-    '<details class="gr-mobile-menu"><summary aria-label="Відкрити навігацію">☰</summary><nav aria-label="Мобільна навігація">'+navLinks+'</nav></details></div>'+
+    '<details class="gr-mobile-menu"><summary aria-label="Відкрити навігацію">☰</summary><nav aria-label="Мобільна навігація">'+navLinks+
+    (state.user?'<a class="gr-mobile-account" href="/#overview">Відкрити панель ↗</a>':'<button type="button" class="gr-mobile-account" data-action="show-login">Особистий кабінет ↗</button>')+
+    '</nav></details></div>'+
   '</div></header>'+
-  '<main>'+
+  '<main id="gr-main" tabindex="-1">'+
   (page==='home'?(
     ('<section class="gr-hero" id="home"><div class="gr-hero-grid" aria-hidden="true"></div><div class="gr-container gr-hero-inner">'+
     '<div class="gr-hero-content"><div class="gr-eyebrow"><span class="gr-red-dot"></span> УКРАЇНСЬКА GTA 5 RP СІМ’Я <span class="gr-eyebrow-rule"></span> LOS SANTOS</div>'+
@@ -321,7 +332,9 @@ function renderPublic(){
       '<div class="gr-hero-buttons"><a class="gr-button gr-button-primary" href="#join">Стати частиною GRIZZLY <span aria-hidden="true">↗</span></a><a class="gr-button gr-button-outline" href="#about">Наша історія <span aria-hidden="true">→</span></a></div>'+
       '<div class="gr-hero-values"><span><b>01</b> Братерство</span><span><b>02</b> Дисципліна</span><span><b>03</b> Розвиток</span></div>'+
     '</div>'+
-    '<div class="gr-hero-art" aria-label="Емблема GRIZZLY"><div class="gr-art-grid"></div><span class="gr-art-corner gr-art-corner-top">GRZ / 001</span><div class="gr-art-round"><span class="gr-art-arc"></span>'+
+    '<div class="gr-hero-art'+(heroPhoto?' has-photo':'')+'" aria-label="Емблема GRIZZLY">'+
+      (heroPhoto?'<img class="gr-art-photo" src="'+esc(heroPhoto)+'" alt="" aria-hidden="true" decoding="async" loading="eager" fetchpriority="high">':'')+
+      '<div class="gr-art-grid"></div><span class="gr-art-corner gr-art-corner-top">GRZ / 001</span><div class="gr-art-round"><span class="gr-art-arc"></span>'+
       '<svg class="gr-paw" viewBox="0 0 240 240" role="img" aria-label="Символ ведмежої лапи">'+
        '<ellipse cx="48" cy="80" rx="18" ry="27" transform="rotate(-27 48 80)" fill="currentColor"/>'+
        '<ellipse cx="90" cy="50" rx="19" ry="28" transform="rotate(-8 90 50)" fill="currentColor"/>'+
@@ -377,6 +390,7 @@ function renderPublic(){
       const anchor=String(location.hash||'').replace(/^#/,'');
       if(['team','directions','rules'].includes(anchor))document.getElementById(anchor)?.scrollIntoView();
       else if(window.scrollY>0)window.scrollTo(0,0);
+      if(publicRouteChanged)document.getElementById('gr-main')?.focus({preventScroll:true});
     });
   }
 }
