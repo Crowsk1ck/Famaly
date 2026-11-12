@@ -1,0 +1,96 @@
+name: GRIZZLY D1 migrations (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: 'Inspect pending migrations first; apply only after checking the list'
+        required: true
+        default: inspect
+        type: choice
+        options:
+          - inspect
+          - apply
+      confirm_database:
+        description: 'For apply only, type exactly: grizzly-db'
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: grizzly-d1-remote-migration
+  cancel-in-progress: false
+
+jobs:
+  migration:
+    name: Check or apply GRIZZLY D1 migrations
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - name: Checkout protected source
+        uses: actions/checkout@v4
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate database identity and credentials
+        shell: bash
+        env:
+          OPERATION: ${{ inputs.operation }}
+          CONFIRM_DATABASE: ${{ inputs.confirm_database }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${CLOUDFLARE_API_TOKEN:-}" ]]; then
+            echo "::error::GitHub secret CLOUDFLARE_API_TOKEN is missing. Add it at Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+          if [[ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]]; then
+            echo "::error::GitHub secret/variable CLOUDFLARE_ACCOUNT_ID is missing."
+            exit 1
+          fi
+          if ! grep -Fxq 'name = "famaly"' wrangler.toml ||
+             ! grep -Fxq 'database_name = "grizzly-db"' wrangler.toml ||
+             ! grep -Fxq 'database_id = "22bfd811-aa30-4eba-bc72-2418ef7fedd4"' wrangler.toml; then
+            echo "::error::Unexpected Worker or D1 database; refusing to proceed."
+            exit 1
+          fi
+          if [[ "$OPERATION" == 'apply' && "$CONFIRM_DATABASE" != 'grizzly-db' ]]; then
+            echo "::error::To apply, type grizzly-db in the confirm_database field."
+            exit 1
+          fi
+      - name: Install Wrangler
+        run: npm install --no-audit --no-fund
+      - name: Inspect unapplied migrations
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 migrations list grizzly-db --remote 2>&1 | tee /tmp/grizzly-d1-pending.txt
+      - name: Guard against uninitialized or unexpected database
+        if: inputs.operation == 'apply'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -Eq '000[12]_.*\.sql' /tmp/grizzly-d1-pending.txt; then
+            echo "::error::Found pending foundation migrations 0001/0002. Stop and inspect the existing remote D1 before applying."
+            exit 1
+          fi
+          if ! grep -Eq '000[3-6]_.*\.sql' /tmp/grizzly-d1-pending.txt; then
+            echo "No GRIZZLY migration 0003 through 0006 is pending."
+          fi
+      - name: Apply pending migrations to grizzly-db
+        if: inputs.operation == 'apply'
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler d1 migrations apply grizzly-db --remote
+      - name: Verify completed migration state
+        if: inputs.operation == 'apply'
+        run: npx wrangler d1 migrations list grizzly-db --remote
