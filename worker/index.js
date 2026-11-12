@@ -67,13 +67,17 @@ async function notify(db,userId,title,details=''){if(!userId)return;await db.pre
 // A Discord webhook is a credential. Never store it in D1, echo it in JSON,
 // or include it in diagnostic logs. Configure DISCORD_WEBHOOK_URL as a Worker secret.
 export function validDiscordWebhookUrl(value){
-  if(typeof value!=='string')return false;
+  if(typeof value!=='string'||!value.trim())return false;
   try{
-    const u=new URL(value);
-    return u.protocol==='https:'&&u.hostname==='discord.com'&&u.port===''&&
+    const u=new URL(value.trim());
+    return u.protocol==='https:'&&['discord.com','discordapp.com'].includes(u.hostname)&&u.port===''&&
       !u.username&&!u.password&&!u.search&&!u.hash&&
-      /^\/api\/webhooks\/\d{17,22}\/[A-Za-z0-9._-]{30,}$/.test(u.pathname);
+      /^\/api\/webhooks\/\d{17,22}\/[A-Za-z0-9._-]{30,}\/?$/.test(u.pathname);
   }catch{return false;}
+}
+export function discordWebhookDiagnostic(value){
+  const present=typeof value==='string'&&!!value.trim();
+  return {configured:present&&validDiscordWebhookUrl(value),reason:!present?'missing':validDiscordWebhookUrl(value)?'ready':'invalid'};
 }
 function discordSafe(value,limit=180){
   return str(value,limit).replace(/[\u0000-\u001f\u007f]/g,' ').replace(/@/g,'@\u200b').replace(/<(?=[@#])/g,'&lt;');
@@ -105,7 +109,7 @@ async function sendDiscordWebhook(env,kind,info){
   if(!validDiscordWebhookUrl(webhook))throw new Error('DISCORD_WEBHOOK_URL відсутній або має невірний формат');
   let response;
   try{
-    response=await fetch(webhook,{method:'POST',
+    response=await fetch(webhook.trim(),{method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify(buildDiscordNotification(kind,info))
     });
@@ -114,7 +118,10 @@ async function sendDiscordWebhook(env,kind,info){
     // Always replace them with a safe, generic message.
     throw new Error('Немає з’єднання з Discord');
   }
-  if(!response.ok)throw new Error('Discord відповів кодом '+response.status);
+  if(!response.ok){
+    const messages={400:'Discord відхилив повідомлення',401:'Discord відхилив токен webhook',403:'Немає доступу до Discord-каналу',404:'Webhook не існує або був видалений',429:'Discord обмежив частоту запитів'};
+    throw new Error((messages[response.status]||'Discord повернув помилку')+' (HTTP '+response.status+')');
+  }
   return true;
 }
 function queueDiscord(ctx,env,kind,info){
@@ -359,12 +366,14 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
   }
   if(path==='/api/discord/status'&&method==='GET'){
     if(user.role!=='leader')fail(403,'Лише лідер переглядає інтеграцію Discord');
-    return json({configured:validDiscordWebhookUrl(env.DISCORD_WEBHOOK_URL),
+    return json({...discordWebhookDiagnostic(env.DISCORD_WEBHOOK_URL),
+      worker:'famaly',
       categories:Object.fromEntries(DISCORD_NOTIFY_KINDS.map(k=>[k,discordEnabled(env,k)]))});
   }
   if(path==='/api/discord/test'&&method==='POST'){
     if(user.role!=='leader')fail(403,'Лише лідер може перевіряти Discord');
-    if(!validDiscordWebhookUrl(env.DISCORD_WEBHOOK_URL))fail(503,'Спочатку додайте секрет DISCORD_WEBHOOK_URL у Cloudflare Workers');
+    const diagnostic=discordWebhookDiagnostic(env.DISCORD_WEBHOOK_URL);
+    if(!diagnostic.configured)fail(503,diagnostic.reason==='missing'?'Worker famaly не має секрету DISCORD_WEBHOOK_URL':'Worker famaly має секрет, але URL Discord некоректний');
     const rateKey='discord:test:'+user.id;
     await rateCheck(db,rateKey,3,10);
     await rateFail(db,rateKey,3,10);
