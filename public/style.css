@@ -23,3 +23,19 @@
 .capt-actions{display:flex;align-items:center;justify-content:flex-end;gap:7px;flex-wrap:wrap}
 .capt-result{font-size:.8rem;font-weight:700;max-width:45%;overflow-wrap:anywhere;color:var(--fg);border:1px solid var(--border);border-radius:9px;padding:5px 9px}
 @media(max-width:500px){.capt-line{align-items:flex-start;flex-direction:column}.capt-result{max-width:100%}.capt-actions{justify-content:flex-start}}
+
+/* CAPT calendar and automated roster — scroll safely on narrow phones */
+.capt-scorecards{margin:12px 0 18px}
+.capt-calendar{margin-bottom:20px}
+.capt-calendar-scroll{overflow-x:auto;max-width:100%;padding-bottom:4px}
+.capt-days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));min-width:690px;gap:5px}
+.capt-weekday{text-align:center;font-weight:700;font-size:.79rem;color:var(--muted);padding:6px}
+.capt-day{min-height:104px;background:#1A1D26;border:1px solid var(--border);border-radius:10px;padding:8px;display:flex;flex-direction:column;gap:4px;min-width:0}
+.capt-day strong{font-size:.82rem}
+.capt-blank{background:transparent;border-color:transparent}
+.capt-calendar-event{text-align:left;display:block;width:100%;border:1px solid #684047;border-radius:6px;background:#38262F;color:#F4E7E9;padding:5px;font-size:.7rem;line-height:1.25;white-space:normal;overflow-wrap:anywhere}
+.capt-calendar-event.capt-training-event{background:#222C36;border-color:#3B5263;color:#DEE8F2}
+.capt-calendar-event:hover{filter:brightness(1.2)}
+.capt-person{padding:7px 0;border-bottom:1px solid var(--border);overflow-wrap:anywhere}
+.capt-person:last-child{border-bottom:0}
+@media(max-width:780px){.capt-calendar .card-head{align-items:flex-start;gap:10px;flex-wrap:wrap}}
