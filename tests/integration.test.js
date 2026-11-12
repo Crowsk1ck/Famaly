@@ -160,3 +160,53 @@ test('gallery publishing validates ImgBB and exposes only approved public metada
   }});
   assert.equal(fakeResult.status,400);
 });
+
+test('public news stays separate from private notices and unpublished drafts',async()=>{
+  const noAuth=await req('/api/records/public_news');
+  assert.equal(noAuth.status,401);
+  const forbidden=await req('/api/records/public_news',{method:'POST',token:member,data:{
+    title:'Нелегальна новина',details:'Не можна публікувати',status:'Погоджено'
+  }});
+  assert.equal(forbidden.status,403);
+  const privateNotice=await req('/api/records/notices',{method:'POST',token:leader,data:{
+    title:'СЛУЖБОВЕ ОГОЛОШЕННЯ',details:'Секрет сім’ї',status:'Погоджено'
+  }});
+  assert.equal(privateNotice.status,201);
+  const draft=await req('/api/records/public_news',{method:'POST',token:leader,data:{
+    title:'CAPT набір',details:'Текст публічної новини сім’ї',status:'Заплановано',
+    extra:{news_category:'recruitment',featured:true,internal_note:'NEVER_PUBLIC'}
+  }});
+  assert.equal(draft.status,201,JSON.stringify(draft.data));
+  const newsId=draft.data.item.id;
+  let publicData=(await req('/api/public')).data;
+  assert.equal(publicData.news.length,0);
+  assert.equal(JSON.stringify(publicData).includes('СЛУЖБОВЕ ОГОЛОШЕННЯ'),false);
+  const published=await req('/api/records/public_news/'+newsId,{method:'PATCH',token:leader,data:{
+    version:1,status:'Погоджено'
+  }});
+  assert.equal(published.status,200,JSON.stringify(published.data));
+  publicData=(await req('/api/public')).data;
+  const post=publicData.news.find(x=>x.id===newsId);
+  assert.ok(post);
+  assert.equal(post.title,'CAPT набір');
+  assert.equal(post.category,'recruitment');
+  assert.equal(post.featured,true);
+  assert.equal(post.internal_note,undefined);
+  assert.equal(post.extra,undefined);
+  assert.equal(post.owner_id,undefined);
+  assert.equal(JSON.stringify(publicData).includes('NEVER_PUBLIC'),false);
+  const hidden=await req('/api/records/public_news/'+newsId,{method:'PATCH',token:leader,data:{
+    version:2,status:'Заплановано'
+  }});
+  assert.equal(hidden.status,200);
+  publicData=(await req('/api/public')).data;
+  assert.equal(publicData.news.some(x=>x.id===newsId),false);
+  const invalidCategory=await req('/api/records/public_news',{method:'POST',token:leader,data:{
+    title:'Invalid category',details:'Новина для тесту',extra:{news_category:'private'}
+  }});
+  assert.equal(invalidCategory.status,400);
+  const missingText=await req('/api/records/public_news',{method:'POST',token:leader,data:{
+    title:'No text',status:'Погоджено',extra:{news_category:'news'}
+  }});
+  assert.equal(missingText.status,400);
+});
