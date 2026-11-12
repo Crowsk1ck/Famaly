@@ -410,6 +410,9 @@ test('Discord webhook validation and formatter forbid spoofed hosts and mentions
   assert.equal(validDiscordWebhookUrl(valid),true);
   assert.equal(validDiscordWebhookUrl('  '+valid+'  '),true);
   assert.equal(validDiscordWebhookUrl(valid.replace('discord.com','discordapp.com')+'/'),true);
+  assert.equal(validDiscordWebhookUrl(valid.replace('discord.com','canary.discord.com')),true);
+  assert.deepEqual(discordWebhookDiagnostic(valid.replace('discord.com','canary.discord.com')),{configured:true,reason:'ready'});
+  assert.equal(validDiscordWebhookUrl(valid.replace('discord.com','canary.discord.com.evil.example')),false);
   assert.deepEqual(discordWebhookDiagnostic(undefined),{configured:false,reason:'missing'});
   assert.deepEqual(discordWebhookDiagnostic('not-a-webhook'),{configured:false,reason:'invalid'});
   assert.deepEqual(discordWebhookDiagnostic(valid),{configured:true,reason:'ready'});
