@@ -151,13 +151,39 @@ function reviewModal(mod,id){modal('Рішення керівництва',`<for
 function grouped(mods,title,description){const active=state.sub[state.route]||mods[0];return `<div class="tabs mb">${mods.map(m=>`<button data-action="change-sub" data-value="${m}" class="tab ${m===active?'active':''}">${esc(moduleInfo[m][0])}</button>`).join('')}</div>`;}
 async function groupPage(route){const mods=groupRoutes[route],active=state.sub[route]||mods[0];if(route==='discipline'&&!can('discipline:manage'))return intro('Доступ заборонено');return grouped(mods)+await renderModule(active);}
 
+function captCalendar(schedule){
+  const selected=state.captMonth||new Date().toISOString().slice(0,7);
+  const [year,month]=selected.split('-').map(Number);
+  const first=new Date(year,month-1,1);
+  const length=new Date(year,month,0).getDate();
+  const offset=(first.getDay()+6)%7;
+  const byDate=new Map();
+  for(const item of schedule){
+    const day=String(item.starts_at||'').slice(0,10);
+    if(!day.startsWith(selected+'-'))continue;
+    if(!byDate.has(day))byDate.set(day,[]);
+    byDate.get(day).push(item);
+  }
+  const days=['Пн','Вт','Ср','Чт','Пт','Сб','Нд'];
+  let cells=days.map(x=>'<div class="capt-weekday">'+x+'</div>').join('');
+  for(let i=0;i<offset;i++)cells+='<div class="capt-day muted capt-blank" aria-hidden="true"></div>';
+  for(let day=1;day<=length;day++){
+    const key=selected+'-'+String(day).padStart(2,'0');
+    const entries=(byDate.get(key)||[]).sort((a,b)=>a.starts_at.localeCompare(b.starts_at));
+    const events=entries.slice(0,3).map(rec=>
+      '<button type="button" class="capt-calendar-event '+(rec.module==='capt_matches'?'capt-match-event':'capt-training-event')+'" data-action="view-record" data-id="'+esc(rec.id)+'" data-module="'+rec.module+'" title="'+esc(rec.title)+'">'
+       +esc(rec.starts_at.slice(11,16))+' '+esc(rec.title)+'</button>').join('');
+    cells+='<div class="capt-day"><strong>'+day+'</strong>'+events+(entries.length>3?'<span class="small muted">+'+(entries.length-3)+' події</span>':'')+'</div>';
+  }
+  return '<section class="card capt-calendar"><div class="card-head"><h3>Календар CAPT</h3><div class="row"><button class="btn tiny ghost" data-action="capt-month" data-offset="-1" aria-label="Попередній місяць">‹</button><strong>'+esc(first.toLocaleDateString('uk-UA',{month:'long',year:'numeric'}))+'</strong><button class="btn tiny ghost" data-action="capt-month" data-offset="1" aria-label="Наступний місяць">›</button></div></div><div class="capt-calendar-scroll"><div class="capt-days">'+cells+'</div></div></section>';
+}
 async function captPage(){
   const d=await api('/capt/overview');
   const canManage=can('capt:manage'),canPay=can('finance:manage');
   const schedule=[...d.matches.map(r=>({...r,kind:'Бій',module:'capt_matches'})),...d.trainings.map(r=>({...r,kind:'Тренування',module:'capt_training'}))];
   const upcoming=schedule.filter(r=>r.starts_at&&new Date(r.starts_at).getTime()>=Date.now()&&!['Відхилено','Завершено'].includes(r.status))
     .sort((a,b)=>a.starts_at.localeCompare(b.starts_at)).slice(0,6);
-  const results=d.matches.filter(r=>String(r.extra?.result||'').trim()).slice(0,8);
+  const results=d.matches.filter(r=>String(r.extra?.result||'').trim()||['win','loss','draw'].includes(r.extra?.outcome)).slice(0,8);
   const pending=d.attendance.filter(r=>r.status==='Погоджено'&&r.paid===false);
   const notices=d.rates?'<div class="notice mb">Ставки CAPT: AFK — <strong>'+fmt(d.rates.afk)+'</strong>, бій — <strong>'+fmt(d.rates.battle)+'</strong> (ігрова валюта). Лідер змінює ставки у «Налаштуваннях».</div>':'';
   const upcomingRows=upcoming.map(r=>'<div class="capt-line"><div><strong>'+esc(r.title)+'</strong><div class="small muted">'+esc(r.kind)+' · '+esc(r.starts_at.replace('T',' '))+(r.extra?.opponent?' · '+esc(r.extra.opponent):'')+'</div></div><button class="btn tiny secondary" data-action="view-record" data-id="'+esc(r.id)+'" data-module="'+r.module+'">Відкрити</button></div>').join('')||empty('Поки немає запланованих боїв або тренувань');
@@ -168,9 +194,11 @@ async function captPage(){
     [canManage?'Записи відвідування':'Мої відвідування',d.attendance.length,'♟'],
     [canPay?'Погоджено, не виплачено':'Погоджені відвідування',canPay?pending.length:d.attendance.filter(r=>r.status==='Погоджено').length,'₴']];
   const statCards=stats.map(row=>'<div class="card stat"><span class="stat-symbol">'+row[2]+'</span><div class="muted small">'+esc(row[0])+'</div><div class="number">'+fmt(row[1])+'</div></div>').join('');
+  const resultsStats=d.results||{wins:0,losses:0,draws:0,played:0,win_rate:0};
+  const outcomeCards=[['Перемоги',resultsStats.wins],['Поразки',resultsStats.losses],['Нічиї',resultsStats.draws],['Відсоток перемог',resultsStats.win_rate+'%']].map(([label,value])=>'<div class="card stat"><div class="muted small">'+esc(label)+'</div><div class="number">'+esc(value)+'</div></div>').join('');
   return intro('CAPT — командний склад','Планування боїв, відвідування, результати та контроль виплат.',
        canManage?'<button class="btn" data-action="new-record" data-module="capt_matches">＋ Запланувати бій</button>':'<button class="btn" data-action="new-record" data-module="capt_attendance">＋ Моя участь</button>')
-    +'<div class="cards">'+statCards+'</div>'+notices
+    +'<div class="cards">'+statCards+'</div>'+'<div class="cards capt-scorecards">'+outcomeCards+'</div>' +captCalendar(schedule)+notices
     +'<div class="grid2 capt-grid"><div class="card"><div class="card-head"><h3>Найближчі бої та тренування</h3>'
     +(canManage?'<button class="btn tiny ghost" data-action="new-record" data-module="capt_training">＋ Тренування</button>':'')
     +'</div>'+upcomingRows+'</div><div class="card"><div class="card-head"><h3>Останні результати боїв</h3></div>'+resultRows+'</div></div>'
@@ -265,6 +293,16 @@ document.addEventListener('click',async e=>{const back=e.target.closest('[data-b
   case 'view-record':await preload();await viewRecord(mod,id);break;
   case 'review-record':reviewModal(mod,id);break;
   case 'delete-record':{if(!confirm('Видалити цей запис?'))return;const r=(await api(`/records/${mod}`)).items.find(x=>x.id===id);await api(`/records/${mod}/${id}`,'DELETE',{version:r.version});await afterSaved('Запис видалено');break;}
+  case 'capt-month':{
+    const current=state.captMonth||new Date().toISOString().slice(0,7);
+    const [year,month]=current.split('-').map(Number);
+    const next=new Date(year,month-1+Number(t.dataset.offset||0),1);
+    state.captMonth=next.getFullYear()+'-'+String(next.getMonth()+1).padStart(2,'0');
+    await render();break;}
+  case 'capt-join':
+  case 'capt-leave':{
+    await api('/capt/matches/'+encodeURIComponent(id)+'/signups','POST',{action:act==='capt-join'?'join':'leave'});
+    await renderCaptSignupPanel(id);toast(act==='capt-join'?'Запис на CAPT збережено':'Запис на CAPT скасовано');break;}
   case 'change-sub':state.sub[state.route]=t.dataset.value;state.search='';state.filter='';await render();break;
   case 'review-app':await appReview(id);break;
   case 'new-contract':await preload();await contractForm();break;
