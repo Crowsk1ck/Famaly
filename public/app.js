@@ -648,6 +648,45 @@ function updateAchievementPreview(){
   node.innerHTML=img?'<img src="'+esc(img)+'" alt="Попередній перегляд" loading="lazy">':
     '<span class="muted small">'+(raw?'Потрібне пряме посилання ImgBB на JPG, PNG, WEBP або GIF.':'Обкладинка не додана.')+'</span>';
 }
+async function calendarManager(){
+  const items=(await api('/records/public_calendar')).items;
+  const visible=applyFilters(items.filter(x=>searchMatch(x.title,x.details,x.extra?.location)));
+  const published=items.filter(x=>x.status==='Погоджено').length;
+  const cards=visible.sort((a,b)=>String(a.starts_at).localeCompare(String(b.starts_at))).map(x=>
+    '<article class="card gr-cal-admin-card"><div class="row space wrap">'+badge(x.status)+'<span class="pill">'+esc(grCalendarLabel(x.extra?.category))+'</span></div>'+
+    '<h3>'+esc(x.title)+'</h3><p class="muted small">'+esc(x.details)+'</p>'+
+    '<strong>◷ '+esc(x.starts_at?.replace('T',' · ')||'Дата не вказана')+'</strong>'+
+    (x.extra?.location?'<span class="muted small">⌖ '+esc(x.extra.location)+'</span>':'')+
+    '<div class="row wrap"><button class="btn tiny secondary" data-action="calendar-edit" data-id="'+esc(x.id)+'">Редагувати</button>'+
+    '<button class="btn tiny '+(x.status==='Погоджено'?'ghost':'')+'" data-action="calendar-publish" data-id="'+esc(x.id)+'" data-status="'+(x.status==='Погоджено'?'Заплановано':'Погоджено')+'">'+(x.status==='Погоджено'?'Приховати':'Опублікувати')+'</button>'+
+    '<button class="btn tiny danger" data-action="calendar-delete" data-id="'+esc(x.id)+'">Видалити</button></div></article>'
+  ).join('');
+  return intro('Календар сайту','Публічний календар GRIZZLY — окремо від приватних заходів.',
+    '<button class="btn" data-action="calendar-new">＋ Додати захід</button>')+
+    '<div class="notice">Публікуй тільки підтверджені заходи. Час вводиться за Києвом.</div>'+
+    '<div class="cards mt gr-cal-admin-stats"><div class="card stat"><div class="muted small">Усі</div><div class="number">'+fmt(items.length)+'</div></div>'+
+    '<div class="card stat"><div class="muted small">Опубліковано</div><div class="number">'+fmt(published)+'</div></div>'+
+    '<div class="card stat"><div class="muted small">Чернетки</div><div class="number">'+fmt(items.length-published)+'</div></div></div>'+
+    '<div class="toolbar">'+searchBar()+'</div>'+
+    (visible.length?'<div class="gr-cal-admin-grid">'+cards+'</div>':empty('Публічних заходів ще немає','Створіть перше оголошення про збори або тренування.'));
+}
+function calendarForm(record){
+  const r=record||{},x=r.extra||{};
+  const cat=grCalendarCategories.filter(([id])=>id!=='all').map(([id,label])=>'<option value="'+id+'" '+((x.category||'event')===id?'selected':'')+'>'+esc(label)+'</option>').join('');
+  const status=['Заплановано','Погоджено'].map(v=>'<option value="'+v+'" '+((r.status||'Заплановано')===v?'selected':'')+'>'+(v==='Погоджено'?'Опубліковано':'Чернетка')+'</option>').join('');
+  modal(record?'Редагувати публічний захід':'Новий публічний захід',
+    '<div class="notice mb">Час події вводиться за Києвом, без автоматичного перетворення часових поясів.</div>'+
+    '<form id="calendar-form" class="formgrid" data-id="'+esc(r.id||'')+'">'+
+    field('Назва *','title',r.title||'','text',true,'required maxlength="160"')+
+    field('Опис *','description',r.details||'','textarea',true,'required maxlength="3000"')+
+    '<div class="field"><label>Категорія</label><select name="category" class="select">'+cat+'</select></div>'+
+    field('Місце','location',x.location||'','text',false,'maxlength="120"')+
+    field('Початок (за Києвом) *','starts_at',r.starts_at||'','datetime-local',false,'required')+
+    field('Завершення (за Києвом)','ends_at',r.ends_at||'','datetime-local',false,'')+
+    '<div class="field full"><label>Видимість</label><select name="status" class="select">'+status+'</select></div>'+
+    '<div class="full form-actions"><button type="button" class="btn ghost" data-action="close-modal">Скасувати</button>'+
+    '<button type="submit" class="btn">Зберегти захід</button></div></form>');
+}
 function moduleForm(mod,r){const cfg=moduleInfo[mod],isEdit=!!r;const canManage=can(cfg[2]);const x=r||{};const fields=`<form id="record-form" data-module="${mod}" data-id="${esc(r?.id||'')}" class="formgrid">${field('Назва / тема *','title',x.title,'text',true,'required maxlength="160"')}${field('Опис / RP-звіт','details',x.details,'textarea',true)}${recordExtraFields(mod,r)}${canManage?`${statusField(x.status||'Заплановано')}${selectField('Виконавець','assignee_id',state.users,x.assignee_id)}${selectField('Напрямок','department_id',state.departments,x.department_id)}${field('Сума / винагорода (ігрова валюта)','amount',x.amount||0,'number',false,'min="0" step="1"')}${field('Початок','starts_at',formatDateField(x.starts_at),'datetime-local')}${field('Термін / завершення','ends_at',formatDateField(x.ends_at),'datetime-local')}`:''}${field('Докази ImgBB (кожне посилання з нового рядка)','evidence',evidenceText(x),'textarea',true)}${canManage?field('Додаткові дані (JSON: склад, номер ТЗ, стан, чекліст тощо)','extra',JSON.stringify(x.extra||{},null,2),'textarea',true):''}<div class="full form-actions"><button type="button" class="btn ghost" data-action="close-modal">Скасувати</button><button type="submit" class="btn">${isEdit?'Зберегти':'Створити'}</button></div></form>`;modal(`${isEdit?'Редагувати':'Створити'} · ${cfg[0]}`,`${isEdit?`<div class="notice mb">Запис із перевіркою версії: чужі зміни не будуть перезаписані.</div>`:''}${fields}`);}
 async function viewRecord(mod,id){const rows=(await api(`/records/${mod}`)).items;const r=rows.find(x=>x.id===id);if(!r)return toast('Запис недоступний',true);const payoutState=mod==='capt_attendance'?(await api('/capt/overview')).attendance.find(x=>x.id===id):null;const canManage=can(moduleInfo[mod][2])&&(state.user.role!=='head'||r.department_id===state.user.department_id);const canEdit=canManage||((r.owner_id===state.user.id||r.assignee_id===state.user.id)&&['reports','promotions','capt_attendance','vehicle_loans','tasks'].includes(mod));const review=canManage&&['reports','promotions'].includes(mod)&&r.owner_id!==state.user.id;const status=mod==='events'?`<div class="hr"></div><div id="rsvp-content" class="muted small">Завантаження учасників…</div>`:'';modal(r.title,`<div class="stack"><div class="row space">${badge(r.status)}<span class="muted small">v${r.version} · ${date(r.updated_at)}</span></div><div class="longtext">${esc(r.details||'Опис не додано')}</div><div class="small muted">Відповідальний: ${esc(userName(r.assignee_id||r.owner_id))} · ${esc(departmentName(r.department_id))}</div>${r.amount?`<div class="small">Винагорода: <strong>${fmt(r.amount)}</strong></div>`:''}${r.starts_at?`<div class="small">Початок: ${esc(r.starts_at.replace('T',' '))}</div>`:''}${links(r)}${Object.keys(r.extra||{}).length?`<div class="card flat"><strong>Додаткова інформація</strong><div class="stack mt small">${Object.entries(r.extra).filter(([k])=>k!=='review_nonce').map(([k,v])=>`<div><span class="muted">${esc(({requested_rank_id:'Цільовий ранг',checklist_completed:'Виконані умови',opponent:'Суперник',place:'Місце',lineup:'Склад на бій',result:'Результат',attendance_type:'Тип участі',match_id:'Бій / тренування',plate:'Номер ТЗ',condition:'Стан',responsible:'Відповідальний',review_comment:'Коментар керівника'})[k]||k)}:</span> <strong>${esc(Array.isArray(v)?v.join(', '):v)}</strong></div>`).join('')}</div></div>`:''}${status}${mod==='capt_matches'?'<div class="hr"></div><section id="capt-signup-panel" class="stack"><p class="muted">Завантаження списку учасників…</p></section>':''}<div class="form-actions">${review?`<button class="btn secondary" data-action="review-record" data-module="${mod}" data-id="${id}">Перевірити</button>`:''}${canEdit?`<button class="btn" data-action="edit-record" data-module="${mod}" data-id="${id}">Редагувати</button>`:''}${mod==='templates'?`<button class="btn secondary" data-action="copy-template" data-id="${id}">Копіювати текст</button>`:''}${mod==='capt_attendance'&&payoutState?.paid===true?'<span class="pill">CAPT-виплату проведено</span>':mod==='capt_attendance'&&r.status==='Погоджено'&&can('finance:manage')?`<button class="btn" data-action="capt-pay" data-id="${id}">₴ Нарахувати CAPT</button>`:''}${canManage?`<button class="btn danger" data-action="delete-record" data-module="${mod}" data-id="${id}">Видалити</button>`:''}</div></div>`);if(mod==='capt_matches')await renderCaptSignupPanel(id);if(mod==='events'){try{const rs=await api(`/rsvp/${id}`);const el=$('#rsvp-content');if(el)el.innerHTML=`<div class="row wrap"><strong>Моя участь: ${esc(rs.own||'Не підтверджено')}</strong><span class="muted">Так: ${rs.counts.yes} · Ні: ${rs.counts.no}</span></div><div class="row mt"><button class="btn tiny" data-action="rsvp" data-id="${id}" data-value="Так">✓ Буду</button><button class="btn tiny ghost" data-action="rsvp" data-id="${id}" data-value="Ні">Не зможу</button></div>${rs.items.length?`<div class="muted small mt">${rs.items.map(i=>`${esc(userName(i.user_id))}: ${esc(i.response)}`).join(' · ')}</div>`:''}`;}catch(e){toast(e.message,true);}}}
 async function renderCaptSignupPanel(id){
@@ -747,6 +786,16 @@ async function handleSubmit(e){const f=e.target;if(!f.id)return;e.preventDefault
     const result=await api(id?`/users/${id}`:'/users',id?'PATCH':'POST',payload);if(!id){closeModal();await preload();await render();credentialReceipt(result.item.username,b.password,result.item.nickname);return;}await afterSaved('Особову справу оновлено');return;}
   case 'rank-form':{const r=state.ranks.find(x=>x.id===Number(f.dataset.id));await api(`/ranks/${r.id}`,'PATCH',{title:b.title,requirements:b.requirements,checklist:lines(b.checklist),version:r.version});await afterSaved('Ранг оновлено');return;}
   case 'department-form':{const d=state.departments.find(x=>x.id===f.dataset.id);await api(`/departments/${d.id}`,'PATCH',{...b,version:d.version});await afterSaved();return;}
+  case 'calendar-form':{
+    if(!can('content:manage'))throw new Error('Недостатньо прав');
+    const id=f.dataset.id,old=id?(await api('/records/public_calendar')).items.find(x=>x.id===id):null;
+    if(id&&!old)throw new Error('Захід не знайдено');
+    if(b.ends_at&&b.ends_at<=b.starts_at)throw new Error('Дата завершення має бути після початку');
+    await api(id?'/records/public_calendar/'+encodeURIComponent(id):'/records/public_calendar',id?'PATCH':'POST',{
+      title:b.title,details:b.description,status:b.status||'Заплановано',
+      starts_at:b.starts_at,ends_at:b.ends_at||'',extra:{category:b.category,location:b.location||''},version:old?.version
+    });
+    await afterSaved('Захід збережено');return;}
   case 'achievement-form':{
     if(!can('content:manage'))throw new Error('Недостатньо прав для досягнень');
     const id=f.dataset.id,old=id?(await api('/records/public_achievements')).items.find(a=>a.id===id):null;
@@ -841,6 +890,34 @@ document.addEventListener('click',async e=>{const back=e.target.closest('[data-b
   case 'edit-department':departmentForm(id);break;
   case 'new-record':await preload();if(mod==='gallery')galleryForm();else if(mod==='public_news')newsForm();else if(mod==='public_team')teamForm();else if(mod==='public_achievements')achievementForm();else moduleForm(mod);break;
   case 'edit-record':{const r=(await api(`/records/${mod}`)).items.find(x=>x.id===id);await preload();if(mod==='gallery')galleryForm(r);else if(mod==='public_news')newsForm(r);else if(mod==='public_team')teamForm(r);else if(mod==='public_achievements')achievementForm(r);else moduleForm(mod,r);break;}
+  case 'calendar-new':{
+    if(!can('content:manage'))throw new Error('Недостатньо прав');calendarForm();break;}
+  case 'calendar-edit':{
+    if(!can('content:manage'))throw new Error('Недостатньо прав');
+    const rec=(await api('/records/public_calendar')).items.find(x=>x.id===id);
+    if(!rec)throw new Error('Захід не знайдено');calendarForm(rec);break;}
+  case 'calendar-publish':{
+    if(!can('content:manage'))throw new Error('Недостатньо прав');
+    const rec=(await api('/records/public_calendar')).items.find(x=>x.id===id);
+    if(!rec)throw new Error('Захід не знайдено');
+    await api('/records/public_calendar/'+encodeURIComponent(id),'PATCH',{version:rec.version,status:t.dataset.status});
+    await afterSaved(t.dataset.status==='Погоджено'?'Захід опубліковано':'Захід приховано');break;}
+  case 'calendar-delete':{
+    if(!can('content:manage'))throw new Error('Недостатньо прав');
+    if(!confirm('Видалити публічний захід?'))break;
+    const rec=(await api('/records/public_calendar')).items.find(x=>x.id===id);
+    if(!rec)throw new Error('Захід не знайдено');
+    await api('/records/public_calendar/'+encodeURIComponent(id),'DELETE',{version:rec.version});
+    await afterSaved('Захід видалено');break;}
+  case 'public-calendar-filter':{
+    state.calendarCategory=t.dataset.category||'all';
+    const node=$('#gr-calendar-content');if(node)node.innerHTML=renderPublicCalendar();break;}
+  case 'public-calendar-prev':
+  case 'public-calendar-next':{
+    const [year,month]=grCalendarMonthValue().split('-').map(Number);
+    const d=new Date(Date.UTC(year,month-1+(act==='public-calendar-prev'?-1:1),1));
+    state.calendarMonth=d.getUTCFullYear()+'-'+String(d.getUTCMonth()+1).padStart(2,'0');
+    const node=$('#gr-calendar-content');if(node)node.innerHTML=renderPublicCalendar();break;}
   case 'achievement-new':{
     if(!can('content:manage'))throw new Error('Недостатньо прав');
     achievementForm();break;}
