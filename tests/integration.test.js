@@ -120,3 +120,43 @@ test('settings updates use all-or-nothing optimistic versions',async()=>{const f
 test('blocking user revokes sessions and stops access',async()=>{const u=(await req('/api/users',{token:leader})).data.items.find(x=>x.id===memberId);const r=await req(`/api/users/${memberId}`,{method:'PATCH',token:leader,data:{...u,status:'blocked'}});assert.equal(r.status,200,JSON.stringify(r.data));assert.equal((await req('/api/auth/me',{token:member})).status,401);});
 test('payout rounding is deterministic',()=>{const p=payoutPreview(100,20,['a','b','c']);assert.equal(p.treasury,22);assert.equal(p.per_member,26);assert.equal(p.rounding_remainder,2);assert.equal(p.allocations.length,3);});
 test.after(()=>{child.kill();rmSync(dir,{recursive:true,force:true});});
+
+test('gallery publishing validates ImgBB and exposes only approved public metadata',async()=>{
+  const invalid=await req('/api/records/gallery',{method:'POST',token:leader,data:{
+    title:'Broken photo',evidence:['https://i.ibb.co.example.com/bad.jpg'],extra:{gallery_category:'cars'}
+  }});
+  assert.equal(invalid.status,400);
+  const unauthorized=await req('/api/records/gallery',{method:'POST',token:member,data:{
+    title:'Unauthorized',evidence:['https://i.ibb.co/test/photo.jpg'],extra:{gallery_category:'capt'}
+  }});
+  assert.equal(unauthorized.status,403);
+  const added=await req('/api/records/gallery',{method:'POST',token:leader,data:{
+    title:'GRIZZLY автопарк',details:'Реальний кадр GTA RP',status:'Заплановано',
+    evidence:['https://i.ibb.co/test/car.webp'],
+    extra:{gallery_category:'cars',featured:true,secret_note:'internal-only'}
+  }});
+  assert.equal(added.status,201,JSON.stringify(added.data));
+  const id=added.data.item.id;
+  let pub=await req('/api/public');
+  assert.ok(!pub.data.gallery.some(item=>item.id===id));
+  const published=await req('/api/records/gallery/'+id,{method:'PATCH',token:leader,data:{
+    version:1,status:'Погоджено'
+  }});
+  assert.equal(published.status,200,JSON.stringify(published.data));
+  pub=await req('/api/public');
+  const photo=pub.data.gallery.find(item=>item.id===id);
+  assert.ok(photo);
+  assert.equal(photo.extra.gallery_category,'cars');
+  assert.equal(photo.extra.featured,true);
+  assert.equal(photo.extra.secret_note,undefined);
+  assert.equal(photo.owner_id,undefined);
+  const hidden=await req('/api/records/gallery/'+id,{method:'PATCH',token:leader,data:{
+    version:2,status:'Заплановано'
+  }});
+  assert.equal(hidden.status,200);
+  assert.equal((await req('/api/public')).data.gallery.some(item=>item.id===id),false);
+  const fakeResult=await req('/api/records/gallery',{method:'POST',token:leader,data:{
+    title:'Invalid category',evidence:['https://i.ibb.co/test/file.png'],extra:{gallery_category:'unknown'}
+  }});
+  assert.equal(fakeResult.status,400);
+});
