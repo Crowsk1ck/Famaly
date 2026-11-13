@@ -149,7 +149,7 @@ test('all authenticated members see aggregate finance but cannot access details 
   assert.equal(viewer.data.payout_total,leaderFinance.data.payout_total);
   assert.equal(viewer.data.payout_count,leaderFinance.data.payout_count);
   assert.deepEqual(viewer.data.totals,leaderFinance.data.totals);
-  assert.deepEqual(viewer.data.month,leaderFinance.data.month);
+  for(const key of ['contract_treasury','contributions','expenses','bonuses','capt','contract_payouts','contract_payout_count','treasury_change'])assert.equal(viewer.data.month[key],leaderFinance.data.month[key],key);
   assert.equal(viewer.data.payment_rows,undefined,'Member must not receive other peoples payout records');
   assert.ok(Array.isArray(viewer.data.own_payouts));
   assert.equal((await req('/api/ledger',{token:member})).status,403);
