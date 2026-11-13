@@ -59,6 +59,37 @@ test('fleet stores vehicles with condition, image evidence and member-visible lo
   const log=await req('/api/records/vehicle_loans',{token:leader});
   assert.ok(log.data.items.some(item=>item.id===trip.data.item.id&&item.extra.vehicle==='GRZ-001'));
 });
+test('fleet issue, return and repair change availability with permanent history',async()=>{
+  const car=await req('/api/records/vehicles',{method:'POST',token:leader,data:{title:'Benefactor Schafter',details:'Сімейний гараж',status:'Заплановано',extra:{plate:'GRZ-119',condition:'ready',value:450000,mileage:100}}});
+  assert.equal(car.status,201,JSON.stringify(car.data));
+  const id=car.data.item.id, endpoint='/api/fleet/vehicles/'+id+'/action';
+  const forbidden=await req(endpoint,{method:'POST',token:member,data:{action:'issue',driver:'Fighter'}});
+  assert.equal(forbidden.status,403);
+  const issued=await req(endpoint,{method:'POST',token:leader,data:{action:'issue',driver:'Fighter'}});
+  assert.equal(issued.status,200,JSON.stringify(issued.data));
+  const duplicate=await req(endpoint,{method:'POST',token:leader,data:{action:'issue',driver:'Another'}});
+  assert.equal(duplicate.status,409);
+  const repairWhileIssued=await req(endpoint,{method:'POST',token:leader,data:{action:'repair',note:'Двигун'}});
+  assert.equal(repairWhileIssued.status,409);
+  const returned=await req(endpoint,{method:'POST',token:leader,data:{action:'return',driver:'Fighter'}});
+  assert.equal(returned.status,200,JSON.stringify(returned.data));
+  const repair=await req(endpoint,{method:'POST',token:leader,data:{action:'repair',note:'Заміна коліс',cost:1200}});
+  assert.equal(repair.status,200,JSON.stringify(repair.data));
+  const blocked=await req(endpoint,{method:'POST',token:leader,data:{action:'issue',driver:'Fighter'}});
+  assert.equal(blocked.status,409);
+  const ready=await req(endpoint,{method:'POST',token:leader,data:{action:'ready',note:'Ремонт виконано'}});
+  assert.equal(ready.status,200,JSON.stringify(ready.data));
+  const vehicles=await req('/api/records/vehicles',{token:leader});
+  const updated=vehicles.data.items.find(v=>v.id===id);
+  assert.equal(updated.extra.condition,'ready');
+  assert.equal(updated.extra.current_driver,undefined);
+  assert.equal(updated.extra.value,450000);
+  const history=await req('/api/records/vehicle_loans',{token:leader});
+  const log=history.data.items.filter(v=>v.extra.vehicle_id===id);
+  assert.equal(log.length,4);
+  assert.deepEqual(new Set(log.map(v=>v.extra.action)),new Set(['issue','return','repair','ready']));
+  assert.equal(log.find(v=>v.extra.action==='repair').extra.cost,1200);
+});
 test('contract calculation, atomic settlement and no duplicate payment',async()=>{const c=await req('/api/contracts',{method:'POST',token:leader,data:{title:'RP контракт',details:'Перевезення',amount:1001,treasury_percent:20,participant_ids:[memberId],status:'Заплановано'}});assert.equal(c.status,201,JSON.stringify(c.data));contractId=c.data.item.id;assert.equal((await req('/api/contracts',{token:member})).data.items.length,1);const p=await req(`/api/contracts/${contractId}/preview`,{token:member});assert.equal(p.data.preview.treasury,200);assert.equal(p.data.preview.per_member,801);const edit=await req(`/api/contracts/${contractId}`,{method:'PATCH',token:leader,data:{version:1,status:'Погоджено'}});assert.equal(edit.status,200);const paid=await req(`/api/contracts/${contractId}/settle`,{method:'POST',token:leader,data:{version:2}});assert.equal(paid.status,200,JSON.stringify(paid.data));assert.equal(paid.data.preview.per_member,801);const dup=await req(`/api/contracts/${contractId}/settle`,{method:'POST',token:leader,data:{version:2}});assert.equal(dup.status,409);const fin=await req('/api/finance',{token:member});assert.equal(fin.data.own_total,801);assert.equal(fin.data.own_payouts.length,1);const finance=(await req('/api/finance',{token:leader})).data;assert.equal(finance.treasury_balance,200);assert.equal(finance.payout_count,1);});
 test('unconfirmed contract payout dashboard respects finance permissions and totals',async()=>{
   const denied=await req('/api/finance/outstanding',{token:member});
