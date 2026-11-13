@@ -56,6 +56,22 @@ test('finance analytics limits access and reconciles earnings for weekly and mon
   assert.equal(month.data.report.member_earned,week.data.report.member_earned);
   assert.equal(month.data.report.net_change,week.data.report.net_change);
 });
+test('twelve-week financial trends are private and reconcile weekly sums',async()=>{
+  const denied=await req('/api/finance/trends',{token:member});
+  assert.equal(denied.status,403);
+  const result=await req('/api/finance/trends',{token:leader});
+  assert.equal(result.status,200,JSON.stringify(result.data));
+  const {weeks,members}=result.data;
+  assert.equal(weeks.length,12);
+  assert.equal(weeks.reduce((n,w)=>n+w.earned,0),801);
+  assert.equal(weeks.reduce((n,w)=>n+w.income,0),200);
+  assert.equal(weeks.reduce((n,w)=>n+w.net,0),200);
+  assert.equal(weeks.reduce((n,w)=>n+w.payout_count,0),1);
+  assert.equal(members[0].user_id,memberId);
+  assert.equal(members[0].earned,801);
+  assert.equal(members[0].handed_over,801);
+  assert.equal(members[0].weekly.reduce((s,n)=>s+n,0),801);
+});
 test('database persists after new D1 adapter instance',async()=>{env.DB=new DB();const a=await req('/api/finance',{token:member});assert.equal(a.data.own_total,801);const r=await req('/api/records/reports',{token:member});assert.equal(r.data.items[0].status,'Погоджено');env.DB=DB1;});
 test('event RSVP, prohibited links, CSRF and export permissions',async()=>{const ev=await req('/api/records/events',{method:'POST',token:leader,data:{title:'Загальні збори',starts_at:'2026-12-01T19:00'}});assert.equal(ev.status,201);const yes=await req(`/api/rsvp/${ev.data.item.id}`,{method:'POST',token:member,data:{response:'Так'}});assert.equal(yes.status,200);const rs=await req(`/api/rsvp/${ev.data.item.id}`,{token:leader});assert.equal(rs.data.counts.yes,1);const link=await req('/api/records/reports',{method:'POST',token:member,data:{title:'Bad',evidence:['https://evil.example/foo']}});assert.equal(link.status,400);const csrf=await req('/api/auth/logout',{method:'POST',token:member,headers:{origin:'https://evil.example'}});assert.equal(csrf.status,403);const exp=await req('/api/export?module=users',{token:member});assert.equal(exp.data.items.length,1);assert.equal(exp.data.items[0].password_hash,undefined);});
 test('member requests promotion; approved request updates game rank atomically',async()=>{const pr=await req('/api/records/promotions',{method:'POST',token:member,data:{title:'Заявка на ранг 2',details:'Чекліст виконано',extra:{requested_rank_id:'2',checklist_completed:['Патрулювання','Тренування']},evidence:['https://ibb.co/abcDEF1']}});assert.equal(pr.status,201,JSON.stringify(pr.data));assert.equal(pr.data.item.status,'На перевірці');const bypass=await req(`/api/records/promotions/${pr.data.item.id}`,{method:'PATCH',token:leader,data:{version:1,status:'Погоджено'}});assert.equal(bypass.status,400);const ok=await req(`/api/records/promotions/${pr.data.item.id}/review`,{method:'POST',token:leader,data:{version:1,status:'Погоджено',comment:'Умови виконано'}});assert.equal(ok.status,200,JSON.stringify(ok.data));const u=(await req('/api/auth/me',{token:member})).data.user;assert.equal(u.rank_id,2);});
