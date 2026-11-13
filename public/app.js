@@ -742,8 +742,8 @@ async function fleetPage(){
   const loans=(await api('/records/vehicle_loans')).items;
   const query=String(state.search||'').trim().toLocaleLowerCase('uk');
   const condition=state.fleetCondition||'all';
-  const counts={total:cars.length,ready:0,repair:0,unavailable:0};
-  for(const car of cars)counts[fleetCondition(car)]++;
+  const counts={total:cars.length,ready:0,repair:0,unavailable:0,issued:0};
+  for(const car of cars){counts[fleetCondition(car)]++;if(car.extra?.current_driver)counts.issued++;}
   const searchCar=car=>[car.title,car.details,car.extra?.plate,car.extra?.model,car.extra?.responsible,car.extra?.location].some(v=>String(v||'').toLocaleLowerCase('uk').includes(query));
   const filtered=applyFilters(cars.filter(car=>(condition==='all'||fleetCondition(car)===condition)&&searchCar(car)));
   const cards=filtered.map(car=>{
@@ -757,7 +757,7 @@ async function fleetPage(){
   }).join('');
   const history=applyFilters(loans.filter(x=>[x.title,x.details,x.extra?.vehicle,x.extra?.driver,x.extra?.action].some(v=>String(v||'').toLocaleLowerCase('uk').includes(query))));
   return grouped(groupRoutes.fleet)+intro('Автопарк GRIZZLY','Транспорт сім’ї, технічний стан, відповідальні й журнал видачі.',can('fleet:manage')&&active==='vehicles'?'<button class="btn" data-action="new-record" data-module="vehicles">＋ Додати автомобіль</button>':'')+
-    '<div class="cards"><div class="card stat"><div class="muted small">Усього авто</div><div class="number">'+counts.total+'</div></div><div class="card stat"><div class="muted small">Справні</div><div class="number">'+counts.ready+'</div></div><div class="card stat"><div class="muted small">На ремонті</div><div class="number">'+counts.repair+'</div></div><div class="card stat"><div class="muted small">Недоступні</div><div class="number">'+counts.unavailable+'</div></div></div>'+
+    '<div class="cards"><div class="card stat"><div class="muted small">Усього авто</div><div class="number">'+counts.total+'</div></div><div class="card stat"><div class="muted small">Справні</div><div class="number">'+counts.ready+'</div></div><div class="card stat"><div class="muted small">Видані</div><div class="number">'+counts.issued+'</div></div><div class="card stat"><div class="muted small">На ремонті</div><div class="number">'+counts.repair+'</div></div><div class="card stat"><div class="muted small">Недоступні</div><div class="number">'+counts.unavailable+'</div></div></div>'+
     (active==='vehicles'?'<div class="toolbar mt">'+searchBar()+'<div class="row" style="flex-wrap:wrap;gap:6px">'+[['all','Усі'],['ready','Справні'],['repair','Ремонт'],['unavailable','Недоступні']].map(([value,label])=>'<button class="btn tiny secondary" aria-pressed="'+(condition===value)+'" data-action="fleet-condition" data-value="'+value+'">'+label+'</button>').join('')+'</div>'+exportButton('vehicles')+'</div>'+(filtered.length?'<div class="grid3 mt">'+cards+'</div>':empty('Автомобілів не знайдено','Додайте транспорт або змініть фільтри.')):
       '<div class="toolbar mt">'+searchBar()+exportButton('vehicle_loans')+'</div><div class="notice mb">Видача, повернення та ремонт записуються автоматично. Старі RP-записи залишаються доступними.</div>'+table(['Подія','Авто / номер','Водій','Дата','Дія'],history.map(x=>'<tr><td>'+esc(x.title)+'</td><td>'+esc(x.extra?.vehicle||'—')+'</td><td>'+esc(x.extra?.driver||'—')+'</td><td>'+date(x.created_at)+'</td><td><button class="btn tiny secondary" data-action="view-record" data-module="vehicle_loans" data-id="'+esc(x.id)+'">Відкрити ↗</button></td></tr>')));
 }
