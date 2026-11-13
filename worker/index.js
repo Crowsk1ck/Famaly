@@ -681,6 +681,19 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
       requirePerm(user,'finance:manage');if(c.settled_at)fail(409,'Нарахований контракт змінювати не можна');const b=await body(req);if(!Number.isInteger(b.version))fail(428,'Потрібна версія');const ids=uniqueIds(b.participant_ids??parseJson(c.participant_ids,[]));await safeContractUsers(db,ids);const r=await db.prepare('UPDATE contracts SET title=?,details=?,amount=?,treasury_percent=?,participant_ids=?,status=?,evidence=?,version=version+1,updated_at=? WHERE id=? AND version=? AND settled_at IS NULL').bind(str(b.title??c.title,160),str(b.details??c.details,2500),money(b.amount??c.amount),percent(b.treasury_percent??c.treasury_percent),JSON.stringify(ids),validStatus(b.status??c.status),JSON.stringify(evidence(b.evidence??parseJson(c.evidence,[]))),now(),c.id,b.version).run();if(r.meta.changes!==1)fail(409,'Контракт змінився іншим користувачем');await audit(db,user,'update','contracts',c.id);return json({ok:true});
     }
   }
+  // Confirm that an already-accrued payout was actually handed over in GTA RP.
+  // The unique payout_id ensures retries and concurrent requests cannot duplicate confirmation.
+  m=path.match(/^\/api\/payouts\/([\w-]+)\/confirm$/);
+  if(m&&method==='POST'){
+    requirePerm(user,'finance:manage');
+    const payout=await db.prepare('SELECT id FROM payouts WHERE id=?').bind(m[1]).first();
+    if(!payout)fail(404,'Нарахування не знайдено');
+    const b=await body(req),note=str(b.note,500),t=now();
+    const result=await db.prepare('INSERT OR IGNORE INTO payout_confirmations(payout_id,confirmed_by,confirmed_at,note) VALUES(?,?,?,?)').bind(payout.id,user.id,t,note).run();
+    if(result.meta.changes!==1)fail(409,'Видачу вже підтверджено');
+    await audit(db,user,'confirm_handoff','payouts',payout.id);
+    return json({ok:true,confirmed_at:t});
+  }
   if(path==='/api/ledger'&&method==='GET'){
     if(!can(user,'finance:read')&&!can(user,'finance:manage'))fail(403,'Немає прав');return json({items:await allRows(db,'SELECT * FROM ledger ORDER BY created_at DESC LIMIT 1000')});
   }
@@ -690,6 +703,10 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
   if(path==='/api/finance'&&method==='GET'){
     const own=await allRows(db,'SELECT p.*,c.title contract_title FROM payouts p JOIN contracts c ON c.id=p.contract_id WHERE p.user_id=? ORDER BY p.created_at DESC',user.id);const ownExtra=await allRows(db,"SELECT id,kind,amount,description,created_at FROM ledger WHERE recipient_id=? AND kind IN ('capt','bonus') ORDER BY created_at DESC",user.id);const ownTotal=own.reduce((s,r)=>s+r.amount,0)+ownExtra.reduce((s,r)=>s+r.amount,0);
     if(!can(user,'finance:read')&&!can(user,'finance:manage'))return json({own_payouts:own,own_extra:ownExtra,own_total:ownTotal});
+    const paymentRows=await allRows(db,`SELECT p.id,p.contract_id,p.user_id,p.amount,p.created_at,c.title contract_title,pc.confirmed_at,pc.confirmed_by,pc.note
+      FROM payouts p JOIN contracts c ON c.id=p.contract_id
+      LEFT JOIN payout_confirmations pc ON pc.payout_id=p.id
+      ORDER BY p.created_at DESC LIMIT 1000`);
     const ledger=await allRows(db,'SELECT kind,COALESCE(SUM(amount),0) total FROM ledger GROUP BY kind');const all=await allRows(db,'SELECT COALESCE(SUM(amount),0) total, COUNT(*) count FROM payouts');const totals=Object.fromEntries(ledger.map(x=>[x.kind,x.total]));
     // A rolling 30-day view; timestamps are stored as sortable UTC ISO strings.
     const since=new Date(Date.now()-30*86400000).toISOString();
@@ -698,7 +715,7 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
     const byKind=Object.fromEntries(recentLedger.map(x=>[x.kind,Number(x.total)||0]));
     const month={from:since,through:now(),contract_treasury:byKind.treasury||0,contributions:byKind.contribution||0,expenses:byKind.expense||0,bonuses:byKind.bonus||0,capt:byKind.capt||0,contract_payouts:Number(recentPayout?.total)||0,contract_payout_count:Number(recentPayout?.count)||0};
     month.treasury_change=month.contract_treasury+month.contributions-month.expenses-month.bonuses-month.capt;
-    return json({own_payouts:own,own_extra:ownExtra,own_total:ownTotal,totals,payout_total:all[0]?.total||0,payout_count:all[0]?.count||0,treasury_balance:(totals.treasury||0)+(totals.contribution||0)-(totals.expense||0)-(totals.bonus||0)-(totals.capt||0),month});
+    return json({own_payouts:own,own_extra:ownExtra,own_total:ownTotal,totals,payout_total:all[0]?.total||0,payout_count:all[0]?.count||0,payment_rows:paymentRows,treasury_balance:(totals.treasury||0)+(totals.contribution||0)-(totals.expense||0)-(totals.bonus||0)-(totals.capt||0),month});
   }
   if(path==='/api/notifications'&&method==='GET')return json({items:await allRows(db,'SELECT * FROM notifications WHERE user_id=? ORDER BY created_at DESC LIMIT 150',user.id)});
   m=path.match(/^\/api\/notifications\/([\w-]+)\/read$/);if(m&&method==='POST'){await db.prepare('UPDATE notifications SET read_at=? WHERE id=? AND user_id=?').bind(now(),m[1],user.id).run();return json({ok:true});}
