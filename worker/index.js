@@ -760,15 +760,33 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
   // Only authorized financial viewers can access aggregate and member earnings.
   if(path==='/api/finance/trends'&&method==='GET'){
     if(!can(user,'finance:read')&&!can(user,'finance:manage'))fail(403,'Немає прав');
-    const current=new Date(),monday=new Date(Date.UTC(current.getUTCFullYear(),current.getUTCMonth(),current.getUTCDate()));
-    monday.setUTCDate(monday.getUTCDate()-(monday.getUTCDay()+6)%7);
-    const first=new Date(monday);first.setUTCDate(first.getUTCDate()-11*7);
-    const from=first.toISOString(),to=now();
+    const period=url.searchParams.get('period')||'12w';
+    if(!['7','30','90','all','12w'].includes(period))fail(400,'Невірний період');
+    const current=new Date(),today=new Date(Date.UTC(current.getUTCFullYear(),current.getUTCMonth(),current.getUTCDate()));
+    const monday=new Date(today);monday.setUTCDate(today.getUTCDate()-(today.getUTCDay()+6)%7);
+    let requestedFrom;
+    if(period==='all'){
+      const earliest=await db.prepare("SELECT MIN(created_at) first FROM (SELECT created_at FROM ledger UNION ALL SELECT created_at FROM payouts)").first();
+      requestedFrom=earliest?.first||today.toISOString();
+    }else if(period==='12w'){
+      const start=new Date(monday);start.setUTCDate(start.getUTCDate()-11*7);requestedFrom=start.toISOString();
+    }else{
+      requestedFrom=new Date(Date.now()-Number(period)*86400000).toISOString();
+    }
+    const first=new Date(requestedFrom);
+    first.setUTCHours(0,0,0,0);
+    first.setUTCDate(first.getUTCDate()-(first.getUTCDay()+6)%7);
+    const from=requestedFrom,to=now();
+    const count=Math.max(1,Math.floor((monday-first)/(7*86400000))+1);
+    if(count>1000)fail(400,'Архів понад 1000 тижнів: звузьте період');
+    const openingRows=await allRows(db,'SELECT kind,COALESCE(SUM(amount),0) total FROM ledger WHERE created_at<? GROUP BY kind',from);
+    const opening=Object.fromEntries(openingRows.map(r=>[r.kind,Number(r.total)||0]));
+    const opening_balance=(opening.treasury||0)+(opening.contribution||0)-(opening.expense||0)-(opening.bonus||0)-(opening.capt||0);
     const [entries,payments]=await Promise.all([
       allRows(db,"SELECT kind,amount,created_at FROM ledger WHERE created_at>=? AND created_at<=? ORDER BY created_at",from,to),
       allRows(db,"SELECT p.user_id,u.nickname,u.username,p.amount,p.created_at,pc.confirmed_at FROM payouts p JOIN users u ON u.id=p.user_id LEFT JOIN payout_confirmations pc ON pc.payout_id=p.id WHERE p.created_at>=? AND p.created_at<=? ORDER BY p.created_at",from,to)
     ]);
-    const weeks=Array.from({length:12},(_,i)=>{
+    const weeks=Array.from({length:count},(_,i)=>{
       const start=new Date(first);start.setUTCDate(first.getUTCDate()+7*i);
       return {week_start:start.toISOString().slice(0,10),income:0,expenses:0,net:0,earned:0,handed_over:0,payout_count:0};
     });
@@ -787,13 +805,14 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
       const idx=weekIndex(p.created_at);if(idx<0||idx>=weeks.length)continue;
       const amount=Number(p.amount)||0;weeks[idx].earned+=amount;weeks[idx].payout_count++;
       if(p.confirmed_at)weeks[idx].handed_over+=amount;
-      const item=members.get(p.user_id)||{user_id:p.user_id,nickname:p.nickname,username:p.username,earned:0,handed_over:0,payout_count:0,weekly:Array(12).fill(0)};
+      const item=members.get(p.user_id)||{user_id:p.user_id,nickname:p.nickname,username:p.username,earned:0,handed_over:0,payout_count:0,weekly:Array(count).fill(0)};
       item.earned+=amount;item.payout_count++;item.weekly[idx]+=amount;
       if(p.confirmed_at)item.handed_over+=amount;
       members.set(p.user_id,item);
     }
-    for(const w of weeks)w.net=w.income-w.expenses;
-    return json({from,to,weeks,members:[...members.values()].sort((a,b)=>b.earned-a.earned||a.user_id.localeCompare(b.user_id)).slice(0,100)});
+    let running=opening_balance;
+    for(const w of weeks){w.net=w.income-w.expenses;running+=w.net;w.balance=running;}
+    return json({period,from,to,opening_balance,weeks,members:[...members.values()].sort((a,b)=>b.earned-a.earned||a.user_id.localeCompare(b.user_id)).slice(0,100)});
   }
   if(path==='/api/notifications'&&method==='GET')return json({items:await allRows(db,'SELECT * FROM notifications WHERE user_id=? ORDER BY created_at DESC LIMIT 150',user.id)});
   m=path.match(/^\/api\/notifications\/([\w-]+)\/read$/);if(m&&method==='POST'){await db.prepare('UPDATE notifications SET read_at=? WHERE id=? AND user_id=?').bind(now(),m[1],user.id).run();return json({ok:true});}
