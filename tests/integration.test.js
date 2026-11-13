@@ -1227,5 +1227,65 @@ test('contract amounts synchronize to finance without crediting unsettled money'
   assert.match(app,/Погоджено, очікує нарахування/);
   assert.match(app,/data-route="contracts"/);
 });
+test('leader corrects settled zero payouts without duplicate credits or falsely paid handoffs',async()=>{
+  const leaderId=(await req('/api/auth/me',{token:leader})).data.user.id;
+  const create=await req('/api/contracts',{method:'POST',token:leader,data:{
+    title:'Коригування помилкової суми',details:'Фінансова звірка',
+    amount:1,treasury_percent:10,participant_ids:[leaderId,memberId],status:'Погоджено'
+  }});
+  assert.equal(create.status,201,JSON.stringify(create.data));
+  const contract=create.data.item;
+  const settle=await req('/api/contracts/'+contract.id+'/settle',{method:'POST',token:leader,data:{version:contract.version}});
+  assert.equal(settle.status,200,JSON.stringify(settle.data));
+  assert.equal(settle.data.preview.treasury,1);
+  assert.equal(settle.data.preview.per_member,0);
+  const financeBefore=(await req('/api/finance',{token:leader})).data;
+  const originalPayouts=financeBefore.payment_rows.filter(p=>p.contract_id===contract.id);
+  assert.equal(originalPayouts.length,2);
+  for(const payout of originalPayouts){
+    const handoff=await req('/api/payouts/'+payout.id+'/confirm',{method:'POST',token:leader,data:{note:'Нульовий запис'}});
+    assert.equal(handoff.status,200,JSON.stringify(handoff.data));
+  }
+  const body={amount:120000,reason:'Помилкова сума 1 замість 120000'};
+  const unauthorized=await req('/api/contracts/'+contract.id+'/correction-preview',{method:'POST',token:member,data:body});
+  assert.equal(unauthorized.status,403);
+  const preview=await req('/api/contracts/'+contract.id+'/correction-preview',{method:'POST',token:leader,data:body});
+  assert.equal(preview.status,200,JSON.stringify(preview.data));
+  assert.equal(preview.data.preview.old_treasury,1);
+  assert.equal(preview.data.preview.new_treasury,12000);
+  assert.equal(preview.data.preview.new_per_member,54000);
+  assert.equal(preview.data.preview.reset_zero_confirmations,2);
+  const blocked=await req('/api/contracts/'+contract.id+'/correct',{method:'POST',token:member,data:{...body,version:preview.data.version,confirm_reset_zero_confirmations:true}});
+  assert.equal(blocked.status,403);
+  const noConsent=await req('/api/contracts/'+contract.id+'/correct',{method:'POST',token:leader,data:{...body,version:preview.data.version}});
+  assert.equal(noConsent.status,400);
+  const stale=await req('/api/contracts/'+contract.id+'/correct',{method:'POST',token:leader,data:{...body,version:0,confirm_reset_zero_confirmations:true}});
+  assert.equal(stale.status,409);
+  const done=await req('/api/contracts/'+contract.id+'/correct',{method:'POST',token:leader,data:{...body,version:preview.data.version,confirm_reset_zero_confirmations:true}});
+  assert.equal(done.status,200,JSON.stringify(done.data));
+  const financeAfter=(await req('/api/finance',{token:leader})).data;
+  const updated=financeAfter.payment_rows.filter(p=>p.contract_id===contract.id);
+  assert.equal(updated.length,2);
+  assert.deepEqual(updated.map(x=>x.amount),[54000,54000]);
+  assert.ok(updated.every(p=>p.confirmed_at===null),'Corrections must not mark new payouts as handed over');
+  assert.equal(financeAfter.treasury_balance,financeBefore.treasury_balance+11999);
+  assert.equal(financeAfter.payout_total,financeBefore.payout_total+108000);
+  assert.equal(financeAfter.contract_summary.contracts_total,financeBefore.contract_summary.contracts_total+119999);
+  const ledger=(await req('/api/ledger',{token:leader})).data.items.filter(x=>x.reference==='contract:'+contract.id);
+  assert.equal(ledger.length,1,'Treasury allocation is updated, not inserted again');
+  assert.equal(ledger[0].amount,12000);
+  const pending=await req('/api/finance/outstanding',{token:leader});
+  assert.ok(pending.data.count>=2);
+  const again=await req('/api/contracts/'+contract.id+'/correct',{method:'POST',token:leader,data:{...body,version:done.data.version,confirm_reset_zero_confirmations:true}});
+  assert.equal(again.status,400);
+  const audit=(await req('/api/audit',{token:leader})).data.items;
+  const correction=audit.find(x=>x.action==='correct_settled_contract'&&x.entity_id===contract.id);
+  assert.ok(correction);
+  assert.equal(JSON.parse(correction.detail).reset_confirmations,2);
+  const app=readFileSync(resolve('public/app.js'),'utf8');
+  assert.match(app,/contract-correction-preview/);
+  assert.match(app,/contract-correction-save/);
+  assert.match(app,/Тільки для помилкових нарахувань з нульовими виплатами/);
+});
 // Run destructive session-revocation coverage last: other integration tests use this member's active session.
 test('blocking user revokes sessions and stops access',async()=>{const u=(await req('/api/users',{token:leader})).data.items.find(x=>x.id===memberId);const r=await req(`/api/users/${memberId}`,{method:'PATCH',token:leader,data:{...u,status:'blocked'}});assert.equal(r.status,200,JSON.stringify(r.data));assert.equal((await req('/api/auth/me',{token:member})).status,401);});
