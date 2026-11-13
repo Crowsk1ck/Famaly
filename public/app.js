@@ -972,7 +972,30 @@ async function appReview(id){
       <button class="btn" type="submit">Зберегти статус</button>
     </form><div class="notice">Статус «Прийнято» не створює акаунт. Лідер видає дані доступу окремо.</div></div>`);
 }
-async function contracts(){const list=applyFilters((await api('/contracts')).items.filter(x=>searchMatch(x.title,x.status,x.details)));return `${intro('Контракти','До виплати — точний розрахунок; після підтвердження — захист від повторного нарахування.',can('finance:manage')?'<button class="btn" data-action="new-contract">＋ Новий контракт</button>':'')}<div class="notice mb">Правило за замовчуванням: 20% до казни, решта порівну між учасниками. Відсоток задається керівником; округлення додається до казни.</div><div class="toolbar">${searchBar()}${filterControls()}${exportButton('contracts')}<span class="muted small">${list.length} контрактів</span></div>${table(['Контракт','Сума','Учасники','Казна','Статус','Дії'],list.map(c=>`<tr><td class="table-title">${esc(c.title)}<div class="muted">${esc(c.details.slice(0,85))}</div></td><td class="mono">${fmt(c.amount)}</td><td>${c.participant_ids.length}</td><td>${c.treasury_percent}%</td><td>${badge(c.status)}</td><td><button class="btn tiny secondary" data-action="view-contract" data-id="${c.id}">Деталі ↗</button></td></tr>`))}`;}
+async function contracts(){
+ const contracts=(await api('/contracts')).items;
+ const filter=state.contractStatus||'all';
+ const list=applyFilters(contracts.filter(x=>searchMatch(x.title,x.status,x.details)&&(
+   filter==='all'||(filter==='settled'&&!!x.settled_at)||(filter==='open'&&!x.settled_at)||
+   (filter==='approved'&&x.status==='Погоджено'&&!x.settled_at))));
+ const totals=[['Усього контрактів',contracts.length],['Загальна сума',fmt(contracts.reduce((n,x)=>n+Number(x.amount||0),0))+' GTA$'],['Нараховано',contracts.filter(x=>x.settled_at).length],['Очікують нарахування',contracts.filter(x=>x.status==='Погоджено'&&!x.settled_at).length]];
+ const statuses=[['all','Усі'],['open','Не нараховані'],['approved','Готові до виплат'],['settled','Нараховані']];
+ const buttons=statuses.map(([key,name])=>'<button type="button" class="btn tiny secondary" data-action="contract-filter" data-value="'+key+'" aria-pressed="'+(filter===key)+'">'+name+'</button>').join('');
+ const rows=list.map(x=>{
+  const settled=!!x.settled_at,people=(x.participant_ids||[]).map(id=>userName(id)).join(', ');
+  return '<tr><td class="table-title"><strong>'+esc(x.title)+'</strong><div class="muted small">'+esc((x.details||'').slice(0,110))+'</div></td>'+
+   '<td class="mono">'+fmt(x.amount)+' GTA$</td>'+
+   '<td><strong>'+x.participant_ids.length+'</strong><div class="muted small">'+esc(people||'Не визначено')+'</div></td>'+
+   '<td>'+esc(String(x.treasury_percent))+'%</td>'+
+   '<td>'+badge(settled?'Нараховано':x.status)+'</td>'+
+   '<td><button class="btn tiny secondary" data-action="view-contract" data-id="'+esc(x.id)+'">Переглянути ↗</button></td></tr>';
+ });
+ return intro('Контракти GRIZZLY','Спільний реєстр контрактів. Усі учасники бачать суми та розподіл; фінансові дії виконує тільки керівництво.',can('finance:manage')?'<button class="btn" data-action="new-contract">＋ Новий контракт</button>':'')+
+ '<div class="cards">'+totals.map(([name,value])=>'<div class="card stat"><div class="muted small">'+esc(name)+'</div><div class="number" style="font-size:clamp(19px,2vw,30px)">'+value+'</div></div>').join('')+'</div>'+
+ '<div class="notice mt mb">Розподіл: відсоток контракту надходить до скарбниці, залишок порівну між учасниками; округлення додається до скарбниці. Нарахування здійснюється один раз після погодження.</div>'+
+ '<div class="toolbar mt">'+searchBar()+'<div class="row" style="flex-wrap:wrap;gap:6px">'+buttons+'</div><span class="muted small">Знайдено: '+list.length+'</span>'+exportButton('contracts')+'</div>'+
+ (list.length?table(['Контракт','Сума','Учасники','Казна','Статус','Дія'],rows):empty('Контрактів не знайдено','Змініть пошук або фільтри.'));
+}
 async function contractForm(id){const old=id?(await api('/contracts')).items.find(c=>c.id===id):null;const s=await api('/settings');const c=old||{participant_ids:[],treasury_percent:s.items.treasury_percent||20};const checks=state.users.map(u=>`<label class="row small" style="gap:7px"><input type="checkbox" name="participant" value="${esc(u.id)}" ${c.participant_ids.includes(u.id)?'checked':''}>${esc(u.nickname||u.username)} (${esc(u.username)})</label>`).join('')||empty('Додайте учасників спочатку');modal(old?'Редагувати контракт':'Новий контракт',`<form id="contract-form" data-id="${esc(id||'')}" class="formgrid">${field('Назва *','title',c.title,'text',true,'required')}${field('Опис','details',c.details,'textarea',true)}${field('Сума (ціле число)','amount',c.amount??0,'number',false,'required min="0" step="1"')}${field('Відсоток казни','treasury_percent',c.treasury_percent,'number',false,'min="0" max="100"')}${statusField(c.status||'Заплановано')}<div class="field full"><label>Учасники контракту *</label><div class="card flat stack" style="max-height:220px;overflow:auto">${checks}</div></div>${field('Докази ImgBB (за рядками)','evidence',(c.evidence||[]).join('\n'),'textarea',true)}<div class="full form-actions"><button class="btn" type="submit">Зберегти контракт</button></div></form>`);}
 async function contractView(id){const c=(await api('/contracts')).items.find(x=>x.id===id);if(!c)return;const p=(await api(`/contracts/${id}/preview`)).preview;modal('Контракт · '+c.title,`<div class="stack"><div class="row space">${badge(c.status)}<span class="muted small">Версія: ${c.version}</span></div><p class="longtext">${esc(c.details)}</p><div class="grid2"><div class="card flat"><div class="muted small">Загальна сума</div><h2>${fmt(p.amount)}</h2></div><div class="card flat"><div class="muted small">Казна (${p.treasury_percent}%)</div><h2>${fmt(p.treasury)}</h2></div><div class="card flat"><div class="muted small">На учасника (${p.participants})</div><h2>${fmt(p.per_member)}</h2></div><div class="card flat"><div class="muted small">Залишок округлення → казна</div><h2>${fmt(p.rounding_remainder)}</h2></div></div><div class="card flat"><h3>Розподіл</h3><div class="stack mt">${p.allocations.map(a=>`<div class="row space small"><span>${esc(userName(a.user_id))}</span><strong>${fmt(a.amount)}</strong></div>`).join('')}</div></div>${links(c)}${c.settled_at?'<div class="notice">Виплати вже проведено. Повторне нарахування неможливе.</div>':''}${can('finance:manage')?`<div class="form-actions">${!c.settled_at?`<button class="btn secondary" data-action="edit-contract" data-id="${c.id}">Редагувати</button>`:''}${c.status==='Погоджено'&&!c.settled_at?`<button class="btn" data-action="settle-contract" data-id="${c.id}" data-version="${c.version}">✓ Підтвердити нарахування</button>`:''}</div>`:''}</div>`);}
 function financeTrendHtml(data){
@@ -1363,6 +1386,7 @@ document.addEventListener('click',async e=>{const back=e.target.closest('[data-b
     await renderCaptSignupPanel(id);toast(act==='capt-join'?'Запис на CAPT збережено':'Запис на CAPT скасовано');break;}
   case 'change-sub':state.sub[state.route]=t.dataset.value;state.search='';state.filter='';await render();break;
   case 'fleet-condition':state.fleetCondition=t.dataset.value||'all';await render();break;
+  case 'contract-filter':state.contractStatus=t.dataset.value||'all';await render();break;
   case 'view-member':viewMember(id);break;
   case 'members-reset':state.membersRole='all';state.membersStatus='all';state.membersDepartment='all';state.membersSort='rank';state.search='';await render();break;
   case 'members-role':state.membersRole=t.dataset.value||'all';await render();break;
