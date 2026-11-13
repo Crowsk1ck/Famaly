@@ -617,3 +617,19 @@
  .gr-discord-route{grid-template-columns:minmax(0,1fr) auto;gap:8px}
  .gr-discord-route .btn{grid-column:1/-1;justify-self:start}
 }
+
+
+/* Family roster: compact desktop filters, touch-friendly member cards on small screens. */
+.member-mobile-list{display:none}
+.member-mobile-card{margin-bottom:12px}
+.member-filters .field{margin:0}
+.member-filters .btn{align-self:flex-end}
+@media(max-width:720px){
+  .member-desktop-table{display:none}
+  .member-mobile-list{display:block}
+  .member-filters{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px!important}
+  .member-filters .field{min-width:0!important}
+  .member-filters .btn{grid-column:1/-1;min-height:40px}
+  .member-mobile-card .btn{min-height:36px}
+}
+@media(max-width:400px){.member-filters{grid-template-columns:minmax(0,1fr)}}
