@@ -63,11 +63,11 @@ const moduleInfo={
   public_calendar:['Календар сайту','Публічні збори, тренування та івенти','content:manage']
 };
 const groupRoutes={capt:['capt_matches','capt_training','capt_attendance'],fleet:['vehicles'],discipline:['discipline','blacklist'],announcements:['notices','templates'],reports:['reports','promotions']};
-const state={user:null,route:'overview',sub:{},search:'',sort:'new',period:'week',settingsVersions:{},public:null,users:[],departments:[],ranks:[],notifications:[],filter:'',menu:false};
+const state={user:null,route:'overview',sub:{},search:'',sort:'new',period:'week',settingsVersions:{},public:null,users:[],roster:[],departments:[],ranks:[],notifications:[],filter:'',menu:false};
 function can(p){return state.user?.role==='leader'||state.user?.permissions?.includes('*')||state.user?.permissions?.includes(p);}
 function toast(msg,error=false){const div=document.createElement('div');div.className='toast'+(error?' error':'');div.textContent=msg;$('#toast-root').append(div);setTimeout(()=>div.remove(),4500);}
 async function api(path,method='GET',payload){const h={'X-Grizzly-Client':'1'};if(payload!==undefined)h['Content-Type']='application/json';const r=await fetch('/api'+path,{method,credentials:'same-origin',headers:h,body:payload===undefined?undefined:JSON.stringify(payload),cache:'no-store'});let o;try{o=await r.json();}catch{o={error:'Невірна відповідь сервера'};}if(!r.ok){const err=new Error(o.error||`Помилка ${r.status}`);err.status=r.status;throw err;}return o;}
-async function preload(){const [users,deps,ranks]=await Promise.all([api('/users'),api('/departments'),api('/ranks')]);state.users=users.items;state.departments=deps.items;state.ranks=ranks.items;state.rankTemplates=ranks.templates||[];}
+async function preload(){const [users,deps,ranks,roster]=await Promise.all([api('/users'),api('/departments'),api('/ranks'),api('/members')]);state.users=users.items;state.roster=roster.items;state.departments=deps.items;state.ranks=ranks.items;state.rankTemplates=ranks.templates||[];}
 function userName(id){const x=state.users.find(y=>y.id===id);return x?(x.nickname||x.username):id?'Учасник':'—';}
 function departmentName(id){return state.departments.find(x=>x.id===id)?.title||'—';}
 function rankName(id){return state.ranks.find(x=>x.id===Number(id))?.title||'—';}
@@ -417,10 +417,10 @@ function formatDateField(v){return (v||'').slice(0,16);}
 async function overview(){const [st,fin,taskList,reportList,eventList]=await Promise.all([api('/stats'),api('/finance'),api('/records/tasks'),api('/records/reports'),api('/records/events')]);const stats=st;const upcoming=eventList.items.filter(e=>e.starts_at&&new Date(e.starts_at).getTime()>=Date.now()).sort((a,b)=>a.starts_at.localeCompare(b.starts_at)).slice(0,4);return `${intro('Вітаємо в Grizzly',`Панель керування сім’єю · ${date(new Date().toISOString())}`)}<div class="stack"><div class="dashboard-welcome"><div><div class="overline">FAMILY OPERATIONS</div><h2>Разом сильніші. 🐻</h2><p>Твої завдання, звіти та активність в одному місці.</p></div><span class="bear">🐻</span></div><div class="cards"><div class="card stat"><span class="stat-symbol">♟</span><div class="muted small">Учасники</div><div class="number">${stats.members===null?'—':fmt(stats.members)}</div></div><div class="card stat"><span class="stat-symbol">☑</span><div class="muted small">Активні завдання</div><div class="number">${fmt(stats.tasks_active)}</div></div><div class="card stat"><span class="stat-symbol">☷</span><div class="muted small">На перевірці</div><div class="number">${fmt(stats.reports_review)}</div></div><div class="card stat"><span class="stat-symbol">◈</span><div class="muted small">Найближчі заходи</div><div class="number">${fmt(stats.events_upcoming)}</div></div></div><div class="grid2"><div class="card"><div class="card-head"><h3>Найближчі заходи</h3><button class="btn tiny secondary" data-route="events">Усі заходи ↗</button></div>${upcoming.length?upcoming.map(x=>`<div class="row space mb"><div><strong>${esc(x.title)}</strong><div class="muted small">${esc(x.starts_at.replace('T',' '))} · ${esc(x.details.slice(0,90))}</div></div>${badge(x.status)}</div>`).join(''):empty('Заходів ще не заплановано')}</div><div class="card"><div class="card-head"><h3>Швидкі дії</h3></div><div class="stack"><button class="btn secondary" data-action="new-record" data-module="reports">＋ Подати звіт</button><button class="btn secondary" data-route="tasks">☑ Переглянути завдання</button><button class="btn secondary" data-route="finance">₴ Мої виплати: ${fmt(fin.own_total)}</button>${can('members:write')?'<button class="btn secondary" data-action="new-user">♟ Створити акаунт</button>':''}</div></div></div><div class="card"><div class="card-head"><h3>Останні завдання</h3><button class="btn tiny ghost" data-route="tasks">Переглянути →</button></div>${taskList.items.length?table(['Назва','Виконавець','Статус'],taskList.items.slice(0,5).map(x=>`<tr><td class="table-title">${esc(x.title)}</td><td>${esc(userName(x.assignee_id))}</td><td>${badge(x.status)}</td></tr>`)):empty('Немає завдань')}</div></div>`;}
 function memberStatusLabel(status){return status==='active'?'Активний':status==='blocked'?'Заблокований':status||'—';}
 async function members(){
- const all=state.users;
+ const all=state.roster;
  const role=state.membersRole||'all',status=state.membersStatus||'all',department=state.membersDepartment||'all',sort=state.membersSort||'rank';
- const list=all.filter(u=>(role==='all'||u.role===role)&&(status==='all'||u.status===status)&&(department==='all'||String(u.department_id||'')===department)&&searchMatch(u.nickname,u.username,u.game_id,u.discord,departmentName(u.department_id)));
- const nameOf=u=>String(u.nickname||u.username||'');
+ const list=all.filter(u=>(role==='all'||u.role===role)&&(status==='all'||u.status===status)&&(department==='all'||String(u.department_id||'')===department)&&searchMatch(u.nickname,u.game_id,departmentName(u.department_id)));
+ const nameOf=u=>String(u.nickname||'Учасник');
  const byName=(a,b)=>nameOf(a).localeCompare(nameOf(b),'uk');
  list.sort((a,b)=>sort==='name'?byName(a,b):sort==='joined'?String(b.joined_at||'').localeCompare(String(a.joined_at||''))||byName(a,b):Number(b.rank_id||0)-Number(a.rank_id||0)||byName(a,b));
  const summary=[['Усього учасників',all.length],['Активні',all.filter(u=>u.status==='active').length],['Заблоковані',all.filter(u=>u.status==='blocked').length],['Напрямки',new Set(all.map(u=>u.department_id).filter(Boolean)).size]];
@@ -430,15 +430,28 @@ async function members(){
  const departmentOptions=[['all','Усі напрямки'],...state.departments.map(x=>[String(x.id),x.title])];
  const sortOptions=[['rank','За рангом ↓'],['name','За ніком А–Я'],['joined','За датою вступу ↓']];
  const isFiltered=role!=='all'||status!=='all'||department!=='all'||sort!=='rank'||Boolean(state.search);
- const editButton=u=>'<button class="btn tiny secondary" data-action="edit-user" data-id="'+esc(u.id)+'">Особова справа</button>';
+ const editButton=u=>state.users.some(account=>account.id===u.id)?'<button class="btn tiny secondary" data-action="edit-user" data-id="'+esc(u.id)+'">Особова справа</button>':'<button class="btn tiny secondary" data-action="view-member" data-id="'+esc(u.id)+'">Переглянути</button>';
  const statusBadge=u=>'<span class="badge '+(u.status==='active'?'green':u.status==='blocked'?'red':'blue')+'">'+esc(memberStatusLabel(u.status))+'</span>';
- const tableRows=list.map(u=>'<tr><td><strong>'+esc(nameOf(u))+'</strong><div class="muted">@'+esc(u.username)+' · '+esc(u.discord||'без Discord')+'</div></td><td>'+esc(roles[u.role]||u.role)+'<div class="muted">'+esc(rankName(u.rank_id))+'</div></td><td>'+esc(departmentName(u.department_id))+'</td><td>'+esc(u.game_id||'—')+'</td><td>'+statusBadge(u)+'<div class="muted">'+esc(u.activity||'Не вказано')+'</div></td><td>'+editButton(u)+'</td></tr>');
- const mobileCards=list.map(u=>'<article class="card member-mobile-card"><div class="row space" style="align-items:start"><div><strong>'+esc(nameOf(u))+'</strong><div class="muted small">@'+esc(u.username)+'</div></div>'+statusBadge(u)+'</div><div class="small mt">'+esc(roles[u.role]||u.role)+' · '+esc(rankName(u.rank_id))+'</div><div class="small muted mt">Напрямок: '+esc(departmentName(u.department_id))+'</div><div class="small muted">Ігровий ID: '+esc(u.game_id||'—')+'</div><div class="small muted">Активність: '+esc(u.activity||'Не вказано')+'</div><div class="mt">'+editButton(u)+'</div></article>').join('');
+ const tableRows=list.map(u=>'<tr><td><strong>'+esc(nameOf(u))+'</strong><div class="muted">Ігровий профіль+'</div></td><td>'+esc(roles[u.role]||u.role)+'<div class="muted">'+esc(rankName(u.rank_id))+'</div></td><td>'+esc(departmentName(u.department_id))+'</td><td>'+esc(u.game_id||'—')+'</td><td>'+statusBadge(u)+'<div class="muted">'+esc(u.joined_at?('Вступ: '+date(u.joined_at)):'У сім’ї')+'</div></td><td>'+editButton(u)+'</td></tr>');
+ const mobileCards=list.map(u=>'<article class="card member-mobile-card"><div class="row space" style="align-items:start"><div><strong>'+esc(nameOf(u))+'</strong><div class="muted small">Учасник GRIZZLY+'</div></div>'+statusBadge(u)+'</div><div class="small mt">'+esc(roles[u.role]||u.role)+' · '+esc(rankName(u.rank_id))+'</div><div class="small muted mt">Напрямок: '+esc(departmentName(u.department_id))+'</div><div class="small muted">Ігровий ID: '+esc(u.game_id||'—')+'</div><div class="small muted">Активність: '+esc(u.joined_at?('Вступ: '+date(u.joined_at)):'У сім’ї')+'</div><div class="mt">'+editButton(u)+'</div></article>').join('');
  return intro('Склад сім’ї','Особовий склад, ігрові ранги, напрямки та доступи.',can('members:write')?'<button class="btn" data-action="new-user">＋ Додати учасника</button>':'')+
  '<div class="cards">'+summary.map(([title,value])=>'<div class="card stat"><div class="muted small">'+esc(title)+'</div><div class="number">'+value+'</div></div>').join('')+'</div>'+
- '<div class="toolbar mt">'+searchBar()+'<span class="muted small">Знайдено: '+list.length+'</span>'+exportButton('users')+'</div>'+
+ '<div class="toolbar mt">'+searchBar()+'<span class="muted small">Знайдено: '+list.length+'</span>'+(can('members:read')?exportButton('users'):'')+'</div>'+
  '<div class="card mb"><div class="row wrap member-filters" style="gap:10px;align-items:end">'+select('members-role-filter','Роль',roleOptions,role)+select('members-status-filter','Статус',statusOptions,status)+select('members-department-filter','Напрямок',departmentOptions,department)+select('members-sort-filter','Сортування',sortOptions,sort)+'<button class="btn tiny secondary" data-action="members-reset" '+(!isFiltered?'disabled':'')+'>Скинути фільтри</button></div></div>'+
  (list.length?'<div class="member-desktop-table">'+table(['Учасник','Роль / ранг','Напрямок','Ігровий ID','Активність','Дії'],tableRows)+'</div><div class="member-mobile-list">'+mobileCards+'</div>':empty('Учасників не знайдено','Спробуйте інші параметри пошуку або скиньте фільтри.'));
+}
+function viewMember(id){
+  const u=state.roster.find(item=>item.id===id);
+  if(!u)return toast('Учасника не знайдено',true);
+  modal('Учасник GRIZZLY','<div class="stack">'+
+    '<h3>'+esc(u.nickname||'Учасник')+'</h3>'+
+    '<p>Роль: '+esc(roles[u.role]||'Учасник')+'</p>'+
+    '<p>Ігровий ранг: '+esc(rankName(u.rank_id))+'</p>'+
+    '<p>Напрямок: '+esc(departmentName(u.department_id))+'</p>'+
+    '<p>Ігровий ID: '+esc(u.game_id||'—')+'</p>'+
+    '<p>Статус: '+esc(memberStatusLabel(u.status))+'</p>'+
+    (u.joined_at?'<p>Дата вступу: '+esc(date(u.joined_at))+'</p>':'')+
+    '</div>');
 }
 function credentialReceipt(username,password,nickname,reset=false){
   modal(reset?'Новий пароль учасника':'Акаунт створено',`<div class="notice mb"><strong>Дані доступу показано один раз.</strong> Скопіюйте й передайте учаснику особисто, не в загальному чаті. Після закриття вікна пароль не можна переглянути повторно — лише скинути.</div>
@@ -1350,6 +1363,7 @@ document.addEventListener('click',async e=>{const back=e.target.closest('[data-b
     await renderCaptSignupPanel(id);toast(act==='capt-join'?'Запис на CAPT збережено':'Запис на CAPT скасовано');break;}
   case 'change-sub':state.sub[state.route]=t.dataset.value;state.search='';state.filter='';await render();break;
   case 'fleet-condition':state.fleetCondition=t.dataset.value||'all';await render();break;
+  case 'view-member':viewMember(id);break;
   case 'members-reset':state.membersRole='all';state.membersStatus='all';state.membersDepartment='all';state.membersSort='rank';state.search='';await render();break;
   case 'members-role':state.membersRole=t.dataset.value||'all';await render();break;
   case 'members-status':state.membersStatus=t.dataset.value||'all';await render();break;
