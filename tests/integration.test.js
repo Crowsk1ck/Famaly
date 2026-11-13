@@ -37,6 +37,15 @@ test('leader can safely apply Grizzly rank presets without overwriting custom ra
   const protectedRank=await req('/api/ranks',{token:leader});assert.equal(protectedRank.data.items[0].title,'Почесний новачок');assert.equal(protectedRank.data.items[0].is_example,0);
 });
 test('member submits report with ImgBB evidence; approval only by leader',async()=>{const a=await req('/api/records/reports',{method:'POST',token:member,data:{title:'Звіт за патрулювання',details:'Виконано завдання',evidence:['https://ibb.co/abcDEF1'],status:'Погоджено'}});assert.equal(a.status,201,JSON.stringify(a.data));reportId=a.data.item.id;assert.equal(a.data.item.status,'На перевірці');const deny=await req(`/api/records/reports/${reportId}/review`,{method:'POST',token:member,data:{status:'Погоджено',version:1}});assert.equal(deny.status,403);const edit=await req(`/api/records/reports/${reportId}`,{method:'PATCH',token:member,data:{version:1,title:'Оновлений звіт',details:'Готовий',evidence:['https://i.ibb.co/xyz123/pic.jpg']}});assert.equal(edit.status,200);const stale=await req(`/api/records/reports/${reportId}`,{method:'PATCH',token:member,data:{version:1,title:'Старий запис'}});assert.equal(stale.status,409);const good=await req(`/api/records/reports/${reportId}/review`,{method:'POST',token:leader,data:{status:'Погоджено',comment:'Прийнято',version:2}});assert.equal(good.status,200,JSON.stringify(good.data));const result=(await req('/api/records/reports',{token:member})).data.items[0];assert.equal(result.status,'Погоджено');assert.equal(result.extra.review_comment,'Прийнято');});
+test('fleet vehicle viewer is zoomable and omits zero-value metadata',async()=>{
+  const {readFileSync}=await import('node:fs');
+  const app=readFileSync('public/app.js','utf8');
+  assert.match(app,/data-action="fleet-photo"/);
+  assert.match(app,/height:240px;object-fit:contain/);
+  assert.match(app,/Number\(car\.extra\?\.value\)>0/);
+  assert.match(app,/Number\(car\.extra\?\.mileage\)>0/);
+  assert.doesNotMatch(app,/data-action="fleet-action"/);
+});
 test('fleet stores vehicles with condition, image evidence and member-visible loan history',async()=>{
   const created=await req('/api/records/vehicles',{method:'POST',token:leader,data:{
     title:'Obey 8F Drafter',details:'Автомобіль сімейного гаража',status:'Заплановано',
