@@ -26,10 +26,10 @@ test('login, session and role separation',async()=>{const bad=await req('/api/au
 test('family roster has compact filters, Ukrainian statuses, sorting and mobile cards',()=>{
   const app=readFileSync(resolve('public/app.js'),'utf8');
   const css=readFileSync(resolve('public/style.css'),'utf8');
-  assert.match(app,/id="members-role-filter"/);
-  assert.match(app,/id="members-status-filter"/);
-  assert.match(app,/id="members-department-filter"/);
-  assert.match(app,/id="members-sort-filter"/);
+  assert.match(app,/select\('members-role-filter','Роль',roleOptions,role\)/);
+  assert.match(app,/select\('members-status-filter','Статус',statusOptions,status\)/);
+  assert.match(app,/select\('members-department-filter','Напрямок',departmentOptions,department\)/);
+  assert.match(app,/select\('members-sort-filter','Сортування',sortOptions,sort\)/);
   assert.match(app,/data-action="members-reset"/);
   assert.match(app,/memberStatusLabel\(u\.status\)/);
   assert.match(app,/status==='active'\?'Активний'/);
