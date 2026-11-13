@@ -696,9 +696,48 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
   if(path==='/api/contracts'&&method==='POST'){
     requirePerm(user,'finance:manage');const b=await body(req),ids=uniqueIds(b.participant_ids);await safeContractUsers(db,ids);const s=await settings(db),pct=percent(b.treasury_percent??s.treasury_percent),amount=money(b.amount),title=str(b.title,160);if(!title)fail(400,'Назва обов’язкова');const id=uuid(),t=now();await db.prepare('INSERT INTO contracts(id,title,details,amount,treasury_percent,participant_ids,status,evidence,owner_id,department_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)').bind(id,title,str(b.details,2500),amount,pct,JSON.stringify(ids),validStatus(b.status||'Заплановано'),JSON.stringify(evidence(b.evidence||[])),user.id,str(b.department_id,80)||null,t,t).run();await audit(db,user,'create','contracts',id);return json({item:contractView(await db.prepare('SELECT * FROM contracts WHERE id=?').bind(id).first())},201);
   }
-  m=path.match(/^\/api\/contracts\/([\w-]+)(?:\/(preview|settle))?$/);
+  m=path.match(/^\/api\/contracts\/([\w-]+)(?:\/(preview|settle|correction-preview|correct))?$/);
   if(m){const c=await db.prepare('SELECT * FROM contracts WHERE id=?').bind(m[1]).first();if(!c)fail(404,'Контракт не знайдено');// All authenticated family members may inspect contract previews. Settlement and editing remain permission-gated.
     if(m[2]==='preview'&&method==='GET')return json({preview:payoutPreview(c.amount,c.treasury_percent,parseJson(c.participant_ids,[])),settled:!!c.settled_at});
+    if(['correction-preview','correct'].includes(m[2])&&method==='POST'){
+      if(user.role!=='leader')fail(403,'Тільки лідер може коригувати проведений контракт');
+      if(!c.settled_at)fail(409,'Контракт ще не проведено');
+      const b=await body(req),newAmount=money(b.amount),reason=str(b.reason,700);
+      if(newAmount<=c.amount)fail(400,'Нова сума повинна бути більшою за стару');
+      if(reason.length<10)fail(400,'Вкажіть причину коригування (мінімум 10 символів)');
+      const ids=parseJson(c.participant_ids,[]),previous=payoutPreview(c.amount,c.treasury_percent,ids),next=payoutPreview(newAmount,c.treasury_percent,ids);
+      const rows=await allRows(db,'SELECT p.id,p.user_id,p.amount,pc.confirmed_at FROM payouts p LEFT JOIN payout_confirmations pc ON pc.payout_id=p.id WHERE p.contract_id=?',c.id);
+      const ledgerEntry=await db.prepare("SELECT id,amount FROM ledger WHERE reference=? AND kind='treasury'").bind('contract:'+c.id).first();
+      if(rows.length!==ids.length||rows.some(p=>!ids.includes(p.user_id)||p.amount!==0)||previous.per_member!==0||
+        !ledgerEntry||ledgerEntry.amount!==previous.treasury)
+        fail(409,'Автоматичне коригування дозволене лише для раніше нульових виплат з узгодженим обліком. Зверніться до ручної звірки.');
+      const confirmed=rows.filter(x=>!!x.confirmed_at);
+      const preview={old_amount:c.amount,new_amount:newAmount,old_treasury:previous.treasury,new_treasury:next.treasury,
+        treasury_change:next.treasury-previous.treasury,old_per_member:0,new_per_member:next.per_member,
+        participants:ids.length,reset_zero_confirmations:confirmed.length,reason};
+      if(m[2]==='correction-preview')return json({preview,version:c.version});
+      if(b.version!==c.version)fail(409,'Контракт змінився. Перегляньте розрахунок повторно');
+      if(b.confirm_reset_zero_confirmations!==true)fail(400,'Потрібно підтвердити скидання старих нульових позначок «Видано»');
+      const t=now(),detail=JSON.stringify({old_amount:c.amount,new_amount:newAmount,old_treasury:previous.treasury,
+        new_treasury:next.treasury,old_per_member:0,new_per_member:next.per_member,reset_confirmations:confirmed.length,reason});
+      const batch=[
+        db.prepare('UPDATE contracts SET amount=?,version=version+1,updated_at=? WHERE id=? AND version=? AND amount=? AND settled_at IS NOT NULL')
+          .bind(newAmount,t,c.id,c.version,c.amount),
+        db.prepare('DELETE FROM payout_confirmations WHERE payout_id IN (SELECT p.id FROM payouts p JOIN contracts c ON c.id=p.contract_id WHERE p.contract_id=? AND p.amount=0 AND c.version=? AND c.amount=?)')
+          .bind(c.id,c.version+1,newAmount),
+        db.prepare('UPDATE payouts SET amount=? WHERE contract_id=? AND amount=0 AND EXISTS (SELECT 1 FROM contracts WHERE id=? AND version=? AND amount=?)')
+          .bind(next.per_member,c.id,c.id,c.version+1,newAmount),
+        db.prepare("UPDATE ledger SET amount=?,description=? WHERE reference=? AND kind='treasury' AND amount=? AND EXISTS (SELECT 1 FROM contracts WHERE id=? AND version=? AND amount=?)")
+          .bind(next.treasury,'Контракт: '+c.title+' (коригування: '+reason.slice(0,150)+')','contract:'+c.id,previous.treasury,c.id,c.version+1,newAmount),
+        db.prepare('INSERT INTO audit(id,actor_id,actor_name,action,entity,entity_id,detail,created_at) SELECT ?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM contracts WHERE id=? AND version=? AND amount=?)')
+          .bind(uuid(),user.id,user.username,'correct_settled_contract','contracts',c.id,detail,t,c.id,c.version+1,newAmount)
+      ];
+      const result=await db.batch(batch);
+      if(result[0].meta.changes!==1||result[2].meta.changes!==ids.length||result[3].meta.changes!==1||result[4].meta.changes!==1)
+        fail(409,'Дані змінилися або облік не збігається. Не повторюйте коригування, перевірте журнал і зверніться до адміністратора.');
+      for(const id of ids)await notify(db,id,'Коригування контракту',c.title+': нове нарахування '+next.per_member+'. Фактичну видачу потрібно підтвердити заново.');
+      return json({ok:true,preview,version:c.version+1});
+    }
     if(m[2]==='settle'&&method==='POST'){
       requirePerm(user,'finance:manage');if(c.settled_at)fail(409,'Виплати за цим контрактом уже нараховані');if(c.status!=='Погоджено')fail(409,'Перед нарахуванням погодьте контракт');const b=await body(req);if(b.version!==c.version)fail(409,'Контракт змінився. Оновіть сторінку');const p=payoutPreview(c.amount,c.treasury_percent,parseJson(c.participant_ids,[])),t=now(),settlementId=uuid();
       const batch=[db.prepare("UPDATE contracts SET settled_at=?,status='Завершено',version=version+1,updated_at=? WHERE id=? AND version=? AND settled_at IS NULL AND status='Погоджено'").bind(settlementId,t,c.id,c.version)];
