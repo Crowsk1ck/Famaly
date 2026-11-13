@@ -702,6 +702,1128 @@ function calendarForm(record){
     '<div class="full form-actions"><button type="button" class="btn ghost" data-action="close-modal">Скасувати</button>'+
     '<button type="submit" class="btn">Зберегти захід</button></div></form>');
 }
+function fleetVehicleForm(r){
+  const e=r?.extra||{},editing=!!r,oldPhotos=evidenceText(r);
+  const select=(name,opts,current)=>'<div class="field"><label>'+esc(name)+'</label><select class="select" name="extra_condition">'+opts.map(([v,t])=>'<option value="'+v+'" '+(current===v?'selected':'')+'>'+t+'</option>').join('')+'</select></div>';
+  const fields='<form id="record-form" data-module="vehicles" data-id="'+esc(r?.id||'')+'" class="formgrid">'+
+    field('Марка та модель *','title',e.model||r?.title||'','text',false,'required maxlength="160"')+
+    field('Державний номер / ID *','extra_plate',e.plate||'','text',false,'required maxlength="60"')+
+    select('Технічний стан',[['ready','Справний'],['repair','На ремонті'],['unavailable','Недоступний']],fleetCondition(r||{}))+
+    field('Гараж / місце паркування','extra_location',e.location||'')+
+    field('Відповідальний (нік)','extra_responsible',e.responsible||'')+
+    field('Вартість у GTAconst cfg=moduleInfo[mod],isEdit=!!r;const canManage=can(cfg[2]);const x=r||{};const fields=`<form id="record-form" data-module="${mod}" data-id="${esc(r?.id||'')}" class="formgrid">${field('Назва / тема *','title',x.title,'text',true,'required maxlength="160"')}${field('Опис / RP-звіт','details',x.details,'textarea',true)}${recordExtraFields(mod,r)}${canManage?`${statusField(x.status||'Заплановано')}${selectField('Виконавець','assignee_id',state.users,x.assignee_id)}${selectField('Напрямок','department_id',state.departments,x.department_id)}${field('Сума / винагорода (ігрова валюта)','amount',x.amount||0,'number',false,'min="0" step="1"')}${field('Початок','starts_at',formatDateField(x.starts_at),'datetime-local')}${field('Термін / завершення','ends_at',formatDateField(x.ends_at),'datetime-local')}`:''}${field('Докази ImgBB (кожне посилання з нового рядка)','evidence',evidenceText(x),'textarea',true)}${canManage?field('Додаткові дані (JSON: склад, номер ТЗ, стан, чекліст тощо)','extra',JSON.stringify(x.extra||{},null,2),'textarea',true):''}<div class="full form-actions"><button type="button" class="btn ghost" data-action="close-modal">Скасувати</button><button type="submit" class="btn">${isEdit?'Зберегти':'Створити'}</button></div></form>`;modal(`${isEdit?'Редагувати':'Створити'} · ${cfg[0]}`,`${isEdit?`<div class="notice mb">Запис із перевіркою версії: чужі зміни не будуть перезаписані.</div>`:''}${fields}`);}
+async function viewRecord(mod,id){const rows=(await api(`/records/${mod}`)).items;const r=rows.find(x=>x.id===id);if(!r)return toast('Запис недоступний',true);const payoutState=mod==='capt_attendance'?(await api('/capt/overview')).attendance.find(x=>x.id===id):null;const canManage=can(moduleInfo[mod][2])&&(state.user.role!=='head'||r.department_id===state.user.department_id);const canEdit=canManage||((r.owner_id===state.user.id||r.assignee_id===state.user.id)&&['reports','promotions','capt_attendance','vehicle_loans','tasks'].includes(mod));const review=canManage&&['reports','promotions'].includes(mod)&&r.owner_id!==state.user.id;const status=mod==='events'?`<div class="hr"></div><div id="rsvp-content" class="muted small">Завантаження учасників…</div>`:'';modal(r.title,`<div class="stack"><div class="row space">${badge(r.status)}<span class="muted small">v${r.version} · ${date(r.updated_at)}</span></div><div class="longtext">${esc(r.details||'Опис не додано')}</div><div class="small muted">Відповідальний: ${esc(userName(r.assignee_id||r.owner_id))} · ${esc(departmentName(r.department_id))}</div>${r.amount?`<div class="small">Винагорода: <strong>${fmt(r.amount)}</strong></div>`:''}${r.starts_at?`<div class="small">Початок: ${esc(r.starts_at.replace('T',' '))}</div>`:''}${links(r)}${Object.keys(r.extra||{}).length?`<div class="card flat"><strong>Додаткова інформація</strong><div class="stack mt small">${Object.entries(r.extra).filter(([k])=>k!=='review_nonce').map(([k,v])=>`<div><span class="muted">${esc(({requested_rank_id:'Цільовий ранг',checklist_completed:'Виконані умови',opponent:'Суперник',place:'Місце',lineup:'Склад на бій',result:'Результат',attendance_type:'Тип участі',match_id:'Бій / тренування',plate:'Номер ТЗ',condition:'Стан',responsible:'Відповідальний',review_comment:'Коментар керівника'})[k]||k)}:</span> <strong>${esc(Array.isArray(v)?v.join(', '):v)}</strong></div>`).join('')}</div></div>`:''}${status}${mod==='capt_matches'?'<div class="hr"></div><section id="capt-signup-panel" class="stack"><p class="muted">Завантаження списку учасників…</p></section>':''}<div class="form-actions">${review?`<button class="btn secondary" data-action="review-record" data-module="${mod}" data-id="${id}">Перевірити</button>`:''}${canEdit?`<button class="btn" data-action="edit-record" data-module="${mod}" data-id="${id}">Редагувати</button>`:''}${mod==='templates'?`<button class="btn secondary" data-action="copy-template" data-id="${id}">Копіювати текст</button>`:''}${mod==='capt_attendance'&&payoutState?.paid===true?'<span class="pill">CAPT-виплату проведено</span>':mod==='capt_attendance'&&r.status==='Погоджено'&&can('finance:manage')?`<button class="btn" data-action="capt-pay" data-id="${id}">₴ Нарахувати CAPT</button>`:''}${canManage?`<button class="btn danger" data-action="delete-record" data-module="${mod}" data-id="${id}">Видалити</button>`:''}</div></div>`);if(mod==='capt_matches')await renderCaptSignupPanel(id);if(mod==='events'){try{const rs=await api(`/rsvp/${id}`);const el=$('#rsvp-content');if(el)el.innerHTML=`<div class="row wrap"><strong>Моя участь: ${esc(rs.own||'Не підтверджено')}</strong><span class="muted">Так: ${rs.counts.yes} · Ні: ${rs.counts.no}</span></div><div class="row mt"><button class="btn tiny" data-action="rsvp" data-id="${id}" data-value="Так">✓ Буду</button><button class="btn tiny ghost" data-action="rsvp" data-id="${id}" data-value="Ні">Не зможу</button></div>${rs.items.length?`<div class="muted small mt">${rs.items.map(i=>`${esc(userName(i.user_id))}: ${esc(i.response)}`).join(' · ')}</div>`:''}`;}catch(e){toast(e.message,true);}}}
+async function renderCaptSignupPanel(id){
+  const el=$('#capt-signup-panel');if(!el)return;
+  try{
+    const d=await api('/capt/matches/'+encodeURIComponent(id)+'/signups');
+    if(!el.isConnected)return;
+    const roster=(people)=>people.map((person,i)=>'<div class="capt-person"><span>'+String(i+1)+'. '+esc(person.nickname)+'</span></div>').join('')||'<p class="muted small">Немає записів</p>';
+    el.innerHTML='<h3>Автоматичне формування CAPT-складу</h3>'
+     +'<p class="small muted">Записано: '+fmt(d.total)+' · Основних місць: '+fmt(d.limit)+' · Резерв: '+fmt(d.reserve.length)+'. Основний склад формується за чергою запису.</p>'
+     +'<div class="grid2"><div class="card flat"><strong>Основний склад</strong><div class="mt">'+roster(d.lineup)+'</div></div><div class="card flat"><strong>Резерв</strong><div class="mt">'+roster(d.reserve)+'</div></div></div>'
+     +'<div class="form-actions">'+(d.open?(d.own?'<button class="btn secondary" data-action="capt-leave" data-id="'+esc(id)+'">Скасувати мій запис</button>':'<button class="btn" data-action="capt-join" data-id="'+esc(id)+'">＋ Записатися на бій</button>'):'<span class="pill">Запис закрито</span>')+'</div>';
+  }catch(err){if(el.isConnected)el.innerHTML='<div class="notice">Не вдалося завантажити склад: '+esc(err.message)+'. Перевірте міграцію CAPT у D1.</div>';}
+}
+function reviewModal(mod,id){modal('Рішення керівництва',`<form id="review-form" data-module="${mod}" data-id="${id}" class="stack"><div class="field"><label>Рішення</label><select name="status" class="select"><option>Погоджено</option><option>На доопрацювання</option><option>Відхилено</option></select></div>${field('Коментар керівника','comment','','textarea',true)}<button class="btn" type="submit">Зберегти рішення</button></form>`);}
+function grouped(mods,title,description){const active=state.sub[state.route]||mods[0];return `<div class="tabs mb">${mods.map(m=>`<button data-action="change-sub" data-value="${m}" class="tab ${m===active?'active':''}">${esc(moduleInfo[m][0])}</button>`).join('')}</div>`;}
+function fleetCondition(record){
+  const v=String(record.extra?.condition||'').toLowerCase().trim();
+  if(['repair','ремонт','на ремонті','несправний'].includes(v))return 'repair';
+  if(['unavailable','недоступний','заблоковано'].includes(v))return 'unavailable';
+  return 'ready';
+}
+function fleetConditionLabel(condition){
+  return ({ready:'Справний',repair:'На ремонті',unavailable:'Недоступний'})[condition]||'Справний';
+}
+async function fleetPage(){
+  const active=state.sub.fleet||'vehicles';
+  const cars=(await api('/records/vehicles')).items;
+  const loans=(await api('/records/vehicle_loans')).items;
+  const query=String(state.search||'').trim().toLocaleLowerCase('uk');
+  const condition=state.fleetCondition||'all';
+  const counts={total:cars.length,ready:0,repair:0,unavailable:0};
+  for(const car of cars)counts[fleetCondition(car)]++;
+  const searchCar=car=>[car.title,car.details,car.extra?.plate,car.extra?.model,car.extra?.responsible,car.extra?.location].some(v=>String(v||'').toLocaleLowerCase('uk').includes(query));
+  const filtered=applyFilters(cars.filter(car=>(condition==='all'||fleetCondition(car)===condition)&&searchCar(car)));
+  const cards=filtered.map(car=>{
+    const plate=car.extra?.plate||'Номер не вказаний';
+    const model=car.extra?.model||car.title;
+    const location=car.extra?.location||'Місце не вказано';
+    const responsible=car.extra?.responsible||userName(car.assignee_id)||'—';
+    const photo=galleryPhoto(car);
+    return '<div class="card" style="overflow:hidden">'+(photo?'<img src="'+esc(photo)+'" alt="'+esc(model)+'" loading="lazy" style="width:100%;height:150px;object-fit:cover;border-radius:10px">':'<div style="height:90px;display:grid;place-items:center;font-size:36px;opacity:.55">🚘</div>')+'<div class="row space mt"><h3>'+esc(model)+'</h3>'+badge(fleetConditionLabel(fleetCondition(car)))+'</div><p class="muted small">Номер: '+esc(plate)+'</p><p class="muted small">Гараж: '+esc(location)+'</p><p class="muted small">Відповідальний: '+esc(responsible)+'</p><button class="btn tiny secondary mt" data-action="view-record" data-module="vehicles" data-id="'+esc(car.id)+'">Деталі ↗</button></div>';
+  }).join('');
+  const history=applyFilters(loans.filter(x=>[x.title,x.details,x.extra?.vehicle,x.extra?.driver,x.extra?.action].some(v=>String(v||'').toLocaleLowerCase('uk').includes(query))));
+  return grouped(groupRoutes.fleet)+intro('Автопарк GRIZZLY','Транспорт сім’ї, технічний стан, відповідальні й журнал видачі.',can('fleet:manage')&&active==='vehicles'?'<button class="btn" data-action="new-record" data-module="vehicles">＋ Додати автомобіль</button>':'')+
+    '<div class="cards"><div class="card stat"><div class="muted small">Усього авто</div><div class="number">'+counts.total+'</div></div><div class="card stat"><div class="muted small">Справні</div><div class="number">'+counts.ready+'</div></div><div class="card stat"><div class="muted small">На ремонті</div><div class="number">'+counts.repair+'</div></div><div class="card stat"><div class="muted small">Недоступні</div><div class="number">'+counts.unavailable+'</div></div></div>'+
+    (active==='vehicles'?'<div class="toolbar mt">'+searchBar()+'<div class="row" style="flex-wrap:wrap;gap:6px">'+[['all','Усі'],['ready','Справні'],['repair','Ремонт'],['unavailable','Недоступні']].map(([value,label])=>'<button class="btn tiny secondary" aria-pressed="'+(condition===value)+'" data-action="fleet-condition" data-value="'+value+'">'+label+'</button>').join('')+'</div>'+exportButton('vehicles')+'</div>'+(filtered.length?'<div class="grid3 mt">'+cards+'</div>':empty('Автомобілів не знайдено','Додайте транспорт або змініть фільтри.')):
+      '<div class="toolbar mt">'+searchBar()+'<button class="btn tiny secondary" data-action="new-record" data-module="vehicle_loans">＋ Записати видачу / повернення</button>'+exportButton('vehicle_loans')+'</div><div class="notice mb">У журналі фіксуються RP-видача й повернення транспорту. Записи журналу не змінюють автоматично технічний стан автомобіля.</div>'+table(['Подія','Авто / номер','Водій','Дата','Дія'],history.map(x=>'<tr><td>'+esc(x.title)+'</td><td>'+esc(x.extra?.vehicle||'—')+'</td><td>'+esc(x.extra?.driver||'—')+'</td><td>'+date(x.created_at)+'</td><td><button class="btn tiny secondary" data-action="view-record" data-module="vehicle_loans" data-id="'+esc(x.id)+'">Відкрити ↗</button></td></tr>')));
+}
+async function groupPage(route){const mods=groupRoutes[route],active=state.sub[route]||mods[0];if(route==='discipline'&&!can('discipline:manage'))return intro('Доступ заборонено');return grouped(mods)+await renderModule(active);}
+
+function captCalendar(schedule){
+  const selected=state.captMonth||new Date().toISOString().slice(0,7);
+  const [year,month]=selected.split('-').map(Number);
+  const first=new Date(year,month-1,1);
+  const length=new Date(year,month,0).getDate();
+  const offset=(first.getDay()+6)%7;
+  const byDate=new Map();
+  for(const item of schedule){
+    const day=String(item.starts_at||'').slice(0,10);
+    if(!day.startsWith(selected+'-'))continue;
+    if(!byDate.has(day))byDate.set(day,[]);
+    byDate.get(day).push(item);
+  }
+  const days=['Пн','Вт','Ср','Чт','Пт','Сб','Нд'];
+  let cells=days.map(x=>'<div class="capt-weekday">'+x+'</div>').join('');
+  for(let i=0;i<offset;i++)cells+='<div class="capt-day muted capt-blank" aria-hidden="true"></div>';
+  for(let day=1;day<=length;day++){
+    const key=selected+'-'+String(day).padStart(2,'0');
+    const entries=(byDate.get(key)||[]).sort((a,b)=>a.starts_at.localeCompare(b.starts_at));
+    const events=entries.slice(0,3).map(rec=>
+      '<button type="button" class="capt-calendar-event '+(rec.module==='capt_matches'?'capt-match-event':'capt-training-event')+'" data-action="view-record" data-id="'+esc(rec.id)+'" data-module="'+rec.module+'" title="'+esc(rec.title)+'">'
+       +esc(rec.starts_at.slice(11,16))+' '+esc(rec.title)+'</button>').join('');
+    cells+='<div class="capt-day"><strong>'+day+'</strong>'+events+(entries.length>3?'<span class="small muted">+'+(entries.length-3)+' події</span>':'')+'</div>';
+  }
+  return '<section class="card capt-calendar"><div class="card-head"><h3>Календар CAPT</h3><div class="row"><button class="btn tiny ghost" data-action="capt-month" data-offset="-1" aria-label="Попередній місяць">‹</button><strong>'+esc(first.toLocaleDateString('uk-UA',{month:'long',year:'numeric'}))+'</strong><button class="btn tiny ghost" data-action="capt-month" data-offset="1" aria-label="Наступний місяць">›</button></div></div><div class="capt-calendar-scroll"><div class="capt-days">'+cells+'</div></div></section>';
+}
+async function captPage(){
+  const d=await api('/capt/overview');
+  const canManage=can('capt:manage'),canPay=can('finance:manage');
+  const schedule=[...d.matches.map(r=>({...r,kind:'Бій',module:'capt_matches'})),...d.trainings.map(r=>({...r,kind:'Тренування',module:'capt_training'}))];
+  const upcoming=schedule.filter(r=>r.starts_at&&new Date(r.starts_at).getTime()>=Date.now()&&!['Відхилено','Завершено'].includes(r.status))
+    .sort((a,b)=>a.starts_at.localeCompare(b.starts_at)).slice(0,6);
+  const results=d.matches.filter(r=>String(r.extra?.result||'').trim()||['win','loss','draw'].includes(r.extra?.outcome)).slice(0,8);
+  const pending=d.attendance.filter(r=>r.status==='Погоджено'&&r.paid===false);
+  const notices=d.rates?'<div class="notice mb">Ставки CAPT: AFK — <strong>'+fmt(d.rates.afk)+'</strong>, бій — <strong>'+fmt(d.rates.battle)+'</strong> (ігрова валюта). Лідер змінює ставки у «Налаштуваннях».</div>':'';
+  const upcomingRows=upcoming.map(r=>'<div class="capt-line"><div><strong>'+esc(r.title)+'</strong><div class="small muted">'+esc(r.kind)+' · '+esc(r.starts_at.replace('T',' '))+(r.extra?.opponent?' · '+esc(r.extra.opponent):'')+'</div></div><button class="btn tiny secondary" data-action="view-record" data-id="'+esc(r.id)+'" data-module="'+r.module+'">Відкрити</button></div>').join('')||empty('Поки немає запланованих боїв або тренувань');
+  const resultRows=results.map(r=>'<div class="capt-line"><div><strong>'+esc(r.title)+'</strong><div class="small muted">'+esc(r.extra?.opponent||'Суперника не вказано')+' · '+date(r.starts_at||r.created_at)+'</div></div><span class="capt-result">'+esc((({win:'Перемога',loss:'Поразка',draw:'Нічия',cancelled:'Скасовано'})[r.extra?.outcome]||'')+(r.extra?.result?' · '+r.extra.result:''))+'</span></div>').join('')||empty('Результатів ще немає');
+  const attendRows=[...d.attendance].sort((a,b)=>String(b.updated_at||'').localeCompare(String(a.updated_at||''))).slice(0,8).map(r=>
+    '<div class="capt-line"><div><strong>'+esc(userName(r.assignee_id||r.owner_id))+'</strong><div class="small muted">'+esc(r.title)+' · '+(r.extra?.attendance_type==='afk'?'AFK':'Бій')+' · '+date(r.created_at)+'</div></div><div class="capt-actions">'+badge(r.status)+(r.paid===true?'<span class="pill">Виплачено</span>':r.paid===false&&r.status==='Погоджено'?'<span class="pill">До виплати</span>':'')+'<button class="btn tiny secondary" data-action="view-record" data-id="'+esc(r.id)+'" data-module="capt_attendance">Деталі</button></div></div>').join('')||empty('Відвідувань ще не записано');
+  const stats=[['Бої',d.matches.length,'◎'],['Тренування',d.trainings.length,'◉'],
+    [canManage?'Записи відвідування':'Мої відвідування',d.attendance.length,'♟'],
+    [canPay?'Погоджено, не виплачено':'Погоджені відвідування',canPay?pending.length:d.attendance.filter(r=>r.status==='Погоджено').length,'₴']];
+  const statCards=stats.map(row=>'<div class="card stat"><span class="stat-symbol">'+row[2]+'</span><div class="muted small">'+esc(row[0])+'</div><div class="number">'+fmt(row[1])+'</div></div>').join('');
+  const resultsStats=d.results||{wins:0,losses:0,draws:0,played:0,win_rate:0};
+  const outcomeCards=[['Перемоги',resultsStats.wins],['Поразки',resultsStats.losses],['Нічиї',resultsStats.draws],['Відсоток перемог',resultsStats.win_rate+'%']].map(([label,value])=>'<div class="card stat"><div class="muted small">'+esc(label)+'</div><div class="number">'+esc(value)+'</div></div>').join('');
+  return intro('CAPT — командний склад','Планування боїв, відвідування, результати та контроль виплат.',
+       canManage?'<button class="btn" data-action="new-record" data-module="capt_matches">＋ Запланувати бій</button>':'<button class="btn" data-action="new-record" data-module="capt_attendance">＋ Моя участь</button>')
+    +'<div class="cards">'+statCards+'</div>'+'<div class="cards capt-scorecards">'+outcomeCards+'</div>' +captCalendar(schedule)+notices
+    +'<div class="grid2 capt-grid"><div class="card"><div class="card-head"><h3>Найближчі бої та тренування</h3>'
+    +(canManage?'<button class="btn tiny ghost" data-action="new-record" data-module="capt_training">＋ Тренування</button>':'')
+    +'</div>'+upcomingRows+'</div><div class="card"><div class="card-head"><h3>Останні результати боїв</h3></div>'+resultRows+'</div></div>'
+    +'<div class="card capt-attendance-card"><div class="card-head"><h3>Відвідуваність та виплати</h3><button class="btn tiny ghost" data-action="change-sub" data-value="capt_attendance">Усі записи</button></div>'+attendRows+'</div>'
+    +'<div class="notice mb">Нарахування CAPT можливе після погодження відвідування. Повторну виплату за тим самим записом система блокує.</div>'
+    +grouped(groupRoutes.capt)+await renderModule(state.sub.capt||groupRoutes.capt[0]);
+}
+
+async function applications(){
+  if(state.filter&&!applicationStatuses.includes(state.filter))state.filter='';
+  const all=(await api('/applications')).items;
+  const counts=Object.fromEntries(applicationStatuses.map(st=>[st,all.filter(a=>a.status===st).length]));
+  const list=applyFilters(all.filter(x=>searchMatch(x.nickname,x.game_id,x.status)));
+  const stats='<div class="row wrap mb">'+applicationStatuses.map(st=>'<span class="pill">'+esc(st)+': <strong>'+counts[st]+'</strong></span>').join('')+'</div>';
+  return `${intro('Заявки на вступ','Три стани: очікує, прийнято, відхилено. Нові заявки не створюють акаунтів.')}
+    ${stats}<div class="toolbar">${searchBar()}${filterControls(applicationStatuses)}${exportButton('applications')}<span class="muted small">${list.length} заявок</span></div>
+    ${table(['Кандидат','Досвід','Статус','Дата','Дії'],list.map(a=>`<tr><td class="table-title">${esc(a.nickname)}<div class="muted">ID: ${esc(a.game_id)} · ${esc(a.discord||'Без Discord')}</div></td><td class="wordwrap">${esc(a.experience.slice(0,80))}</td><td>${badge(a.status)}</td><td>${date(a.created_at)}</td><td><button class="btn tiny secondary" data-action="review-app" data-id="${esc(a.id)}">${a.status==='Очікує'?'Розглянути':'Переглянути'}</button></td></tr>`))}`;
+}
+async function appReview(id){
+  const app=(await api('/applications')).items.find(a=>a.id===id);
+  if(!app)return;
+  modal('Заявка · '+app.nickname,`<div class="stack"><div class="card flat">
+      <div><strong>Ігровий ID: ${esc(app.game_id)}</strong></div>
+      <div>Discord: ${esc(app.discord||'—')}</div>
+      <div>Досвід: ${esc(app.experience)}</div>
+      <div class="hr"></div><div class="longtext">${esc(app.motivation)}</div>
+    </div><form id="app-review-form" data-id="${esc(id)}" class="stack">
+      <div class="field"><label>Рішення щодо заявки</label><select class="select" name="status">${applicationStatuses.map(st=>`<option ${st===app.status?'selected':''}>${st}</option>`).join('')}</select></div>
+      ${field('Коментар рекрутера','comment',app.comment,'textarea',true)}
+      <button class="btn" type="submit">Зберегти статус</button>
+    </form><div class="notice">Статус «Прийнято» не створює акаунт. Лідер видає дані доступу окремо.</div></div>`);
+}
+async function contracts(){const list=applyFilters((await api('/contracts')).items.filter(x=>searchMatch(x.title,x.status,x.details)));return `${intro('Контракти','До виплати — точний розрахунок; після підтвердження — захист від повторного нарахування.',can('finance:manage')?'<button class="btn" data-action="new-contract">＋ Новий контракт</button>':'')}<div class="notice mb">Правило за замовчуванням: 20% до казни, решта порівну між учасниками. Відсоток задається керівником; округлення додається до казни.</div><div class="toolbar">${searchBar()}${filterControls()}${exportButton('contracts')}<span class="muted small">${list.length} контрактів</span></div>${table(['Контракт','Сума','Учасники','Казна','Статус','Дії'],list.map(c=>`<tr><td class="table-title">${esc(c.title)}<div class="muted">${esc(c.details.slice(0,85))}</div></td><td class="mono">${fmt(c.amount)}</td><td>${c.participant_ids.length}</td><td>${c.treasury_percent}%</td><td>${badge(c.status)}</td><td><button class="btn tiny secondary" data-action="view-contract" data-id="${c.id}">Деталі ↗</button></td></tr>`))}`;}
+async function contractForm(id){const old=id?(await api('/contracts')).items.find(c=>c.id===id):null;const s=await api('/settings');const c=old||{participant_ids:[],treasury_percent:s.items.treasury_percent||20};const checks=state.users.map(u=>`<label class="row small" style="gap:7px"><input type="checkbox" name="participant" value="${esc(u.id)}" ${c.participant_ids.includes(u.id)?'checked':''}>${esc(u.nickname||u.username)} (${esc(u.username)})</label>`).join('')||empty('Додайте учасників спочатку');modal(old?'Редагувати контракт':'Новий контракт',`<form id="contract-form" data-id="${esc(id||'')}" class="formgrid">${field('Назва *','title',c.title,'text',true,'required')}${field('Опис','details',c.details,'textarea',true)}${field('Сума (ціле число)','amount',c.amount??0,'number',false,'required min="0" step="1"')}${field('Відсоток казни','treasury_percent',c.treasury_percent,'number',false,'min="0" max="100"')}${statusField(c.status||'Заплановано')}<div class="field full"><label>Учасники контракту *</label><div class="card flat stack" style="max-height:220px;overflow:auto">${checks}</div></div>${field('Докази ImgBB (за рядками)','evidence',(c.evidence||[]).join('\n'),'textarea',true)}<div class="full form-actions"><button class="btn" type="submit">Зберегти контракт</button></div></form>`);}
+async function contractView(id){const c=(await api('/contracts')).items.find(x=>x.id===id);if(!c)return;const p=(await api(`/contracts/${id}/preview`)).preview;modal('Контракт · '+c.title,`<div class="stack"><div class="row space">${badge(c.status)}<span class="muted small">Версія: ${c.version}</span></div><p class="longtext">${esc(c.details)}</p><div class="grid2"><div class="card flat"><div class="muted small">Загальна сума</div><h2>${fmt(p.amount)}</h2></div><div class="card flat"><div class="muted small">Казна (${p.treasury_percent}%)</div><h2>${fmt(p.treasury)}</h2></div><div class="card flat"><div class="muted small">На учасника (${p.participants})</div><h2>${fmt(p.per_member)}</h2></div><div class="card flat"><div class="muted small">Залишок округлення → казна</div><h2>${fmt(p.rounding_remainder)}</h2></div></div><div class="card flat"><h3>Розподіл</h3><div class="stack mt">${p.allocations.map(a=>`<div class="row space small"><span>${esc(userName(a.user_id))}</span><strong>${fmt(a.amount)}</strong></div>`).join('')}</div></div>${links(c)}${c.settled_at?'<div class="notice">Виплати вже проведено. Повторне нарахування неможливе.</div>':''}${can('finance:manage')?`<div class="form-actions">${!c.settled_at?`<button class="btn secondary" data-action="edit-contract" data-id="${c.id}">Редагувати</button>`:''}${c.status==='Погоджено'&&!c.settled_at?`<button class="btn" data-action="settle-contract" data-id="${c.id}" data-version="${c.version}">✓ Підтвердити нарахування</button>`:''}</div>`:''}</div>`);}
+function financeTrendHtml(data){
+  const weeks=data.weeks||[],members=data.members||[];
+  const period=state.financeTrendPeriod||'12w',tab=state.financeTrendTab||'chart',hideEmpty=state.financeHideEmpty!==false;
+  const filtered=hideEmpty?weeks.filter(w=>w.income||w.expenses||w.earned):weeks;
+  const types=[['7','7 днів'],['30','30 днів'],['90','3 місяці'],['12w','12 тижнів'],['all','Увесь час']];
+  const tabs=[['chart','Графік'],['history','Тижнева історія'],['members','Учасники']];
+  const pills=arr=>arr.map(([id,label])=>'<button class="btn tiny secondary" data-action="'+(arr===types?'finance-trend-period':'finance-trend-tab')+'" data-value="'+id+'" aria-pressed="'+(arr===types?period===id:tab===id)+'">'+label+'</button>').join('');
+  const emptyText='<p class="muted small">За вибраний період фінансових операцій або контрактних виплат немає.</p>';
+  const max=Math.max(1,...filtered.flatMap(w=>[w.income,w.expenses]));
+  const line=(amount,color)=>'<span style="display:block;height:9px;border-radius:4px;background:'+color+';width:'+Math.max(0,Math.min(100,amount*100/max))+'%"></span>';
+  const barChart=filtered.map(w=>'<div style="display:grid;grid-template-columns:85px minmax(0,1fr) 130px;gap:10px;align-items:center;margin:9px 0"><span class="muted small">'+esc(w.week_start)+'</span><div style="display:grid;gap:3px">'+line(w.income,'#3d9c86')+line(w.expenses,'#db4d5d')+'</div><span class="mono small">'+fmt(w.income)+' / '+fmt(w.expenses)+'</span></div>').join('');
+  const balances=filtered.map(w=>Number(w.balance)||0);
+  const lower=Math.min(0,...balances,Number(data.opening_balance)||0),upper=Math.max(1,...balances,Number(data.opening_balance)||0);
+  const balanceBars=filtered.map(w=>{
+    const level=(Number(w.balance)-lower)/(upper-lower)*100;
+    return '<div style="display:grid;grid-template-columns:85px minmax(0,1fr) 110px;gap:10px;align-items:center;margin:6px 0"><span class="muted small">'+esc(w.week_start)+'</span><div style="height:9px;border-radius:4px;background:rgba(150,160,175,.16)"><span style="display:block;height:100%;width:'+Math.max(1,level)+'%;background:#7a9ac9;border-radius:4px"></span></div><span class="mono small">'+fmt(w.balance)+'</span></div>';
+  }).join('');
+  const history=table(['Тиждень','Надходження','Витрати','Зміна','Баланс'],filtered.map(w=>'<tr><td>'+esc(w.week_start)+'</td><td class="mono">'+fmt(w.income)+'</td><td class="mono">'+fmt(w.expenses)+'</td><td class="mono">'+fmt(w.net)+'</td><td class="mono">'+fmt(w.balance)+'</td></tr>'));
+  const term=String(state.financeMemberSearch||'').trim().toLocaleLowerCase('uk');
+  const matched=members.filter(m=>(m.nickname||m.username||'').toLocaleLowerCase('uk').includes(term));
+  const stats=table(['Учасник','Нараховано','Видано','Виплат','Активних тижнів'],matched.map(m=>'<tr><td>'+esc(m.nickname||m.username)+'</td><td class="mono">'+fmt(m.earned)+'</td><td class="mono">'+fmt(m.handed_over)+'</td><td>'+Number(m.payout_count)+'</td><td>'+m.weekly.filter(v=>v>0).length+'</td></tr>'));
+  const chartHtml=filtered.length?'<p class="muted small">Зелений — надходження, червоний — витрати (GTA$).</p>'+barChart+'<h3 class="mt">Накопичений баланс скарбниці</h3><p class="muted small">Враховано початковий баланс до обраного періоду.</p>'+balanceBars:emptyText;
+  const historyHtml=filtered.length?history:emptyText;
+  const memberHtml='<label class="muted small">Пошук за ніком <input class="input" id="finance-member-search" placeholder="Введіть нік" value="'+esc(state.financeMemberSearch||'')+'"></label><button class="btn tiny secondary" data-action="finance-member-search">Знайти</button>'+(matched.length?stats:'<p class="muted small">За вибраний період контрактних виплат немає або пошук не дав результатів.</p>');
+  return '<div class="card mt"><div class="card-head"><h3>Фінансова динаміка</h3></div><div class="row" style="flex-wrap:wrap;gap:6px">'+pills(types)+'</div><div class="row mt" style="flex-wrap:wrap;gap:6px">'+pills(tabs)+'</div><p class="muted small mt">Період від '+esc(data.from.slice(0,10))+' · '+esc(data.to.slice(0,10))+'</p>'+(tab!=='members'?'<label class="muted small"><input type="checkbox" id="finance-hide-empty" '+(hideEmpty?'checked':'')+'> Приховати порожні тижні</label><button class="btn tiny secondary" data-action="finance-empty-toggle">Застосувати</button>':'')+'<div class="mt">'+(tab==='chart'?chartHtml:tab==='history'?historyHtml:memberHtml)+'</div></div>';
+}
+function financeOutstandingHtml(data){
+  const people=Array.isArray(data.people)?data.people:[];
+  const items=table(['Учасник','Не видано','Нарахувань','Найдавніше'],people.map(p=>'<tr><td>'+esc(p.nickname||p.username)+'</td><td class="mono">'+fmt(p.amount)+'</td><td>'+Number(p.count)+'</td><td>'+date(p.oldest)+'</td></tr>'));
+  return '<div class="card mt"><div class="card-head"><h3>Невидані контрактні виплати</h3></div><div class="grid3"><div><span class="muted small">Очікують видачі</span><h3 class="mono">'+fmt(data.amount)+'</h3></div><div><span class="muted small">Кількість нарахувань</span><h3 class="mono">'+Number(data.count)+'</h3></div><div><span class="muted small">Найдавніша невидана виплата</span><h3>'+ (data.oldest?date(data.oldest):'—') +'</h3></div></div><p class="muted small mt">Це вже нараховані гроші, які ще не позначені як фактично передані в GTA RP. Баланс скарбниці від цього показника не змінюється.</p>'+(people.length?items:'<p class="muted small">Усі нараховані контрактні виплати видані або нарахувань ще немає.</p>')+'</div>';
+}
+function financeAnalyticsHtml(data){
+  const r=data.report;
+  const metric=(label,value)=>'<div><span class="muted small">'+esc(label)+'</span><h3 class="mono">'+fmt(value)+'</h3></div>';
+  const members=table(['Учасник','Зароблено','Видано','Виплат'],data.leaderboard.map((x,i)=>'<tr><td>'+esc((i+1)+'. '+(x.nickname||x.username))+'</td><td class="mono">'+fmt(x.earned)+'</td><td class="mono">'+fmt(x.handed_over)+'</td><td>'+Number(x.payout_count)+'</td></tr>'));
+  const contracts=table(['Контракт','Сума','Учасникам','Казна','Видано'],data.contracts.map(x=>'<tr><td>'+esc(x.title)+'</td><td class="mono">'+fmt(x.amount)+'</td><td class="mono">'+fmt(x.member_total)+'</td><td>'+Number(x.treasury_percent)+'%</td><td>'+Number(x.confirmed_count)+'/'+Number(x.payout_count)+'</td></tr>'));
+  return '<div class="card mt"><div class="card-head"><h3>Аналітика контрактів і заробітку</h3><div class="row"><button class="btn tiny secondary" data-action="finance-period" data-days="7">7 днів</button><button class="btn tiny secondary" data-action="finance-period" data-days="30">30 днів</button><button class="btn tiny secondary" data-action="finance-report-csv">↓ Звіт CSV</button></div></div><p class="muted small">Звіт за останні '+r.days+' днів. Зароблено — нараховано; видано — підтверджено передачу в GTA RP.</p><div class="grid3 mt">'+metric('Контракти з виплатами',r.contracts_count)+metric('Заробіток учасників',r.member_earned)+metric('Фактично видано',r.member_handed_over)+metric('Надходження казни',r.treasury_income)+metric('Витрати',r.expenses)+metric('Зміна казни',r.net_change)+'</div><h3 class="mt">Рейтинг заробітку</h3>'+members+'<h3 class="mt">Статистика контрактів</h3>'+contracts+'</div>';
+}
+async function finance(){const f=await api('/finance');const allowed=can('finance:read')||can('finance:manage');const analytics=allowed?await api('/finance/analytics?days='+(state.financeDays||7)):null;const trends=allowed?await api('/finance/trends?period='+(state.financeTrendPeriod||'12w')):null;const outstanding=allowed?await api('/finance/outstanding'):null;return `${intro('Фінанси та виплати',allowed?'Казна, надходження, витрати і нарахування учасникам.':'Тільки ваш власний баланс та підтверджені виплати.',can('finance:manage')?'<button class="btn" data-action="new-ledger">＋ Додати операцію</button>':'')}<div class="cards"><div class="card stat"><div class="muted small">Мої виплати</div><div class="number">${fmt(f.own_total)}</div></div>${allowed?`<div class="card stat"><div class="muted small">Баланс казни</div><div class="number">${fmt(f.treasury_balance)}</div></div><div class="card stat"><div class="muted small">Виплати за контрактами</div><div class="number">${fmt(f.payout_total)}</div></div><div class="card stat"><div class="muted small">Внески</div><div class="number">${fmt(f.totals.contribution||0)}</div></div>`:''}</div>${allowed&&f.month?`<div class="card mt"><div class="card-head"><h3>Фінансовий звіт · останні 30 днів</h3><span class="muted small">Показники казни й нарахування за період</span></div><div class="grid3 mt"><div><span class="muted small">Контракти → казна</span><h3 class="mono">+${fmt(f.month.contract_treasury)}</h3></div><div><span class="muted small">Внески</span><h3 class="mono">+${fmt(f.month.contributions)}</h3></div><div><span class="muted small">Витрати</span><h3 class="mono">−${fmt(f.month.expenses)}</h3></div><div><span class="muted small">Премії та CAPT</span><h3 class="mono">−${fmt(f.month.bonuses+f.month.capt)}</h3></div><div><span class="muted small">Зміна казни</span><h3 class="mono">${fmt(f.month.treasury_change)}</h3></div><div><span class="muted small">Нарахування учасникам за контрактами</span><h3 class="mono">${fmt(f.month.contract_payouts)}</h3><span class="muted small">${f.month.contract_payout_count} виплат</span></div></div><div class="notice mt">Контрактні виплати показані окремо: вони розподіляються з суми контракту й не списуються повторно з казни.</div></div>` :''}<div class="grid2 mt"><div class="card"><div class="card-head"><h3>Мої контрактні виплати</h3></div>${table(['Контракт','Сума','Дата'],f.own_payouts.map(p=>`<tr><td class="table-title">${esc(p.contract_title)}</td><td class="mono success">+${fmt(p.amount)}</td><td>${date(p.created_at)}</td></tr>`))}</div><div class="card"><div class="card-head"><h3>CAPT та премії</h3></div>${table(['Тип','Сума','Дата'],(f.own_extra||[]).map(p=>`<tr><td>${p.kind==='capt'?'CAPT':'Премія'}<div class="muted">${esc(p.description)}</div></td><td class="mono success">+${fmt(p.amount)}</td><td>${date(p.created_at)}</td></tr>`))}</div></div>${allowed?`<div class="card mt"><div class="card-head"><h3>Журнал казни</h3><button class="btn tiny secondary" data-action="view-ledger">Відкрити</button></div><div class="grid3">${Object.entries(f.totals).map(([k,v])=>`<div><span class="muted small">${esc(({treasury:'Контракти → казна',contribution:'Внески',expense:'Витрати',bonus:'Премії',capt:'CAPT'})[k]||k)}</span><h3 class="mono">${fmt(v)}</h3></div>`).join('')}</div></div>${allowed?`<div class="card mt"><div class="card-head"><h3>Видача контрактних виплат у грі</h3></div><p class="muted small">Нараховано ≠ фактично видано. Підтверджуйте лише після передачі грошей.</p>${table(['Контракт','Учасник','Сума','Нараховано','Стан','Дія'],(f.payment_rows||[]).map(p=>`<tr><td>${esc(p.contract_title)}</td><td>${esc(userName(p.user_id))}</td><td class="mono">${fmt(p.amount)}</td><td>${date(p.created_at)}</td><td>${p.confirmed_at?badge('Видано'):badge('Очікує')}</td><td>${p.confirmed_at?esc(userName(p.confirmed_by)):can('finance:manage')?`<button class="btn tiny secondary" data-action="confirm-payout" data-id="${esc(p.id)}">Підтвердити видачу</button>`:'—'}</td></tr>`))}</div>`:''}`:''}${outstanding?financeOutstandingHtml(outstanding):''}${analytics?financeAnalyticsHtml(analytics):''}${trends?financeTrendHtml(trends):''}`;}
+function financeRows(rows){const k=state.ledgerKind||'all',d=state.ledgerDays||'all',since=d==='all'?0:Date.now()-Number(d)*86400000;return rows.filter(r=>(k==='all'||r.kind===k)&&(!since||Date.parse(r.created_at)>=since));}
+function financeCsv(rows){const q=v=>'"'+String(v??'').replace(/^[=+@-]/,"'").replace(/"/g,'""')+'"';const data=[['Дата','Тип','Сума GTA$','Отримувач','Відповідальний','Опис'],...rows.map(r=>[r.created_at,r.kind,r.amount,userName(r.recipient_id),userName(r.actor_id),r.description])];const blob=new Blob(['\uFEFF'+data.map(x=>x.map(q).join(';')).join('\r\n')],{type:'text/csv;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='grizzly-finance-'+new Date().toISOString().slice(0,10)+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1500);}
+async function ledgerModal(){const all=(await api('/ledger')).items,rows=financeRows(all);const opts=(values,selected)=>values.map(([v,label])=>'<option value="'+v+'" '+(v===selected?'selected':'')+'>'+label+'</option>').join('');const kinds=[['all','Усі'],['treasury','Контракти'],['contribution','Внески'],['expense','Витрати'],['bonus','Премії'],['capt','CAPT']],periods=[['all','Увесь журнал'],['1','24 години'],['7','7 днів'],['30','30 днів'],['90','90 днів']];modal('Журнал фінансових операцій',`<div class="toolbar"><label>Тип <select class="select" id="ledger-kind">${opts(kinds,state.ledgerKind||'all')}</select></label><label>Період <select class="select" id="ledger-days">${opts(periods,state.ledgerDays||'all')}</select></label><button class="btn tiny secondary" data-action="ledger-filter">Застосувати</button><button class="btn tiny secondary" data-action="ledger-csv">↓ CSV</button></div><p class="muted small">Показано ${rows.length} із ${all.length} останніх операцій.</p>${table(['Дата','Тип','Сума','Кому','Відповідальний','Опис'],rows.map(r=>`<tr><td>${date(r.created_at)}</td><td>${esc(r.kind)}</td><td class="mono">${fmt(r.amount)}</td><td>${esc(userName(r.recipient_id))}</td><td>${esc(userName(r.actor_id))}</td><td>${esc(r.description)}</td></tr>`))}`);}
+function ledgerForm(){modal('Нова фінансова операція',`<form id="ledger-form" class="formgrid"><div class="field"><label>Тип операції</label><select class="select" name="kind"><option value="contribution">Внесок до казни</option><option value="expense">Витрата</option><option value="bonus">Премія учаснику</option><option value="capt">Виплата CAPT</option></select></div>${field('Сума','amount','0','number',false,'required min="1" step="1"')}${selectField('Отримувач (обов’язковий для премій та CAPT)','recipient_id',state.users,'',true)}${field('Підстава / коментар','description','','textarea',true)}<div class="notice full">CAPT-ставки змінюються керівником у налаштуваннях. Не дублюйте вже проведені виплати.</div><div class="full form-actions"><button class="btn" type="submit">Провести операцію</button></div></form>`);}
+async function stats(){const s=await api('/stats');const leaderboard=(state.period==='month'?s.leaderboard_month:s.leaderboard_week)||s.leaderboard||[];return `${intro('Статистика сім’ї','Активність за останні 7 і 30 днів. Рейтинг враховує погоджені й завершені записи.')}<div class="grid2"><div class="card"><h3>За 7 днів</h3><div class="grid3 mt">${Object.entries(s.week).map(([k,v])=>`<div><span class="muted small">${esc(({tasks:'Завдання',reports:'Звіти',events:'Заходи',income:'Надходження'})[k])}</span><h2>${fmt(v)}</h2></div>`).join('')}</div></div><div class="card"><h3>За 30 днів</h3><div class="grid3 mt">${Object.entries(s.month).map(([k,v])=>`<div><span class="muted small">${esc(({tasks:'Завдання',reports:'Звіти',events:'Заходи',income:'Надходження'})[k])}</span><h2>${fmt(v)}</h2></div>`).join('')}</div></div></div><div class="card mt"><div class="card-head"><h3>Рейтинг активності</h3><select id="period-filter" class="select" style="width:auto"><option value="week" ${state.period==='week'?'selected':''}>За 7 днів</option><option value="month" ${state.period==='month'?'selected':''}>За 30 днів</option></select></div>${table(['Учасник','Завершено','Бали'],leaderboard.map((x,i)=>`<tr><td>${i+1}. ${esc(userName(x.user_id))}</td><td>${x.completed}</td><td class="mono">${x.points}</td></tr>`))}</div>`;}
+async function auditPage(){const a=(await api('/audit')).items;return `${intro('Журнал змін','Хто, коли й що змінював. Доступ лише лідеру.')}<div class="toolbar">${searchBar()}</div>${table(['Дата','Користувач','Дія','Розділ','ID'],a.filter(x=>searchMatch(x.actor_name,x.action,x.entity,x.detail)).map(x=>`<tr><td>${esc(x.created_at.replace('T',' ').slice(0,19))}</td><td>${esc(x.actor_name)}</td><td>${esc(x.action)}<div class="muted">${esc(x.detail.slice(0,110))}</div></td><td>${esc(x.entity)}</td><td><span class="muted small">${esc(short(x.entity_id))}</span></td></tr>`))}`;}
+async function settingsPage(){const response=await api('/settings');const s=response.items;state.settingsVersions=response.versions||{};const discord=state.user.role==='leader'?await api('/discord/status'):null;
+if(discord)state.discordVersions=discord.versions||{};
+let discordLogs=[],discordLogError='';
+if(discord&&!discord.migrationRequired){
+  try{discordLogs=(await api('/discord/deliveries')).items||[];}catch(e){discordLogError=e.message;}
+}
+
+const discordLabel=discord?.reason==='missing'?'Секрет відсутній':discord?.reason==='invalid'?'Некоректний URL':discord?.configured?'Секрет знайдено':'Не підключено';
+const discordHelp=discord?.reason==='missing'?
+ 'Worker famaly не бачить DISCORD_WEBHOOK_URL. У Cloudflare відкрий Workers & Pages → famaly → Settings → Variables and Secrets → Add Secret → Deploy.':
+ discord?.reason==='invalid'?
+ 'Секрет існує, але адреса неправильна. Потрібен повний URL виду https://discord.com/api/webhooks/ID/TOKEN без зайвих лапок, параметрів або стороннього домену.':
+ 'Секрет виявлено, але зв’язок ще не перевірений. Натисни «Надіслати тестове повідомлення».';
+const discordNames={applications:'Нові заявки',decisions:'Рішення за заявками',events:'Опубліковані події',capt:'CAPT-оголошення',news:'Новини сім’ї',announcements:'Оголошення',test:'Тест webhook'};
+const discordSettingsHtml=discord&&!discord.migrationRequired?
+ '<form id="discord-preferences-form" class="gr-discord-settings">'+
+ ['applications','decisions','events','capt','news','announcements'].map(k=>
+   '<label class="gr-discord-switch"><span><strong>'+discordNames[k]+'</strong>'+
+   '<small>'+(discord.lockedByEnvironment?.[k]?'Вимкнено у змінних Cloudflare.':'Керуй сповіщеннями без зміни Cloudflare.')+'</small></span>'+
+   '<input type="checkbox" name="'+k+'" '+(discord.enabled?.[k]?'checked':'')+' '+(discord.lockedByEnvironment?.[k]?'disabled':'')+' aria-label="'+discordNames[k]+'"></label>'
+ ).join('')+
+ '<button class="btn secondary" type="submit">Зберегти перемикачі</button></form>':
+ '<div class="notice mt">Для перемикачів і журналу потрібно застосувати нову міграцію D1: <strong>0003_discord_notifications.sql та 0004_discord_capt_news.sql та 0005_discord_announcements.sql</strong>. Сповіщення продовжать працювати з поточними налаштуваннями до міграції.</div>';
+const discordRouteLabels={
+  applications:'Заявки',decisions:'Рішення',events:'Події',
+  capt:'CAPT',news:'Новини',announcements:'Оголошення'
+};
+const discordRouteSecrets={
+  applications:'DISCORD_WEBHOOK_APPLICATIONS',decisions:'DISCORD_WEBHOOK_DECISIONS',
+  events:'DISCORD_WEBHOOK_EVENTS',capt:'DISCORD_WEBHOOK_CAPT',
+  news:'DISCORD_WEBHOOK_NEWS',announcements:'DISCORD_WEBHOOK_ANNOUNCEMENTS'
+};
+const discordRoutesHtml=discord?
+ '<div class="gr-discord-routes"><h3>Окремі Discord-канали</h3>'+
+ '<p class="muted small">Для CAPT, Новин і Оголошень потрібні три різні webhook. Перші три категорії можуть використовувати чинний основний webhook або власні секрети.</p>'+
+ Object.keys(discordRouteLabels).map(kind=>{
+   const route=discord.routes?.[kind]||{configured:false,reason:'missing'};
+   const status=route.reason==='ready'?'Підключено':
+     route.reason==='duplicate'?'Повторюється webhook':
+     route.reason==='invalid'?'Некоректний URL':'Не підключено';
+   return '<div class="gr-discord-route"><div><strong>'+discordRouteLabels[kind]+'</strong>'+
+     '<small>Cloudflare Secret: <code>'+discordRouteSecrets[kind]+'</code></small></div>'+
+     '<span class="gr-discord-route-status '+(route.configured?'is-ready':'is-missing')+'">'+status+'</span>'+
+     '<button class="btn tiny secondary" type="button" data-action="discord-test-route" data-kind="'+kind+'" '+(route.configured?'':'disabled')+'>Тест каналу</button></div>';
+ }).join('')+'</div>':'';
+const appWebhookNames={
+  application_waiting:'Очікує',
+  application_accepted:'Прийнято',
+  application_rejected:'Відхилено'
+};
+const appWebhookSecrets={
+  application_waiting:'DISCORD_WEBHOOK_APPLICATIONS_WAITING',
+  application_accepted:'DISCORD_WEBHOOK_APPLICATIONS_ACCEPTED',
+  application_rejected:'DISCORD_WEBHOOK_APPLICATIONS_REJECTED'
+};
+const applicationWebhooksHtml=discord?
+ '<div class="gr-discord-routes"><h3>Webhook за статусами заявок</h3>'+
+ '<p class="muted small">Для трьох статусів можна вказати три різні Discord-канали. Якщо секрет не заданий, використовується старий webhook заявок або рішень — він позначений як «Загальний».</p>'+
+ Object.keys(appWebhookNames).map(kind=>{
+   const route=discord.applicationRoutes?.[kind]||{configured:false,reason:'missing'};
+   const status=route.reason==='ready'?'Окремий підключено':
+     route.reason==='legacy'?'Загальний webhook':
+     route.reason==='duplicate'?'Webhook повторюється':
+     route.reason==='invalid'?'Некоректний URL':'Не підключено';
+   return '<div class="gr-discord-route"><div><strong>Заявка: '+appWebhookNames[kind]+'</strong>'+
+     '<small>Cloudflare Secret: <code>'+appWebhookSecrets[kind]+'</code></small></div>'+
+     '<span class="gr-discord-route-status '+(route.separate?'is-ready':'is-missing')+'">'+status+'</span>'+
+     '<button class="btn tiny secondary" type="button" data-action="discord-test-route" data-kind="'+kind+'" '+(route.configured?'':'disabled')+'>Тест статусу</button></div>';
+ }).join('')+'</div>':'';
+const discordLogsHtml=discord&&!discord.migrationRequired?
+ '<div class="gr-discord-log"><div class="row space wrap"><h3>Журнал доставки</h3><span class="muted small">Останні 100 відправлень</span></div>'+
+ (discordLogError?'<div class="notice">'+esc(discordLogError)+'</div>':
+ discordLogs.length?'<div class="gr-discord-log-scroll"><table class="gr-discord-table"><thead><tr><th>Дата</th><th>Тип</th><th>Результат</th><th>Помилка</th></tr></thead><tbody>'+
+ discordLogs.map(e=>'<tr><td>'+esc(date(e.created_at))+'</td><td>'+esc(discordNames[e.kind]||e.kind)+'</td>'+
+ '<td><span class="gr-discord-result '+(e.status==='sent'?'is-success':'is-error')+'">'+(e.status==='sent'?'Надіслано':'Помилка')+'</span></td>'+
+ '<td>'+esc(e.status==='failed'?(e.http_status?'HTTP '+e.http_status:e.error_code==='network_error'?'Мережевий збій':'Помилка налаштувань'):'—')+'</td></tr>').join('')+
+ '</tbody></table></div>':'<p class="muted small">Історія порожня. Натисни кнопку тесту або дочекайся нової заявки.</p>')+
+ '</div>':'';
+return `${intro('Налаштування Grizzly','Редагування публічного сайту, правил, Discord та фінансових параметрів.')}<div class="card"><form id="settings-form" class="formgrid">${field('Назва сім’ї','family_name',s.family_name)}${field('Гасло','tagline',s.tagline)}${field('Історія сім’ї','history',s.history,'textarea',true)}${field('Посилання Discord','discord_url',s.discord_url,'url',true,'placeholder="https://discord.gg/..."')}${field('Правила','rules',s.rules,'textarea',true)}${field('Вимоги до кандидатів','requirements',s.requirements,'textarea',true)}${field('Відсоток казни від контрактів','treasury_percent',s.treasury_percent,'number',false,'min="0" max="100"')}${field('CAPT — ставка AFK','capt_afk_rate',s.capt_afk_rate,'number',false,'min="0"')}${field('CAPT — ставка за бій','capt_battle_rate',s.capt_battle_rate,'number',false,'min="0"')}<div class="full form-actions"><button class="btn" type="submit">Зберегти налаштування</button></div></form></div>${discord?'<div class="card mt"><div class="card-head"><h3>Discord-сповіщення</h3><span class="pill">'+discordLabel+'</span></div>'+
+    '<p class="muted small mt">Нові заявки, рішення, заходи, CAPT-оголошення, новини та звичайні оголошення. Webhook зберігається як секрет Cloudflare, не в D1.</p>'+ '<div class="notice mt">'+discordHelp+'</div>'+ 
+    '<div class="row wrap mt"><span class="pill">Заявки: '+(discord.categories.applications?'увімкнено':'вимкнено')+'</span>'+
+    '<span class="pill">Рішення: '+(discord.categories.decisions?'увімкнено':'вимкнено')+'</span>'+
+    '<span class="pill">Події: '+(discord.categories.events?'увімкнено':'вимкнено')+'</span>'+ 
+    '<span class="pill">CAPT: '+(discord.categories.capt?'увімкнено':'вимкнено')+'</span>'+ 
+    '<span class="pill">Новини: '+(discord.categories.news?'увімкнено':'вимкнено')+'</span>'+ 
+    '<span class="pill">Оголошення: '+(discord.categories.announcements?'увімкнено':'вимкнено')+'</span></div>'+
+    applicationWebhooksHtml+discordRoutesHtml+discordSettingsHtml+discordLogsHtml+
+    '<div class="row wrap mt"><button class="btn secondary" type="button" data-action="discord-test" '+(discord.configured?'':'disabled')+'>Надіслати тестове повідомлення</button>'+
+    '<button type="button" class="btn ghost" data-action="discord-refresh">Оновити статус</button><span class="muted small">Worker: famaly · Не надсилай webhook у чат.</span></div></div>':''}<div class="notice mt">Ставки CAPT застосовуються вручну при створенні виплат, щоб керівник контролював підставу нарахування. Права заступників задаються в особових справах.</div>`;}
+async function profile(){const u=state.user;const sessions=(await api('/auth/sessions')).items;return `${intro('Мій профіль','Особисті дані, пароль та активні сесії.')}<div class="grid2"><div class="card"><h3>${esc(u.nickname||u.username)}</h3><div class="stack mt"><div>Логін: <strong>${esc(u.username)}</strong></div><div>Роль доступу: <strong>${esc(roles[u.role])}</strong></div><div>Ігровий ранг: <strong>${esc(rankName(u.rank_id))}</strong></div><div>Напрямок: <strong>${esc(departmentName(u.department_id))}</strong></div><div>Ігровий ID: <strong>${esc(u.game_id||'—')}</strong></div><div>Discord: <strong>${esc(u.discord||'—')}</strong></div></div><button class="btn tiny secondary mt" data-action="edit-user" data-id="${u.id}">Редагувати профіль</button></div><div class="card"><h3>Зміна пароля</h3><form id="password-form" class="stack mt">${field('Поточний пароль','old_password','','password',true,'required')}${field('Новий пароль (12–128 символів)','new_password','','password',true,'minlength="12" required')}<button class="btn" type="submit">Змінити пароль і завершити сесії</button></form></div></div><div class="card mt"><div class="card-head"><h3>Сесії</h3><span class="muted small">Завершення доступу з інших пристроїв</span></div>${table(['Створено','Термін дії','Пристрій','Дія'],sessions.map(x=>`<tr><td>${date(x.created_at)}</td><td>${date(x.expires_at)}</td><td class="wordwrap">${esc(x.user_agent.slice(0,100))}</td><td>${x.revoked_at?badge('Завершено'):`<button class="btn tiny danger" data-action="revoke-session" data-id="${esc(x.id)}">Завершити</button>`}</td></tr>`))}</div>`;}
+async function render(){state.menu=false;let content='';try{if(!state.user){renderPublic();return;}if(['members','ranks','departments','contracts','settings','profile'].includes(state.route))await preload();switch(state.route){case'overview':content=await overview();break;case'members':content=await members();break;case'ranks':content=await ranks();break;case'departments':content=await departments();break;case'tasks':content=await renderModule('tasks');break;case'events':content=await renderModule('events');break;case'gallery':content=await galleryManager();break;case'public_news':content=await newsManager();break;case'public_team':content=await teamManager();break;case'public_achievements':content=await achievementsManager();break;case'public_calendar':content=await calendarManager();break;case'contracts':content=await contracts();break;case'capt':content=await captPage();break;case'fleet':content=await fleetPage();break;case'discipline':case'announcements':case'reports':content=await groupPage(state.route);break;case'finance':content=await finance();break;case'applications':content=await applications();break;case'stats':content=await stats();break;case'audit':content=await auditPage();break;case'settings':content=await settingsPage();break;case'profile':content=await profile();break;default:state.route='overview';content=await overview();}shell(content);}catch(e){if(e.status===401){state.user=null;state.route='overview';renderPublic();toast('Сесію завершено. Увійдіть повторно.',true);return;}shell(intro('Помилка завантаження',e.message)+`<button class="btn mt" data-action="refresh">Повторити</button>`);toast(e.message,true);}}
+async function navigate(route){const url=new URL(location.href);if(url.searchParams.has('view')){url.searchParams.delete('view');history.replaceState(history.state,'',url.pathname+url.search+url.hash);}state.route=route;state.search='';state.sort='new';state.filter='';state.menu=false;location.hash=route;await render();}
+async function initial(){try{state.public=await api('/public');}catch(e){state.public={settings:{tagline:'Сила в єдності.'},gallery:[]};toast('Не вдалося отримати публічні дані. Перевірте D1 та міграції.',true);}try{state.user=(await api('/auth/me')).user;}catch{state.user=null;}if(state.user){try{state.notifications=(await api('/notifications')).items;await preload();}catch(e){toast(e.message,true);}state.route=location.hash.replace('#','')||'overview';}if(new URL(location.href).searchParams.get('view')==='public'){renderPublic();return;}await render();}
+const lines=s=>String(s||'').split(/\n/).map(x=>x.trim()).filter(Boolean);
+function formData(f){return Object.fromEntries(new FormData(f).entries());}
+async function afterSaved(msg='Збережено'){closeModal();toast(msg);if(state.user){state.notifications=(await api('/notifications')).items;await preload();}if(['gallery','public_news','public_team','public_achievements','public_calendar'].includes(state.route))state.public=await api('/public');await render();}
+async function handleSubmit(e){const f=e.target;if(!f.id)return;e.preventDefault();const b=formData(f);const submit=f.querySelector('[type=submit]');if(submit)submit.disabled=true;try{switch(f.id){
+  case 'apply-form':await api('/apply','POST',b);f.reset();toast('Заявку надіслано. Очікуйте рішення рекрутера.');return;
+  case 'login-form':state.user=(await api('/auth/login','POST',b)).user;closeModal();state.notifications=(await api('/notifications')).items;await preload();await navigate('overview');toast('Вхід успішний');return;
+  case 'user-form':{const id=f.dataset.id,old=state.users.find(u=>u.id===id);let payload={...b};if(!id){delete payload.activity;delete payload.status;}else{payload.version=old.version;if(state.user.role==='leader'){payload.permissions=lines((b.permissions||'').replace(/,/g,'\n'));}else delete payload.permissions;}
+    const result=await api(id?`/users/${id}`:'/users',id?'PATCH':'POST',payload);if(!id){closeModal();await preload();await render();credentialReceipt(result.item.username,b.password,result.item.nickname);return;}await afterSaved('Особову справу оновлено');return;}
+  case 'rank-form':{const r=state.ranks.find(x=>x.id===Number(f.dataset.id));await api(`/ranks/${r.id}`,'PATCH',{title:b.title,requirements:b.requirements,checklist:lines(b.checklist),version:r.version});await afterSaved('Ранг оновлено');return;}
+  case 'department-form':{const d=state.departments.find(x=>x.id===f.dataset.id);await api(`/departments/${d.id}`,'PATCH',{...b,version:d.version});await afterSaved();return;}
+  case 'calendar-form':{
+    if(!can('content:manage'))throw new Error('Недостатньо прав');
+    const id=f.dataset.id,old=id?(await api('/records/public_calendar')).items.find(x=>x.id===id):null;
+    if(id&&!old)throw new Error('Захід не знайдено');
+    if(b.ends_at&&b.ends_at<=b.starts_at)throw new Error('Дата завершення має бути після початку');
+    await api(id?'/records/public_calendar/'+encodeURIComponent(id):'/records/public_calendar',id?'PATCH':'POST',{
+      title:b.title,details:b.description,status:b.status||'Заплановано',
+      starts_at:b.starts_at,ends_at:b.ends_at||'',extra:{category:b.category,location:b.location||''},version:old?.version
+    });
+    await afterSaved('Захід збережено');return;}
+  case 'achievement-form':{
+    if(!can('content:manage'))throw new Error('Недостатньо прав для досягнень');
+    const id=f.dataset.id,old=id?(await api('/records/public_achievements')).items.find(a=>a.id===id):null;
+    if(id&&!old)throw new Error('Досягнення не знайдено');
+    const photo=String(b.photo_url||'').trim();
+    if(photo&&!galleryPhoto({evidence:[photo]}))throw new Error('Фото має бути прямим HTTPS-посиланням ImgBB на JPG, PNG, WEBP або GIF');
+    const payload={title:b.title,details:b.description,status:b.status||'Заплановано',
+      evidence:photo?[photo]:[],extra:{category:b.category,achieved_on:b.achieved_on,featured:b.featured==='true'},version:old?.version};
+    await api(id?'/records/public_achievements/'+encodeURIComponent(id):'/records/public_achievements',id?'PATCH':'POST',payload);
+    await afterSaved('Досягнення збережено');return;}
+  case 'team-form':{
+    if(!can('content:manage'))throw new Error('Недостатньо прав для редагування публічних профілів');
+    const id=f.dataset.id,old=id?(await api('/records/public_team')).items.find(x=>x.id===id):null;
+    if(id&&!old)throw new Error('Профіль не знайдено');
+    const photo=String(b.photo_url||'').trim();
+    if(photo&&!galleryPhoto({evidence:[photo]}))throw new Error('Фото має бути прямим HTTPS-посиланням ImgBB на JPG, PNG, WEBP або GIF');
+    const payload={title:b.nickname,details:b.bio||'',status:b.status||'Заплановано',
+      evidence:photo?[photo]:[],extra:{position:b.position,sort_order:Number(b.sort_order??50)},version:old?.version};
+    await api(id?'/records/public_team/'+encodeURIComponent(id):'/records/public_team',id?'PATCH':'POST',payload);
+    await afterSaved('Профіль керівника збережено');return;}
+  case 'news-form':{
+    if(!can('content:manage'))throw new Error('Недостатньо прав для публікації');
+    const id=f.dataset.id,record=id?(await api('/records/public_news')).items.find(r=>r.id===id):null;
+    if(id&&!record)throw new Error('Новину не знайдено');
+    const payload={title:b.title,details:b.details,status:b.status||'Заплановано',evidence:[],
+      extra:{...record?.extra,news_category:b.category,featured:b.featured==='true'},version:record?.version};
+    await api(id?'/records/public_news/'+encodeURIComponent(id):'/records/public_news',id?'PATCH':'POST',payload);
+    await afterSaved('Новину збережено');return;}
+  case 'gallery-form':{
+    const id=f.dataset.id,old=id?(await api('/records/gallery')).items.find(x=>x.id===id):null;
+    const url=String(b.photo_url||'').trim();
+    if(!galleryPhoto({evidence:[url]}))throw new Error('Для галереї потрібне пряме HTTPS-посилання ImgBB на JPG, PNG, WEBP або GIF.');
+    const payload={title:b.title,details:b.details||'',status:b.status||'Заплановано',evidence:[url],
+      extra:{...old?.extra,gallery_category:b.category,featured:b.featured==='true'},version:old?.version};
+    await api(id?'/records/gallery/'+id:'/records/gallery',id?'PATCH':'POST',payload);
+    await afterSaved('Фотографію збережено');return;}
+  case 'fleet-action-form':{
+    const id=f.dataset.id,action=f.dataset.actionType;
+    await api('/fleet/vehicles/'+encodeURIComponent(id)+'/action','POST',{action,driver:b.driver||'',note:b.note||'',cost:Number(b.cost||0)});
+    await afterSaved('Дію з транспортом записано в журнал');return;
+  }
+  case 'record-form':{const mod=f.dataset.module,id=f.dataset.id;const rec=id?(await api(`/records/${mod}`)).items.find(x=>x.id===id):null;const payload={...b,evidence:lines(b.evidence),amount:Number(b.amount||0),version:rec?.version,extra:{...rec?.extra}};if(b.extra){try{payload.extra=JSON.parse(b.extra);}catch{throw new Error('Додаткові дані повинні бути коректним JSON');}}
+    Object.keys(b).filter(k=>k.startsWith('extra_')).forEach(k=>{payload.extra[k.slice(6)]=k==='extra_checklist_completed'||k==='extra_lineup'?lines(b[k]):b[k];delete payload[k];});
+    if(mod==='vehicles'){payload.extra.model=b.title;payload.extra.value=Number(b.extra_value||0);payload.extra.mileage=Number(b.extra_mileage||0);}if(!b.starts_at)delete payload.starts_at;if(!b.ends_at)delete payload.ends_at;await api(id?`/records/${mod}/${id}`:`/records/${mod}`,id?'PATCH':'POST',payload);await afterSaved('Запис збережено');return;}
+  case 'review-form':{const mod=f.dataset.module,id=f.dataset.id,r=(await api(`/records/${mod}`)).items.find(x=>x.id===id);await api(`/records/${mod}/${id}/review`,'POST',{...b,version:r.version});await afterSaved('Рішення записано');return;}
+  case 'contract-form':{const id=f.dataset.id,old=id?(await api('/contracts')).items.find(x=>x.id===id):null;const participant_ids=[...f.querySelectorAll('[name=participant]:checked')].map(x=>x.value);await api(id?`/contracts/${id}`:'/contracts',id?'PATCH':'POST',{...b,participant_ids,amount:Number(b.amount),treasury_percent:Number(b.treasury_percent),evidence:lines(b.evidence),version:old?.version});await afterSaved('Контракт збережено');return;}
+  case 'app-review-form':{const a=(await api('/applications')).items.find(x=>x.id===f.dataset.id);await api(`/applications/${a.id}`,'PATCH',{...b,version:a.version});await afterSaved('Рішення щодо кандидата збережено');return;}
+  case 'ledger-form':await api('/ledger','POST',{...b,amount:Number(b.amount)});await afterSaved('Операцію проведено');return;
+  case 'discord-preferences-form':{
+    if(state.user?.role!=='leader')throw new Error('Недостатньо прав');
+    const enabled=Object.fromEntries(['applications','decisions','events','capt','news','announcements'].map(k=>[k,!!f.elements.namedItem(k)?.checked]));
+    await api('/discord/preferences','PATCH',{enabled,versions:state.discordVersions});
+    await render();toast('Discord-сповіщення оновлено');return;}
+  case 'settings-form':await api('/settings','PATCH',{...b,__versions:state.settingsVersions});state.public=await api('/public');await afterSaved('Налаштування оновлено');return;
+  case 'password-form':await api('/auth/password','POST',b);state.user=null;closeModal();renderPublic();toast('Пароль змінено. Увійдіть повторно.');return;
+  case 'reset-password-form':{const target=state.users.find(u=>u.id===f.dataset.id);await api(`/users/${f.dataset.id}/reset-password`,'POST',b);closeModal();await preload();await render();credentialReceipt(target?.username||'',b.password,target?.nickname||'',true);return;}
+} }catch(err){toast(err.message,true);if(err.status===409)toast('Оновіть сторінку перед повторним редагуванням.',true);}finally{if(submit)submit.disabled=false;}}
+document.addEventListener('submit',handleSubmit);
+document.addEventListener('input',e=>{if(e.target.name==='photo_url'&&e.target.closest('#gallery-form'))updateGalleryFormPreview();if(e.target.name==='photo_url'&&e.target.closest('#team-form'))updateTeamFormPreview();if(e.target.name==='photo_url'&&e.target.closest('#achievement-form'))updateAchievementPreview();if(e.target.id==='search-input'){state.search=e.target.value;const start=e.target.selectionStart;render().then(()=>{const v=$('#search-input');if(v){v.focus();try{v.setSelectionRange(start,start);}catch{}}});}});
+document.addEventListener('change',e=>{if(e.target.id==='status-filter'){state.filter=e.target.value;render();}if(e.target.id==='sort-select'){state.sort=e.target.value;render();}if(e.target.id==='period-filter'){state.period=e.target.value;render();}});
+document.addEventListener('click',async e=>{const back=e.target.closest('[data-backdrop]');if(back&&e.target===back){closeModal();return;}const t=e.target.closest('[data-action],[data-route]');if(!t)return;e.preventDefault();try{if(t.dataset.route){await navigate(t.dataset.route);return;}const act=t.dataset.action,id=t.dataset.id,mod=t.dataset.module;switch(act){
+  case 'show-login':loginModal();break;
+  case 'close-modal':closeModal();break;
+  case 'toggle-menu':$('.shell')?.classList.toggle('menu-open');break;
+  case 'refresh':await render();break;
+  case 'discord-refresh':{if(state.user?.role!=='leader')throw new Error('Недостатньо прав');await render();toast('Статус Discord оновлено');break;}
+  case 'discord-test-route':{if(state.user?.role!=='leader')throw new Error('Недостатньо прав');const kind=t.dataset.kind;const result=await api('/discord/test','POST',{kind});toast(result.message||'Тест надіслано');break;}
+  case 'discord-test':{if(state.user?.role!=='leader')throw new Error('Недостатньо прав');const result=await api('/discord/test','POST',{});toast(result.message||'Тест надіслано');break;}
+  case 'logout':await api('/auth/logout','POST');state.user=null;state.notifications=[];state.route='overview';state.search='';location.hash='home';renderPublic();toast('Ви вийшли з панелі');break;
+  case 'notifications':notifyPopup();break;
+  case 'read-notification':await api(`/notifications/${id}/read`,'POST');state.notifications=(await api('/notifications')).items;notifyPopup();await render();break;
+  case 'generate-login':{
+    const form=$('#user-form');if(!form||form.dataset.id)break;
+    const nickname=form.querySelector('[name="nickname"]')?.value||'';
+    const username=GrizzlyCredentials.generateLogin(nickname,state.users.map(u=>u.username));
+    form.querySelector('[name="username"]').value=username;
+    toast('Логін згенеровано');break;}
+  case 'generate-temp-password':{
+    const input=document.querySelector('#user-form input[name="password"], #reset-password-form input[name="password"]');
+    if(!input)break;
+    input.value=GrizzlyCredentials.generatePassword();
+    toast('Надійний пароль згенеровано');break;}
+  case 'toggle-temp-password':{
+    const input=document.querySelector('#credential-receipt-password, #user-form input[name="password"], #reset-password-form input[name="password"]');
+    if(input)input.type=input.type==='password'?'text':'password';
+    break;}
+  case 'copy-access-invite':{
+    const username=$('#credential-receipt-login')?.value, password=$('#credential-receipt-password')?.value;
+    if(!username||!password)break;
+    await navigator.clipboard.writeText(`🐻 GRIZZLY FAMILY | Особистий доступ\n🌐 ${location.origin}/\n👤 Логін: ${username}\n🔐 Тимчасовий пароль: ${password}\nПісля входу змініть пароль у «Мій профіль». Не передавайте його іншим.`);
+    toast('Дані доступу скопійовано — надішліть особисто');break;}
+  case 'new-user':await preload();userForm();break;
+  case 'edit-user':await preload();userForm(id);break;
+  case 'reset-password':modal('Скидання пароля',`<div class="notice mb">Усі активні сесії цього учасника буде завершено.</div><form id="reset-password-form" data-id="${esc(id)}" class="stack">${field('Новий пароль (від 12 символів)','password','','password',true,'required minlength="12"')}<button type="button" class="btn tiny secondary" data-action="generate-temp-password">Згенерувати надійний пароль</button><button type="button" class="btn tiny ghost" data-action="toggle-temp-password">Показати / приховати</button><button class="btn danger" type="submit">Скинути пароль</button></form>`);break;
+  case 'preview-rank-templates':{
+     const placeholders=state.ranks.filter(r=>Number(r.is_example)===1&&r.title===`Ранг ${String(r.id).padStart(2,'0')} — приклад`);
+     modal('15 рангів Grizzly',`<p class="modal-desc">Заповнити ${placeholders.length} стандартних рангів готовими редагованими прикладами? Уже налаштовані ранги не зміняться. Роль доступу до сайту не залежить від рангу.</p><div class="stack">${state.rankTemplates.map(r=>`<div class="row space"><strong>${r.id}. ${esc(r.title)}</strong><span class="muted small">${r.checklist.length} умов</span></div>`).join('')}</div><div class="form-actions mt"><button class="btn ghost" data-action="close-modal">Скасувати</button><button class="btn" data-action="apply-rank-templates">Заповнити ${placeholders.length} рангів</button></div>`);
+     break;}
+   case 'apply-rank-templates':{
+     const expected=state.ranks.filter(r=>Number(r.is_example)===1&&r.title===`Ранг ${String(r.id).padStart(2,'0')} — приклад`).map(r=>({id:r.id,version:r.version}));
+     if(!expected.length){closeModal();toast('Усі ранги вже заповнено');break;}
+     const result=await api('/ranks/apply-templates','POST',{expected});
+     await afterSaved(`Заповнено ${result.updated} рангів. Можна редагувати кожен окремо.`);break;}
+  case 'edit-rank':rankForm(id);break;
+  case 'edit-department':departmentForm(id);break;
+  case 'new-record':await preload();if(mod==='vehicles')fleetVehicleForm();else if(mod==='gallery')galleryForm();else if(mod==='public_news')newsForm();else if(mod==='public_team')teamForm();else if(mod==='public_achievements')achievementForm();else moduleForm(mod);break;
+  case 'edit-record':{const r=(await api(`/records/${mod}`)).items.find(x=>x.id===id);await preload();if(mod==='vehicles')fleetVehicleForm(r);else if(mod==='gallery')galleryForm(r);else if(mod==='public_news')newsForm(r);else if(mod==='public_team')teamForm(r);else if(mod==='public_achievements')achievementForm(r);else moduleForm(mod,r);break;}
+  case 'calendar-new':{
+    if(!can('content:manage'))throw new Error('Недостатньо прав');calendarForm();break;}
+  case 'calendar-edit':{
+    if(!can('content:manage'))throw new Error('Недостатньо прав');
+    const rec=(await api('/records/public_calendar')).items.find(x=>x.id===id);
+    if(!rec)throw new Error('Захід не знайдено');calendarForm(rec);break;}
+  case 'calendar-publish':{
+    if(!can('content:manage'))throw new Error('Недостатньо прав');
+    const rec=(await api('/records/public_calendar')).items.find(x=>x.id===id);
+    if(!rec)throw new Error('Захід не знайдено');
+    await api('/records/public_calendar/'+encodeURIComponent(id),'PATCH',{version:rec.version,status:t.dataset.status});
+    await afterSaved(t.dataset.status==='Погоджено'?'Захід опубліковано':'Захід приховано');break;}
+  case 'calendar-delete':{
+    if(!can('content:manage'))throw new Error('Недостатньо прав');
+    if(!confirm('Видалити публічний захід?'))break;
+    const rec=(await api('/records/public_calendar')).items.find(x=>x.id===id);
+    if(!rec)throw new Error('Захід не знайдено');
+    await api('/records/public_calendar/'+encodeURIComponent(id),'DELETE',{version:rec.version});
+    await afterSaved('Захід видалено');break;}
+  case 'public-calendar-filter':{
+    state.calendarCategory=t.dataset.category||'all';
+    const node=$('#gr-calendar-content');if(node)node.innerHTML=renderPublicCalendar();break;}
+  case 'public-calendar-prev':
+  case 'public-calendar-next':{
+    const [year,month]=grCalendarMonthValue().split('-').map(Number);
+    const d=new Date(Date.UTC(year,month-1+(act==='public-calendar-prev'?-1:1),1));
+    state.calendarMonth=d.getUTCFullYear()+'-'+String(d.getUTCMonth()+1).padStart(2,'0');
+    const node=$('#gr-calendar-content');if(node)node.innerHTML=renderPublicCalendar();break;}
+  case 'achievement-new':{
+    if(!can('content:manage'))throw new Error('Недостатньо прав');
+    achievementForm();break;}
+  case 'achievement-edit':{
+    if(!can('content:manage'))throw new Error('Недостатньо прав');
+    const old=(await api('/records/public_achievements')).items.find(a=>a.id===id);
+    if(!old)throw new Error('Досягнення не знайдено');
+    achievementForm(old);break;}
+  case 'achievement-publish':{
+    if(!can('content:manage'))throw new Error('Недостатньо прав');
+    const old=(await api('/records/public_achievements')).items.find(a=>a.id===id);
+    if(!old)throw new Error('Досягнення не знайдено');
+    await api('/records/public_achievements/'+encodeURIComponent(id),'PATCH',{version:old.version,status:t.dataset.status});
+    await afterSaved(t.dataset.status==='Погоджено'?'Досягнення опубліковано':'Досягнення приховано');break;}
+  case 'achievement-delete':{
+    if(!can('content:manage'))throw new Error('Недостатньо прав');
+    if(!confirm('Видалити це досягнення з історії GRIZZLY?'))break;
+    const old=(await api('/records/public_achievements')).items.find(a=>a.id===id);
+    if(!old)throw new Error('Досягнення не знайдено');
+    await api('/records/public_achievements/'+encodeURIComponent(id),'DELETE',{version:old.version});
+    await afterSaved('Досягнення видалено');break;}
+  case 'achievement-admin-filter':state.achievementAdminFilter=t.dataset.category||'all';await render();break;
+  case 'achievement-filter':{
+    state.achievementFilter=t.dataset.category||'all';
+    const block=$('#gr-achievements-content');
+    if(block)block.innerHTML=renderPublicAchievements();
+    break;}
+  case 'team-new':if(!can('content:manage'))throw new Error('Недостатньо прав');teamForm();break;
+  case 'team-edit':{
+    if(!can('content:manage'))throw new Error('Недостатньо прав');
+    const item=(await api('/records/public_team')).items.find(x=>x.id===id);
+    if(!item)throw new Error('Профіль не знайдено');teamForm(item);break;}
+  case 'team-delete':{
+    if(!can('content:manage'))throw new Error('Недостатньо прав');
+    if(!confirm('Назавжди видалити цей публічний профіль?'))break;
+    const item=(await api('/records/public_team')).items.find(x=>x.id===id);
+    if(!item)throw new Error('Профіль не знайдено');
+    await api('/records/public_team/'+encodeURIComponent(id),'DELETE',{version:item.version});
+    await afterSaved('Профіль видалено');break;}
+  case 'team-publish':{
+    if(!can('content:manage'))throw new Error('Недостатньо прав');
+    const item=(await api('/records/public_team')).items.find(x=>x.id===id);
+    if(!item)throw new Error('Профіль не знайдено');
+    await api('/records/public_team/'+encodeURIComponent(id),'PATCH',{version:item.version,status:t.dataset.status});
+    await afterSaved(t.dataset.status==='Погоджено'?'Профіль опубліковано':'Профіль приховано');break;}
+  case 'news-new':if(!can('content:manage'))throw new Error('Недостатньо прав');newsForm();break;
+  case 'news-edit':{
+    if(!can('content:manage'))throw new Error('Недостатньо прав');
+    const item=(await api('/records/public_news')).items.find(x=>x.id===id);
+    if(!item)throw new Error('Новину не знайдено');newsForm(item);break;}
+  case 'news-publish':{
+    if(!can('content:manage'))throw new Error('Недостатньо прав');
+    const item=(await api('/records/public_news')).items.find(x=>x.id===id);
+    if(!item)throw new Error('Новину не знайдено');
+    await api('/records/public_news/'+encodeURIComponent(id),'PATCH',{version:item.version,status:t.dataset.status});
+    await afterSaved(t.dataset.status==='Погоджено'?'Новину опубліковано':'Новину приховано');break;}
+  case 'gallery-new':galleryForm();break;
+  case 'gallery-admin-filter':state.galleryAdminFilter=t.dataset.category||'all';await render();break;
+  case 'gallery-publish':{
+    if(!can('content:manage'))throw new Error('Недостатньо прав');
+    const item=(await api('/records/gallery')).items.find(x=>x.id===id);
+    if(!item)throw new Error('Запис галереї не знайдено');
+    if(t.dataset.status==='Погоджено'&&!galleryPhoto(item))throw new Error('Для публікації потрібне пряме посилання на зображення ImgBB. Відредагуйте фото.');
+    await api('/records/gallery/'+id,'PATCH',{version:item.version,status:t.dataset.status});
+    await afterSaved(t.dataset.status==='Погоджено'?'Фото опубліковано на головній':'Фото знято з публікації');break;}
+  case 'gallery-filter':state.galleryFilter=t.dataset.category||'all';{
+    const node=$('#gr-gallery-content');if(node)node.innerHTML=renderPublicGallery();break;}
+  case 'gallery-open':publicGalleryLightbox(id);break;
+  case 'gallery-step':publicGalleryStep(Number(t.dataset.offset)||0);break;
+  case 'view-record':await preload();await viewRecord(mod,id);break;
+  case 'review-record':reviewModal(mod,id);break;
+  case 'delete-record':{if(!confirm('Видалити цей запис?'))return;const r=(await api(`/records/${mod}`)).items.find(x=>x.id===id);await api(`/records/${mod}/${id}`,'DELETE',{version:r.version});await afterSaved('Запис видалено');break;}
+  case 'capt-month':{
+    const current=state.captMonth||new Date().toISOString().slice(0,7);
+    const [year,month]=current.split('-').map(Number);
+    const next=new Date(year,month-1+Number(t.dataset.offset||0),1);
+    state.captMonth=next.getFullYear()+'-'+String(next.getMonth()+1).padStart(2,'0');
+    await render();break;}
+  case 'capt-join':
+  case 'capt-leave':{
+    await api('/capt/matches/'+encodeURIComponent(id)+'/signups','POST',{action:act==='capt-join'?'join':'leave'});
+    await renderCaptSignupPanel(id);toast(act==='capt-join'?'Запис на CAPT збережено':'Запис на CAPT скасовано');break;}
+  case 'change-sub':state.sub[state.route]=t.dataset.value;state.search='';state.filter='';await render();break;
+  case 'fleet-condition':state.fleetCondition=t.dataset.value||'all';await render();break;
+  case 'fleet-action':{
+    if(!can('fleet:manage'))throw new Error('Недостатньо прав');
+    const rows=(await api('/records/vehicles')).items,record=rows.find(x=>x.id===id);
+    if(!record)throw new Error('Автомобіль не знайдено');
+    fleetActionForm(record,t.dataset.type);break;
+  }
+  case 'review-app':await appReview(id);break;
+  case 'new-contract':await preload();await contractForm();break;
+  case 'edit-contract':await preload();await contractForm(id);break;
+  case 'view-contract':await preload();await contractView(id);break;
+  case 'settle-contract':{if(!confirm('Підтвердити остаточне нарахування? Дія незворотна.'))return;await api(`/contracts/${id}/settle`,'POST',{version:Number(t.dataset.version)});await afterSaved('Виплати проведено рівно один раз');break;}
+  case 'capt-pay':{if(!confirm('Нарахувати CAPT-виплату за погодженим записом за поточною ставкою?'))return;const r=await api(`/capt-pay/${id}`,'POST');await afterSaved(`CAPT-виплату ${fmt(r.amount)} нараховано`);break;}
+  case 'copy-template':{const rec=(await api('/records/templates')).items.find(x=>x.id===id);if(!rec)return;let content=rec.details||rec.title;for(const placeholder of ['час','місце','ім’я']){const key='{'+placeholder+'}';if(content.includes(key)){const value=prompt(`Значення для ${key}`, '')||'';content=content.replaceAll(key,value);}}await navigator.clipboard.writeText(content);toast('Текст скопійовано');break;}
+  case 'export':{const result=await api(`/export?module=${mod}`);const blob=new Blob([JSON.stringify(result,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`grizzly-${mod}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1500);toast('Експорт створено');break;}
+  case 'new-ledger':await preload();ledgerForm();break;
+  case 'view-ledger':await ledgerModal();break;
+  case 'finance-period':state.financeDays=Number(t.dataset.days)===30?30:7;await render();break;
+  case 'finance-trend-period':state.financeTrendPeriod=t.dataset.value||'12w';await render();break;
+  case 'finance-trend-tab':state.financeTrendTab=t.dataset.value||'chart';await render();break;
+  case 'finance-empty-toggle':state.financeHideEmpty=document.getElementById('finance-hide-empty')?.checked!==false;await render();break;
+  case 'finance-member-search':state.financeMemberSearch=document.getElementById('finance-member-search')?.value||'';await render();break;
+  
+  case 'finance-report-csv':{
+    if(!can('finance:read')&&!can('finance:manage'))throw new Error('Недостатньо прав');
+    const data=await api('/finance/analytics?days='+(state.financeDays||7));
+    const q=v=>'"'+String(v??'').replace(/^[=+@-]/,"'").replace(/"/g,'""')+'"';
+    const rows=[['GRIZZLY Finance',data.report.days+' днів'],['Період від',data.report.from],['Період до',data.report.to],['Надходження',data.report.treasury_income],['Витрати',data.report.expenses],['Зміна казни',data.report.net_change],['Контрактів',data.report.contracts_count],['Нараховано учасникам',data.report.member_earned],['Видано в грі',data.report.member_handed_over],[],['Учасник','Нараховано','Видано','Виплат'],...data.leaderboard.map(r=>[r.nickname||r.username,r.earned,r.handed_over,r.payout_count])];
+    const blob=new Blob(['\uFEFF'+rows.map(r=>r.map(q).join(';')).join('\r\n')],{type:'text/csv;charset=utf-8'});
+    const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='grizzly-finance-report-'+data.report.days+'d.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1500);toast('Звіт CSV створено');break;
+  }
+
+  case 'ledger-filter':state.ledgerKind=document.getElementById('ledger-kind')?.value||'all';state.ledgerDays=document.getElementById('ledger-days')?.value||'all';await ledgerModal();break;
+  case 'ledger-csv':financeCsv(financeRows((await api('/ledger')).items));toast('CSV створено');break;
+  case 'confirm-payout':{if(!can('finance:manage'))throw new Error('Недостатньо прав');if(!confirm('Кошти вже фактично передані гравцю в GTA RP? Підтвердження незворотне.'))return;await api('/payouts/'+encodeURIComponent(id)+'/confirm','POST',{note:''});await render();toast('Фактичну видачу підтверджено');break;}
+
+  case 'rsvp':await api(`/rsvp/${id}`,'POST',{response:t.dataset.value});await viewRecord('events',id);toast('Участь оновлено');break;
+  case 'revoke-session':await api(`/auth/sessions/${id}`,'DELETE');await render();toast('Сесію завершено');break;
+}}catch(err){toast(err.message,true);if(err.status===409)toast('Дані вже змінені. Оновіть розділ.',true);}});
+window.addEventListener('hashchange',()=>{
+  if(!state.user||new URL(location.href).searchParams.get('view')==='public')renderPublic();
+});
+initial();
+,'extra_value',e.value??0,'number',false,'min="0" step="1"')+
+    field('Пробіг (км)','extra_mileage',e.mileage??0,'number',false,'min="0" step="1"')+
+    field('Примітки','details',r?.details||e.notes||'','textarea',true)+
+    field('Фото ImgBB (прямі HTTPS-посилання, кожне з нового рядка)','evidence',oldPhotos,'textarea',true)+
+    '<div class="full form-actions"><button type="button" class="btn ghost" data-action="close-modal">Скасувати</button><button type="submit" class="btn">'+(editing?'Зберегти зміни':'Зареєструвати авто')+'</button></div></form>';
+  modal((editing?'Редагувати авто':'Нове авто')+' · GRIZZLY',fields);
+}
+function fleetActionForm(record,action){
+  const options={issue:'Видати автомобіль',return:'Повернути автомобіль',repair:'Передати на ремонт',ready:'Завершити ремонт'};
+  if(!options[action])return;
+  const driver=record.extra?.current_driver||'';
+  const fields='<form id="fleet-action-form" class="formgrid" data-id="'+esc(record.id)+'" data-action-type="'+action+'">'+
+    ((action==='issue'||action==='return')?field('Водій / учасник *','driver',driver,'text',true,'required maxlength="100"'):'')+
+    (action==='repair'?field('Причина ремонту *','note','','textarea',true,'required maxlength="1000"'):field('Примітка','note','','textarea',true))+
+    ((action==='repair'||action==='ready')?field('Вартість ремонту GTAconst cfg=moduleInfo[mod],isEdit=!!r;const canManage=can(cfg[2]);const x=r||{};const fields=`<form id="record-form" data-module="${mod}" data-id="${esc(r?.id||'')}" class="formgrid">${field('Назва / тема *','title',x.title,'text',true,'required maxlength="160"')}${field('Опис / RP-звіт','details',x.details,'textarea',true)}${recordExtraFields(mod,r)}${canManage?`${statusField(x.status||'Заплановано')}${selectField('Виконавець','assignee_id',state.users,x.assignee_id)}${selectField('Напрямок','department_id',state.departments,x.department_id)}${field('Сума / винагорода (ігрова валюта)','amount',x.amount||0,'number',false,'min="0" step="1"')}${field('Початок','starts_at',formatDateField(x.starts_at),'datetime-local')}${field('Термін / завершення','ends_at',formatDateField(x.ends_at),'datetime-local')}`:''}${field('Докази ImgBB (кожне посилання з нового рядка)','evidence',evidenceText(x),'textarea',true)}${canManage?field('Додаткові дані (JSON: склад, номер ТЗ, стан, чекліст тощо)','extra',JSON.stringify(x.extra||{},null,2),'textarea',true):''}<div class="full form-actions"><button type="button" class="btn ghost" data-action="close-modal">Скасувати</button><button type="submit" class="btn">${isEdit?'Зберегти':'Створити'}</button></div></form>`;modal(`${isEdit?'Редагувати':'Створити'} · ${cfg[0]}`,`${isEdit?`<div class="notice mb">Запис із перевіркою версії: чужі зміни не будуть перезаписані.</div>`:''}${fields}`);}
+async function viewRecord(mod,id){const rows=(await api(`/records/${mod}`)).items;const r=rows.find(x=>x.id===id);if(!r)return toast('Запис недоступний',true);const payoutState=mod==='capt_attendance'?(await api('/capt/overview')).attendance.find(x=>x.id===id):null;const canManage=can(moduleInfo[mod][2])&&(state.user.role!=='head'||r.department_id===state.user.department_id);const canEdit=canManage||((r.owner_id===state.user.id||r.assignee_id===state.user.id)&&['reports','promotions','capt_attendance','vehicle_loans','tasks'].includes(mod));const review=canManage&&['reports','promotions'].includes(mod)&&r.owner_id!==state.user.id;const status=mod==='events'?`<div class="hr"></div><div id="rsvp-content" class="muted small">Завантаження учасників…</div>`:'';modal(r.title,`<div class="stack"><div class="row space">${badge(r.status)}<span class="muted small">v${r.version} · ${date(r.updated_at)}</span></div><div class="longtext">${esc(r.details||'Опис не додано')}</div><div class="small muted">Відповідальний: ${esc(userName(r.assignee_id||r.owner_id))} · ${esc(departmentName(r.department_id))}</div>${r.amount?`<div class="small">Винагорода: <strong>${fmt(r.amount)}</strong></div>`:''}${r.starts_at?`<div class="small">Початок: ${esc(r.starts_at.replace('T',' '))}</div>`:''}${links(r)}${Object.keys(r.extra||{}).length?`<div class="card flat"><strong>Додаткова інформація</strong><div class="stack mt small">${Object.entries(r.extra).filter(([k])=>k!=='review_nonce').map(([k,v])=>`<div><span class="muted">${esc(({requested_rank_id:'Цільовий ранг',checklist_completed:'Виконані умови',opponent:'Суперник',place:'Місце',lineup:'Склад на бій',result:'Результат',attendance_type:'Тип участі',match_id:'Бій / тренування',plate:'Номер ТЗ',condition:'Стан',responsible:'Відповідальний',review_comment:'Коментар керівника'})[k]||k)}:</span> <strong>${esc(Array.isArray(v)?v.join(', '):v)}</strong></div>`).join('')}</div></div>`:''}${status}${mod==='capt_matches'?'<div class="hr"></div><section id="capt-signup-panel" class="stack"><p class="muted">Завантаження списку учасників…</p></section>':''}<div class="form-actions">${review?`<button class="btn secondary" data-action="review-record" data-module="${mod}" data-id="${id}">Перевірити</button>`:''}${canEdit?`<button class="btn" data-action="edit-record" data-module="${mod}" data-id="${id}">Редагувати</button>`:''}${mod==='templates'?`<button class="btn secondary" data-action="copy-template" data-id="${id}">Копіювати текст</button>`:''}${mod==='capt_attendance'&&payoutState?.paid===true?'<span class="pill">CAPT-виплату проведено</span>':mod==='capt_attendance'&&r.status==='Погоджено'&&can('finance:manage')?`<button class="btn" data-action="capt-pay" data-id="${id}">₴ Нарахувати CAPT</button>`:''}${canManage?`<button class="btn danger" data-action="delete-record" data-module="${mod}" data-id="${id}">Видалити</button>`:''}</div></div>`);if(mod==='capt_matches')await renderCaptSignupPanel(id);if(mod==='events'){try{const rs=await api(`/rsvp/${id}`);const el=$('#rsvp-content');if(el)el.innerHTML=`<div class="row wrap"><strong>Моя участь: ${esc(rs.own||'Не підтверджено')}</strong><span class="muted">Так: ${rs.counts.yes} · Ні: ${rs.counts.no}</span></div><div class="row mt"><button class="btn tiny" data-action="rsvp" data-id="${id}" data-value="Так">✓ Буду</button><button class="btn tiny ghost" data-action="rsvp" data-id="${id}" data-value="Ні">Не зможу</button></div>${rs.items.length?`<div class="muted small mt">${rs.items.map(i=>`${esc(userName(i.user_id))}: ${esc(i.response)}`).join(' · ')}</div>`:''}`;}catch(e){toast(e.message,true);}}}
+async function renderCaptSignupPanel(id){
+  const el=$('#capt-signup-panel');if(!el)return;
+  try{
+    const d=await api('/capt/matches/'+encodeURIComponent(id)+'/signups');
+    if(!el.isConnected)return;
+    const roster=(people)=>people.map((person,i)=>'<div class="capt-person"><span>'+String(i+1)+'. '+esc(person.nickname)+'</span></div>').join('')||'<p class="muted small">Немає записів</p>';
+    el.innerHTML='<h3>Автоматичне формування CAPT-складу</h3>'
+     +'<p class="small muted">Записано: '+fmt(d.total)+' · Основних місць: '+fmt(d.limit)+' · Резерв: '+fmt(d.reserve.length)+'. Основний склад формується за чергою запису.</p>'
+     +'<div class="grid2"><div class="card flat"><strong>Основний склад</strong><div class="mt">'+roster(d.lineup)+'</div></div><div class="card flat"><strong>Резерв</strong><div class="mt">'+roster(d.reserve)+'</div></div></div>'
+     +'<div class="form-actions">'+(d.open?(d.own?'<button class="btn secondary" data-action="capt-leave" data-id="'+esc(id)+'">Скасувати мій запис</button>':'<button class="btn" data-action="capt-join" data-id="'+esc(id)+'">＋ Записатися на бій</button>'):'<span class="pill">Запис закрито</span>')+'</div>';
+  }catch(err){if(el.isConnected)el.innerHTML='<div class="notice">Не вдалося завантажити склад: '+esc(err.message)+'. Перевірте міграцію CAPT у D1.</div>';}
+}
+function reviewModal(mod,id){modal('Рішення керівництва',`<form id="review-form" data-module="${mod}" data-id="${id}" class="stack"><div class="field"><label>Рішення</label><select name="status" class="select"><option>Погоджено</option><option>На доопрацювання</option><option>Відхилено</option></select></div>${field('Коментар керівника','comment','','textarea',true)}<button class="btn" type="submit">Зберегти рішення</button></form>`);}
+function grouped(mods,title,description){const active=state.sub[state.route]||mods[0];return `<div class="tabs mb">${mods.map(m=>`<button data-action="change-sub" data-value="${m}" class="tab ${m===active?'active':''}">${esc(moduleInfo[m][0])}</button>`).join('')}</div>`;}
+function fleetCondition(record){
+  const v=String(record.extra?.condition||'').toLowerCase().trim();
+  if(['repair','ремонт','на ремонті','несправний'].includes(v))return 'repair';
+  if(['unavailable','недоступний','заблоковано'].includes(v))return 'unavailable';
+  return 'ready';
+}
+function fleetConditionLabel(condition){
+  return ({ready:'Справний',repair:'На ремонті',unavailable:'Недоступний'})[condition]||'Справний';
+}
+async function fleetPage(){
+  const active=state.sub.fleet||'vehicles';
+  const cars=(await api('/records/vehicles')).items;
+  const loans=(await api('/records/vehicle_loans')).items;
+  const query=String(state.search||'').trim().toLocaleLowerCase('uk');
+  const condition=state.fleetCondition||'all';
+  const counts={total:cars.length,ready:0,repair:0,unavailable:0};
+  for(const car of cars)counts[fleetCondition(car)]++;
+  const searchCar=car=>[car.title,car.details,car.extra?.plate,car.extra?.model,car.extra?.responsible,car.extra?.location].some(v=>String(v||'').toLocaleLowerCase('uk').includes(query));
+  const filtered=applyFilters(cars.filter(car=>(condition==='all'||fleetCondition(car)===condition)&&searchCar(car)));
+  const cards=filtered.map(car=>{
+    const plate=car.extra?.plate||'Номер не вказаний';
+    const model=car.extra?.model||car.title;
+    const location=car.extra?.location||'Місце не вказано';
+    const responsible=car.extra?.responsible||userName(car.assignee_id)||'—';
+    const photo=galleryPhoto(car);
+    return '<div class="card" style="overflow:hidden">'+(photo?'<img src="'+esc(photo)+'" alt="'+esc(model)+'" loading="lazy" style="width:100%;height:150px;object-fit:cover;border-radius:10px">':'<div style="height:90px;display:grid;place-items:center;font-size:36px;opacity:.55">🚘</div>')+'<div class="row space mt"><h3>'+esc(model)+'</h3>'+badge(fleetConditionLabel(fleetCondition(car)))+'</div><p class="muted small">Номер: '+esc(plate)+'</p><p class="muted small">Гараж: '+esc(location)+'</p><p class="muted small">Відповідальний: '+esc(responsible)+'</p><button class="btn tiny secondary mt" data-action="view-record" data-module="vehicles" data-id="'+esc(car.id)+'">Деталі ↗</button></div>';
+  }).join('');
+  const history=applyFilters(loans.filter(x=>[x.title,x.details,x.extra?.vehicle,x.extra?.driver,x.extra?.action].some(v=>String(v||'').toLocaleLowerCase('uk').includes(query))));
+  return grouped(groupRoutes.fleet)+intro('Автопарк GRIZZLY','Транспорт сім’ї, технічний стан, відповідальні й журнал видачі.',can('fleet:manage')&&active==='vehicles'?'<button class="btn" data-action="new-record" data-module="vehicles">＋ Додати автомобіль</button>':'')+
+    '<div class="cards"><div class="card stat"><div class="muted small">Усього авто</div><div class="number">'+counts.total+'</div></div><div class="card stat"><div class="muted small">Справні</div><div class="number">'+counts.ready+'</div></div><div class="card stat"><div class="muted small">На ремонті</div><div class="number">'+counts.repair+'</div></div><div class="card stat"><div class="muted small">Недоступні</div><div class="number">'+counts.unavailable+'</div></div></div>'+
+    (active==='vehicles'?'<div class="toolbar mt">'+searchBar()+'<div class="row" style="flex-wrap:wrap;gap:6px">'+[['all','Усі'],['ready','Справні'],['repair','Ремонт'],['unavailable','Недоступні']].map(([value,label])=>'<button class="btn tiny secondary" aria-pressed="'+(condition===value)+'" data-action="fleet-condition" data-value="'+value+'">'+label+'</button>').join('')+'</div>'+exportButton('vehicles')+'</div>'+(filtered.length?'<div class="grid3 mt">'+cards+'</div>':empty('Автомобілів не знайдено','Додайте транспорт або змініть фільтри.')):
+      '<div class="toolbar mt">'+searchBar()+'<button class="btn tiny secondary" data-action="new-record" data-module="vehicle_loans">＋ Записати видачу / повернення</button>'+exportButton('vehicle_loans')+'</div><div class="notice mb">У журналі фіксуються RP-видача й повернення транспорту. Записи журналу не змінюють автоматично технічний стан автомобіля.</div>'+table(['Подія','Авто / номер','Водій','Дата','Дія'],history.map(x=>'<tr><td>'+esc(x.title)+'</td><td>'+esc(x.extra?.vehicle||'—')+'</td><td>'+esc(x.extra?.driver||'—')+'</td><td>'+date(x.created_at)+'</td><td><button class="btn tiny secondary" data-action="view-record" data-module="vehicle_loans" data-id="'+esc(x.id)+'">Відкрити ↗</button></td></tr>')));
+}
+async function groupPage(route){const mods=groupRoutes[route],active=state.sub[route]||mods[0];if(route==='discipline'&&!can('discipline:manage'))return intro('Доступ заборонено');return grouped(mods)+await renderModule(active);}
+
+function captCalendar(schedule){
+  const selected=state.captMonth||new Date().toISOString().slice(0,7);
+  const [year,month]=selected.split('-').map(Number);
+  const first=new Date(year,month-1,1);
+  const length=new Date(year,month,0).getDate();
+  const offset=(first.getDay()+6)%7;
+  const byDate=new Map();
+  for(const item of schedule){
+    const day=String(item.starts_at||'').slice(0,10);
+    if(!day.startsWith(selected+'-'))continue;
+    if(!byDate.has(day))byDate.set(day,[]);
+    byDate.get(day).push(item);
+  }
+  const days=['Пн','Вт','Ср','Чт','Пт','Сб','Нд'];
+  let cells=days.map(x=>'<div class="capt-weekday">'+x+'</div>').join('');
+  for(let i=0;i<offset;i++)cells+='<div class="capt-day muted capt-blank" aria-hidden="true"></div>';
+  for(let day=1;day<=length;day++){
+    const key=selected+'-'+String(day).padStart(2,'0');
+    const entries=(byDate.get(key)||[]).sort((a,b)=>a.starts_at.localeCompare(b.starts_at));
+    const events=entries.slice(0,3).map(rec=>
+      '<button type="button" class="capt-calendar-event '+(rec.module==='capt_matches'?'capt-match-event':'capt-training-event')+'" data-action="view-record" data-id="'+esc(rec.id)+'" data-module="'+rec.module+'" title="'+esc(rec.title)+'">'
+       +esc(rec.starts_at.slice(11,16))+' '+esc(rec.title)+'</button>').join('');
+    cells+='<div class="capt-day"><strong>'+day+'</strong>'+events+(entries.length>3?'<span class="small muted">+'+(entries.length-3)+' події</span>':'')+'</div>';
+  }
+  return '<section class="card capt-calendar"><div class="card-head"><h3>Календар CAPT</h3><div class="row"><button class="btn tiny ghost" data-action="capt-month" data-offset="-1" aria-label="Попередній місяць">‹</button><strong>'+esc(first.toLocaleDateString('uk-UA',{month:'long',year:'numeric'}))+'</strong><button class="btn tiny ghost" data-action="capt-month" data-offset="1" aria-label="Наступний місяць">›</button></div></div><div class="capt-calendar-scroll"><div class="capt-days">'+cells+'</div></div></section>';
+}
+async function captPage(){
+  const d=await api('/capt/overview');
+  const canManage=can('capt:manage'),canPay=can('finance:manage');
+  const schedule=[...d.matches.map(r=>({...r,kind:'Бій',module:'capt_matches'})),...d.trainings.map(r=>({...r,kind:'Тренування',module:'capt_training'}))];
+  const upcoming=schedule.filter(r=>r.starts_at&&new Date(r.starts_at).getTime()>=Date.now()&&!['Відхилено','Завершено'].includes(r.status))
+    .sort((a,b)=>a.starts_at.localeCompare(b.starts_at)).slice(0,6);
+  const results=d.matches.filter(r=>String(r.extra?.result||'').trim()||['win','loss','draw'].includes(r.extra?.outcome)).slice(0,8);
+  const pending=d.attendance.filter(r=>r.status==='Погоджено'&&r.paid===false);
+  const notices=d.rates?'<div class="notice mb">Ставки CAPT: AFK — <strong>'+fmt(d.rates.afk)+'</strong>, бій — <strong>'+fmt(d.rates.battle)+'</strong> (ігрова валюта). Лідер змінює ставки у «Налаштуваннях».</div>':'';
+  const upcomingRows=upcoming.map(r=>'<div class="capt-line"><div><strong>'+esc(r.title)+'</strong><div class="small muted">'+esc(r.kind)+' · '+esc(r.starts_at.replace('T',' '))+(r.extra?.opponent?' · '+esc(r.extra.opponent):'')+'</div></div><button class="btn tiny secondary" data-action="view-record" data-id="'+esc(r.id)+'" data-module="'+r.module+'">Відкрити</button></div>').join('')||empty('Поки немає запланованих боїв або тренувань');
+  const resultRows=results.map(r=>'<div class="capt-line"><div><strong>'+esc(r.title)+'</strong><div class="small muted">'+esc(r.extra?.opponent||'Суперника не вказано')+' · '+date(r.starts_at||r.created_at)+'</div></div><span class="capt-result">'+esc((({win:'Перемога',loss:'Поразка',draw:'Нічия',cancelled:'Скасовано'})[r.extra?.outcome]||'')+(r.extra?.result?' · '+r.extra.result:''))+'</span></div>').join('')||empty('Результатів ще немає');
+  const attendRows=[...d.attendance].sort((a,b)=>String(b.updated_at||'').localeCompare(String(a.updated_at||''))).slice(0,8).map(r=>
+    '<div class="capt-line"><div><strong>'+esc(userName(r.assignee_id||r.owner_id))+'</strong><div class="small muted">'+esc(r.title)+' · '+(r.extra?.attendance_type==='afk'?'AFK':'Бій')+' · '+date(r.created_at)+'</div></div><div class="capt-actions">'+badge(r.status)+(r.paid===true?'<span class="pill">Виплачено</span>':r.paid===false&&r.status==='Погоджено'?'<span class="pill">До виплати</span>':'')+'<button class="btn tiny secondary" data-action="view-record" data-id="'+esc(r.id)+'" data-module="capt_attendance">Деталі</button></div></div>').join('')||empty('Відвідувань ще не записано');
+  const stats=[['Бої',d.matches.length,'◎'],['Тренування',d.trainings.length,'◉'],
+    [canManage?'Записи відвідування':'Мої відвідування',d.attendance.length,'♟'],
+    [canPay?'Погоджено, не виплачено':'Погоджені відвідування',canPay?pending.length:d.attendance.filter(r=>r.status==='Погоджено').length,'₴']];
+  const statCards=stats.map(row=>'<div class="card stat"><span class="stat-symbol">'+row[2]+'</span><div class="muted small">'+esc(row[0])+'</div><div class="number">'+fmt(row[1])+'</div></div>').join('');
+  const resultsStats=d.results||{wins:0,losses:0,draws:0,played:0,win_rate:0};
+  const outcomeCards=[['Перемоги',resultsStats.wins],['Поразки',resultsStats.losses],['Нічиї',resultsStats.draws],['Відсоток перемог',resultsStats.win_rate+'%']].map(([label,value])=>'<div class="card stat"><div class="muted small">'+esc(label)+'</div><div class="number">'+esc(value)+'</div></div>').join('');
+  return intro('CAPT — командний склад','Планування боїв, відвідування, результати та контроль виплат.',
+       canManage?'<button class="btn" data-action="new-record" data-module="capt_matches">＋ Запланувати бій</button>':'<button class="btn" data-action="new-record" data-module="capt_attendance">＋ Моя участь</button>')
+    +'<div class="cards">'+statCards+'</div>'+'<div class="cards capt-scorecards">'+outcomeCards+'</div>' +captCalendar(schedule)+notices
+    +'<div class="grid2 capt-grid"><div class="card"><div class="card-head"><h3>Найближчі бої та тренування</h3>'
+    +(canManage?'<button class="btn tiny ghost" data-action="new-record" data-module="capt_training">＋ Тренування</button>':'')
+    +'</div>'+upcomingRows+'</div><div class="card"><div class="card-head"><h3>Останні результати боїв</h3></div>'+resultRows+'</div></div>'
+    +'<div class="card capt-attendance-card"><div class="card-head"><h3>Відвідуваність та виплати</h3><button class="btn tiny ghost" data-action="change-sub" data-value="capt_attendance">Усі записи</button></div>'+attendRows+'</div>'
+    +'<div class="notice mb">Нарахування CAPT можливе після погодження відвідування. Повторну виплату за тим самим записом система блокує.</div>'
+    +grouped(groupRoutes.capt)+await renderModule(state.sub.capt||groupRoutes.capt[0]);
+}
+
+async function applications(){
+  if(state.filter&&!applicationStatuses.includes(state.filter))state.filter='';
+  const all=(await api('/applications')).items;
+  const counts=Object.fromEntries(applicationStatuses.map(st=>[st,all.filter(a=>a.status===st).length]));
+  const list=applyFilters(all.filter(x=>searchMatch(x.nickname,x.game_id,x.status)));
+  const stats='<div class="row wrap mb">'+applicationStatuses.map(st=>'<span class="pill">'+esc(st)+': <strong>'+counts[st]+'</strong></span>').join('')+'</div>';
+  return `${intro('Заявки на вступ','Три стани: очікує, прийнято, відхилено. Нові заявки не створюють акаунтів.')}
+    ${stats}<div class="toolbar">${searchBar()}${filterControls(applicationStatuses)}${exportButton('applications')}<span class="muted small">${list.length} заявок</span></div>
+    ${table(['Кандидат','Досвід','Статус','Дата','Дії'],list.map(a=>`<tr><td class="table-title">${esc(a.nickname)}<div class="muted">ID: ${esc(a.game_id)} · ${esc(a.discord||'Без Discord')}</div></td><td class="wordwrap">${esc(a.experience.slice(0,80))}</td><td>${badge(a.status)}</td><td>${date(a.created_at)}</td><td><button class="btn tiny secondary" data-action="review-app" data-id="${esc(a.id)}">${a.status==='Очікує'?'Розглянути':'Переглянути'}</button></td></tr>`))}`;
+}
+async function appReview(id){
+  const app=(await api('/applications')).items.find(a=>a.id===id);
+  if(!app)return;
+  modal('Заявка · '+app.nickname,`<div class="stack"><div class="card flat">
+      <div><strong>Ігровий ID: ${esc(app.game_id)}</strong></div>
+      <div>Discord: ${esc(app.discord||'—')}</div>
+      <div>Досвід: ${esc(app.experience)}</div>
+      <div class="hr"></div><div class="longtext">${esc(app.motivation)}</div>
+    </div><form id="app-review-form" data-id="${esc(id)}" class="stack">
+      <div class="field"><label>Рішення щодо заявки</label><select class="select" name="status">${applicationStatuses.map(st=>`<option ${st===app.status?'selected':''}>${st}</option>`).join('')}</select></div>
+      ${field('Коментар рекрутера','comment',app.comment,'textarea',true)}
+      <button class="btn" type="submit">Зберегти статус</button>
+    </form><div class="notice">Статус «Прийнято» не створює акаунт. Лідер видає дані доступу окремо.</div></div>`);
+}
+async function contracts(){const list=applyFilters((await api('/contracts')).items.filter(x=>searchMatch(x.title,x.status,x.details)));return `${intro('Контракти','До виплати — точний розрахунок; після підтвердження — захист від повторного нарахування.',can('finance:manage')?'<button class="btn" data-action="new-contract">＋ Новий контракт</button>':'')}<div class="notice mb">Правило за замовчуванням: 20% до казни, решта порівну між учасниками. Відсоток задається керівником; округлення додається до казни.</div><div class="toolbar">${searchBar()}${filterControls()}${exportButton('contracts')}<span class="muted small">${list.length} контрактів</span></div>${table(['Контракт','Сума','Учасники','Казна','Статус','Дії'],list.map(c=>`<tr><td class="table-title">${esc(c.title)}<div class="muted">${esc(c.details.slice(0,85))}</div></td><td class="mono">${fmt(c.amount)}</td><td>${c.participant_ids.length}</td><td>${c.treasury_percent}%</td><td>${badge(c.status)}</td><td><button class="btn tiny secondary" data-action="view-contract" data-id="${c.id}">Деталі ↗</button></td></tr>`))}`;}
+async function contractForm(id){const old=id?(await api('/contracts')).items.find(c=>c.id===id):null;const s=await api('/settings');const c=old||{participant_ids:[],treasury_percent:s.items.treasury_percent||20};const checks=state.users.map(u=>`<label class="row small" style="gap:7px"><input type="checkbox" name="participant" value="${esc(u.id)}" ${c.participant_ids.includes(u.id)?'checked':''}>${esc(u.nickname||u.username)} (${esc(u.username)})</label>`).join('')||empty('Додайте учасників спочатку');modal(old?'Редагувати контракт':'Новий контракт',`<form id="contract-form" data-id="${esc(id||'')}" class="formgrid">${field('Назва *','title',c.title,'text',true,'required')}${field('Опис','details',c.details,'textarea',true)}${field('Сума (ціле число)','amount',c.amount??0,'number',false,'required min="0" step="1"')}${field('Відсоток казни','treasury_percent',c.treasury_percent,'number',false,'min="0" max="100"')}${statusField(c.status||'Заплановано')}<div class="field full"><label>Учасники контракту *</label><div class="card flat stack" style="max-height:220px;overflow:auto">${checks}</div></div>${field('Докази ImgBB (за рядками)','evidence',(c.evidence||[]).join('\n'),'textarea',true)}<div class="full form-actions"><button class="btn" type="submit">Зберегти контракт</button></div></form>`);}
+async function contractView(id){const c=(await api('/contracts')).items.find(x=>x.id===id);if(!c)return;const p=(await api(`/contracts/${id}/preview`)).preview;modal('Контракт · '+c.title,`<div class="stack"><div class="row space">${badge(c.status)}<span class="muted small">Версія: ${c.version}</span></div><p class="longtext">${esc(c.details)}</p><div class="grid2"><div class="card flat"><div class="muted small">Загальна сума</div><h2>${fmt(p.amount)}</h2></div><div class="card flat"><div class="muted small">Казна (${p.treasury_percent}%)</div><h2>${fmt(p.treasury)}</h2></div><div class="card flat"><div class="muted small">На учасника (${p.participants})</div><h2>${fmt(p.per_member)}</h2></div><div class="card flat"><div class="muted small">Залишок округлення → казна</div><h2>${fmt(p.rounding_remainder)}</h2></div></div><div class="card flat"><h3>Розподіл</h3><div class="stack mt">${p.allocations.map(a=>`<div class="row space small"><span>${esc(userName(a.user_id))}</span><strong>${fmt(a.amount)}</strong></div>`).join('')}</div></div>${links(c)}${c.settled_at?'<div class="notice">Виплати вже проведено. Повторне нарахування неможливе.</div>':''}${can('finance:manage')?`<div class="form-actions">${!c.settled_at?`<button class="btn secondary" data-action="edit-contract" data-id="${c.id}">Редагувати</button>`:''}${c.status==='Погоджено'&&!c.settled_at?`<button class="btn" data-action="settle-contract" data-id="${c.id}" data-version="${c.version}">✓ Підтвердити нарахування</button>`:''}</div>`:''}</div>`);}
+function financeTrendHtml(data){
+  const weeks=data.weeks||[],members=data.members||[];
+  const period=state.financeTrendPeriod||'12w',tab=state.financeTrendTab||'chart',hideEmpty=state.financeHideEmpty!==false;
+  const filtered=hideEmpty?weeks.filter(w=>w.income||w.expenses||w.earned):weeks;
+  const types=[['7','7 днів'],['30','30 днів'],['90','3 місяці'],['12w','12 тижнів'],['all','Увесь час']];
+  const tabs=[['chart','Графік'],['history','Тижнева історія'],['members','Учасники']];
+  const pills=arr=>arr.map(([id,label])=>'<button class="btn tiny secondary" data-action="'+(arr===types?'finance-trend-period':'finance-trend-tab')+'" data-value="'+id+'" aria-pressed="'+(arr===types?period===id:tab===id)+'">'+label+'</button>').join('');
+  const emptyText='<p class="muted small">За вибраний період фінансових операцій або контрактних виплат немає.</p>';
+  const max=Math.max(1,...filtered.flatMap(w=>[w.income,w.expenses]));
+  const line=(amount,color)=>'<span style="display:block;height:9px;border-radius:4px;background:'+color+';width:'+Math.max(0,Math.min(100,amount*100/max))+'%"></span>';
+  const barChart=filtered.map(w=>'<div style="display:grid;grid-template-columns:85px minmax(0,1fr) 130px;gap:10px;align-items:center;margin:9px 0"><span class="muted small">'+esc(w.week_start)+'</span><div style="display:grid;gap:3px">'+line(w.income,'#3d9c86')+line(w.expenses,'#db4d5d')+'</div><span class="mono small">'+fmt(w.income)+' / '+fmt(w.expenses)+'</span></div>').join('');
+  const balances=filtered.map(w=>Number(w.balance)||0);
+  const lower=Math.min(0,...balances,Number(data.opening_balance)||0),upper=Math.max(1,...balances,Number(data.opening_balance)||0);
+  const balanceBars=filtered.map(w=>{
+    const level=(Number(w.balance)-lower)/(upper-lower)*100;
+    return '<div style="display:grid;grid-template-columns:85px minmax(0,1fr) 110px;gap:10px;align-items:center;margin:6px 0"><span class="muted small">'+esc(w.week_start)+'</span><div style="height:9px;border-radius:4px;background:rgba(150,160,175,.16)"><span style="display:block;height:100%;width:'+Math.max(1,level)+'%;background:#7a9ac9;border-radius:4px"></span></div><span class="mono small">'+fmt(w.balance)+'</span></div>';
+  }).join('');
+  const history=table(['Тиждень','Надходження','Витрати','Зміна','Баланс'],filtered.map(w=>'<tr><td>'+esc(w.week_start)+'</td><td class="mono">'+fmt(w.income)+'</td><td class="mono">'+fmt(w.expenses)+'</td><td class="mono">'+fmt(w.net)+'</td><td class="mono">'+fmt(w.balance)+'</td></tr>'));
+  const term=String(state.financeMemberSearch||'').trim().toLocaleLowerCase('uk');
+  const matched=members.filter(m=>(m.nickname||m.username||'').toLocaleLowerCase('uk').includes(term));
+  const stats=table(['Учасник','Нараховано','Видано','Виплат','Активних тижнів'],matched.map(m=>'<tr><td>'+esc(m.nickname||m.username)+'</td><td class="mono">'+fmt(m.earned)+'</td><td class="mono">'+fmt(m.handed_over)+'</td><td>'+Number(m.payout_count)+'</td><td>'+m.weekly.filter(v=>v>0).length+'</td></tr>'));
+  const chartHtml=filtered.length?'<p class="muted small">Зелений — надходження, червоний — витрати (GTA$).</p>'+barChart+'<h3 class="mt">Накопичений баланс скарбниці</h3><p class="muted small">Враховано початковий баланс до обраного періоду.</p>'+balanceBars:emptyText;
+  const historyHtml=filtered.length?history:emptyText;
+  const memberHtml='<label class="muted small">Пошук за ніком <input class="input" id="finance-member-search" placeholder="Введіть нік" value="'+esc(state.financeMemberSearch||'')+'"></label><button class="btn tiny secondary" data-action="finance-member-search">Знайти</button>'+(matched.length?stats:'<p class="muted small">За вибраний період контрактних виплат немає або пошук не дав результатів.</p>');
+  return '<div class="card mt"><div class="card-head"><h3>Фінансова динаміка</h3></div><div class="row" style="flex-wrap:wrap;gap:6px">'+pills(types)+'</div><div class="row mt" style="flex-wrap:wrap;gap:6px">'+pills(tabs)+'</div><p class="muted small mt">Період від '+esc(data.from.slice(0,10))+' · '+esc(data.to.slice(0,10))+'</p>'+(tab!=='members'?'<label class="muted small"><input type="checkbox" id="finance-hide-empty" '+(hideEmpty?'checked':'')+'> Приховати порожні тижні</label><button class="btn tiny secondary" data-action="finance-empty-toggle">Застосувати</button>':'')+'<div class="mt">'+(tab==='chart'?chartHtml:tab==='history'?historyHtml:memberHtml)+'</div></div>';
+}
+function financeOutstandingHtml(data){
+  const people=Array.isArray(data.people)?data.people:[];
+  const items=table(['Учасник','Не видано','Нарахувань','Найдавніше'],people.map(p=>'<tr><td>'+esc(p.nickname||p.username)+'</td><td class="mono">'+fmt(p.amount)+'</td><td>'+Number(p.count)+'</td><td>'+date(p.oldest)+'</td></tr>'));
+  return '<div class="card mt"><div class="card-head"><h3>Невидані контрактні виплати</h3></div><div class="grid3"><div><span class="muted small">Очікують видачі</span><h3 class="mono">'+fmt(data.amount)+'</h3></div><div><span class="muted small">Кількість нарахувань</span><h3 class="mono">'+Number(data.count)+'</h3></div><div><span class="muted small">Найдавніша невидана виплата</span><h3>'+ (data.oldest?date(data.oldest):'—') +'</h3></div></div><p class="muted small mt">Це вже нараховані гроші, які ще не позначені як фактично передані в GTA RP. Баланс скарбниці від цього показника не змінюється.</p>'+(people.length?items:'<p class="muted small">Усі нараховані контрактні виплати видані або нарахувань ще немає.</p>')+'</div>';
+}
+function financeAnalyticsHtml(data){
+  const r=data.report;
+  const metric=(label,value)=>'<div><span class="muted small">'+esc(label)+'</span><h3 class="mono">'+fmt(value)+'</h3></div>';
+  const members=table(['Учасник','Зароблено','Видано','Виплат'],data.leaderboard.map((x,i)=>'<tr><td>'+esc((i+1)+'. '+(x.nickname||x.username))+'</td><td class="mono">'+fmt(x.earned)+'</td><td class="mono">'+fmt(x.handed_over)+'</td><td>'+Number(x.payout_count)+'</td></tr>'));
+  const contracts=table(['Контракт','Сума','Учасникам','Казна','Видано'],data.contracts.map(x=>'<tr><td>'+esc(x.title)+'</td><td class="mono">'+fmt(x.amount)+'</td><td class="mono">'+fmt(x.member_total)+'</td><td>'+Number(x.treasury_percent)+'%</td><td>'+Number(x.confirmed_count)+'/'+Number(x.payout_count)+'</td></tr>'));
+  return '<div class="card mt"><div class="card-head"><h3>Аналітика контрактів і заробітку</h3><div class="row"><button class="btn tiny secondary" data-action="finance-period" data-days="7">7 днів</button><button class="btn tiny secondary" data-action="finance-period" data-days="30">30 днів</button><button class="btn tiny secondary" data-action="finance-report-csv">↓ Звіт CSV</button></div></div><p class="muted small">Звіт за останні '+r.days+' днів. Зароблено — нараховано; видано — підтверджено передачу в GTA RP.</p><div class="grid3 mt">'+metric('Контракти з виплатами',r.contracts_count)+metric('Заробіток учасників',r.member_earned)+metric('Фактично видано',r.member_handed_over)+metric('Надходження казни',r.treasury_income)+metric('Витрати',r.expenses)+metric('Зміна казни',r.net_change)+'</div><h3 class="mt">Рейтинг заробітку</h3>'+members+'<h3 class="mt">Статистика контрактів</h3>'+contracts+'</div>';
+}
+async function finance(){const f=await api('/finance');const allowed=can('finance:read')||can('finance:manage');const analytics=allowed?await api('/finance/analytics?days='+(state.financeDays||7)):null;const trends=allowed?await api('/finance/trends?period='+(state.financeTrendPeriod||'12w')):null;const outstanding=allowed?await api('/finance/outstanding'):null;return `${intro('Фінанси та виплати',allowed?'Казна, надходження, витрати і нарахування учасникам.':'Тільки ваш власний баланс та підтверджені виплати.',can('finance:manage')?'<button class="btn" data-action="new-ledger">＋ Додати операцію</button>':'')}<div class="cards"><div class="card stat"><div class="muted small">Мої виплати</div><div class="number">${fmt(f.own_total)}</div></div>${allowed?`<div class="card stat"><div class="muted small">Баланс казни</div><div class="number">${fmt(f.treasury_balance)}</div></div><div class="card stat"><div class="muted small">Виплати за контрактами</div><div class="number">${fmt(f.payout_total)}</div></div><div class="card stat"><div class="muted small">Внески</div><div class="number">${fmt(f.totals.contribution||0)}</div></div>`:''}</div>${allowed&&f.month?`<div class="card mt"><div class="card-head"><h3>Фінансовий звіт · останні 30 днів</h3><span class="muted small">Показники казни й нарахування за період</span></div><div class="grid3 mt"><div><span class="muted small">Контракти → казна</span><h3 class="mono">+${fmt(f.month.contract_treasury)}</h3></div><div><span class="muted small">Внески</span><h3 class="mono">+${fmt(f.month.contributions)}</h3></div><div><span class="muted small">Витрати</span><h3 class="mono">−${fmt(f.month.expenses)}</h3></div><div><span class="muted small">Премії та CAPT</span><h3 class="mono">−${fmt(f.month.bonuses+f.month.capt)}</h3></div><div><span class="muted small">Зміна казни</span><h3 class="mono">${fmt(f.month.treasury_change)}</h3></div><div><span class="muted small">Нарахування учасникам за контрактами</span><h3 class="mono">${fmt(f.month.contract_payouts)}</h3><span class="muted small">${f.month.contract_payout_count} виплат</span></div></div><div class="notice mt">Контрактні виплати показані окремо: вони розподіляються з суми контракту й не списуються повторно з казни.</div></div>` :''}<div class="grid2 mt"><div class="card"><div class="card-head"><h3>Мої контрактні виплати</h3></div>${table(['Контракт','Сума','Дата'],f.own_payouts.map(p=>`<tr><td class="table-title">${esc(p.contract_title)}</td><td class="mono success">+${fmt(p.amount)}</td><td>${date(p.created_at)}</td></tr>`))}</div><div class="card"><div class="card-head"><h3>CAPT та премії</h3></div>${table(['Тип','Сума','Дата'],(f.own_extra||[]).map(p=>`<tr><td>${p.kind==='capt'?'CAPT':'Премія'}<div class="muted">${esc(p.description)}</div></td><td class="mono success">+${fmt(p.amount)}</td><td>${date(p.created_at)}</td></tr>`))}</div></div>${allowed?`<div class="card mt"><div class="card-head"><h3>Журнал казни</h3><button class="btn tiny secondary" data-action="view-ledger">Відкрити</button></div><div class="grid3">${Object.entries(f.totals).map(([k,v])=>`<div><span class="muted small">${esc(({treasury:'Контракти → казна',contribution:'Внески',expense:'Витрати',bonus:'Премії',capt:'CAPT'})[k]||k)}</span><h3 class="mono">${fmt(v)}</h3></div>`).join('')}</div></div>${allowed?`<div class="card mt"><div class="card-head"><h3>Видача контрактних виплат у грі</h3></div><p class="muted small">Нараховано ≠ фактично видано. Підтверджуйте лише після передачі грошей.</p>${table(['Контракт','Учасник','Сума','Нараховано','Стан','Дія'],(f.payment_rows||[]).map(p=>`<tr><td>${esc(p.contract_title)}</td><td>${esc(userName(p.user_id))}</td><td class="mono">${fmt(p.amount)}</td><td>${date(p.created_at)}</td><td>${p.confirmed_at?badge('Видано'):badge('Очікує')}</td><td>${p.confirmed_at?esc(userName(p.confirmed_by)):can('finance:manage')?`<button class="btn tiny secondary" data-action="confirm-payout" data-id="${esc(p.id)}">Підтвердити видачу</button>`:'—'}</td></tr>`))}</div>`:''}`:''}${outstanding?financeOutstandingHtml(outstanding):''}${analytics?financeAnalyticsHtml(analytics):''}${trends?financeTrendHtml(trends):''}`;}
+function financeRows(rows){const k=state.ledgerKind||'all',d=state.ledgerDays||'all',since=d==='all'?0:Date.now()-Number(d)*86400000;return rows.filter(r=>(k==='all'||r.kind===k)&&(!since||Date.parse(r.created_at)>=since));}
+function financeCsv(rows){const q=v=>'"'+String(v??'').replace(/^[=+@-]/,"'").replace(/"/g,'""')+'"';const data=[['Дата','Тип','Сума GTA$','Отримувач','Відповідальний','Опис'],...rows.map(r=>[r.created_at,r.kind,r.amount,userName(r.recipient_id),userName(r.actor_id),r.description])];const blob=new Blob(['\uFEFF'+data.map(x=>x.map(q).join(';')).join('\r\n')],{type:'text/csv;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='grizzly-finance-'+new Date().toISOString().slice(0,10)+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1500);}
+async function ledgerModal(){const all=(await api('/ledger')).items,rows=financeRows(all);const opts=(values,selected)=>values.map(([v,label])=>'<option value="'+v+'" '+(v===selected?'selected':'')+'>'+label+'</option>').join('');const kinds=[['all','Усі'],['treasury','Контракти'],['contribution','Внески'],['expense','Витрати'],['bonus','Премії'],['capt','CAPT']],periods=[['all','Увесь журнал'],['1','24 години'],['7','7 днів'],['30','30 днів'],['90','90 днів']];modal('Журнал фінансових операцій',`<div class="toolbar"><label>Тип <select class="select" id="ledger-kind">${opts(kinds,state.ledgerKind||'all')}</select></label><label>Період <select class="select" id="ledger-days">${opts(periods,state.ledgerDays||'all')}</select></label><button class="btn tiny secondary" data-action="ledger-filter">Застосувати</button><button class="btn tiny secondary" data-action="ledger-csv">↓ CSV</button></div><p class="muted small">Показано ${rows.length} із ${all.length} останніх операцій.</p>${table(['Дата','Тип','Сума','Кому','Відповідальний','Опис'],rows.map(r=>`<tr><td>${date(r.created_at)}</td><td>${esc(r.kind)}</td><td class="mono">${fmt(r.amount)}</td><td>${esc(userName(r.recipient_id))}</td><td>${esc(userName(r.actor_id))}</td><td>${esc(r.description)}</td></tr>`))}`);}
+function ledgerForm(){modal('Нова фінансова операція',`<form id="ledger-form" class="formgrid"><div class="field"><label>Тип операції</label><select class="select" name="kind"><option value="contribution">Внесок до казни</option><option value="expense">Витрата</option><option value="bonus">Премія учаснику</option><option value="capt">Виплата CAPT</option></select></div>${field('Сума','amount','0','number',false,'required min="1" step="1"')}${selectField('Отримувач (обов’язковий для премій та CAPT)','recipient_id',state.users,'',true)}${field('Підстава / коментар','description','','textarea',true)}<div class="notice full">CAPT-ставки змінюються керівником у налаштуваннях. Не дублюйте вже проведені виплати.</div><div class="full form-actions"><button class="btn" type="submit">Провести операцію</button></div></form>`);}
+async function stats(){const s=await api('/stats');const leaderboard=(state.period==='month'?s.leaderboard_month:s.leaderboard_week)||s.leaderboard||[];return `${intro('Статистика сім’ї','Активність за останні 7 і 30 днів. Рейтинг враховує погоджені й завершені записи.')}<div class="grid2"><div class="card"><h3>За 7 днів</h3><div class="grid3 mt">${Object.entries(s.week).map(([k,v])=>`<div><span class="muted small">${esc(({tasks:'Завдання',reports:'Звіти',events:'Заходи',income:'Надходження'})[k])}</span><h2>${fmt(v)}</h2></div>`).join('')}</div></div><div class="card"><h3>За 30 днів</h3><div class="grid3 mt">${Object.entries(s.month).map(([k,v])=>`<div><span class="muted small">${esc(({tasks:'Завдання',reports:'Звіти',events:'Заходи',income:'Надходження'})[k])}</span><h2>${fmt(v)}</h2></div>`).join('')}</div></div></div><div class="card mt"><div class="card-head"><h3>Рейтинг активності</h3><select id="period-filter" class="select" style="width:auto"><option value="week" ${state.period==='week'?'selected':''}>За 7 днів</option><option value="month" ${state.period==='month'?'selected':''}>За 30 днів</option></select></div>${table(['Учасник','Завершено','Бали'],leaderboard.map((x,i)=>`<tr><td>${i+1}. ${esc(userName(x.user_id))}</td><td>${x.completed}</td><td class="mono">${x.points}</td></tr>`))}</div>`;}
+async function auditPage(){const a=(await api('/audit')).items;return `${intro('Журнал змін','Хто, коли й що змінював. Доступ лише лідеру.')}<div class="toolbar">${searchBar()}</div>${table(['Дата','Користувач','Дія','Розділ','ID'],a.filter(x=>searchMatch(x.actor_name,x.action,x.entity,x.detail)).map(x=>`<tr><td>${esc(x.created_at.replace('T',' ').slice(0,19))}</td><td>${esc(x.actor_name)}</td><td>${esc(x.action)}<div class="muted">${esc(x.detail.slice(0,110))}</div></td><td>${esc(x.entity)}</td><td><span class="muted small">${esc(short(x.entity_id))}</span></td></tr>`))}`;}
+async function settingsPage(){const response=await api('/settings');const s=response.items;state.settingsVersions=response.versions||{};const discord=state.user.role==='leader'?await api('/discord/status'):null;
+if(discord)state.discordVersions=discord.versions||{};
+let discordLogs=[],discordLogError='';
+if(discord&&!discord.migrationRequired){
+  try{discordLogs=(await api('/discord/deliveries')).items||[];}catch(e){discordLogError=e.message;}
+}
+
+const discordLabel=discord?.reason==='missing'?'Секрет відсутній':discord?.reason==='invalid'?'Некоректний URL':discord?.configured?'Секрет знайдено':'Не підключено';
+const discordHelp=discord?.reason==='missing'?
+ 'Worker famaly не бачить DISCORD_WEBHOOK_URL. У Cloudflare відкрий Workers & Pages → famaly → Settings → Variables and Secrets → Add Secret → Deploy.':
+ discord?.reason==='invalid'?
+ 'Секрет існує, але адреса неправильна. Потрібен повний URL виду https://discord.com/api/webhooks/ID/TOKEN без зайвих лапок, параметрів або стороннього домену.':
+ 'Секрет виявлено, але зв’язок ще не перевірений. Натисни «Надіслати тестове повідомлення».';
+const discordNames={applications:'Нові заявки',decisions:'Рішення за заявками',events:'Опубліковані події',capt:'CAPT-оголошення',news:'Новини сім’ї',announcements:'Оголошення',test:'Тест webhook'};
+const discordSettingsHtml=discord&&!discord.migrationRequired?
+ '<form id="discord-preferences-form" class="gr-discord-settings">'+
+ ['applications','decisions','events','capt','news','announcements'].map(k=>
+   '<label class="gr-discord-switch"><span><strong>'+discordNames[k]+'</strong>'+
+   '<small>'+(discord.lockedByEnvironment?.[k]?'Вимкнено у змінних Cloudflare.':'Керуй сповіщеннями без зміни Cloudflare.')+'</small></span>'+
+   '<input type="checkbox" name="'+k+'" '+(discord.enabled?.[k]?'checked':'')+' '+(discord.lockedByEnvironment?.[k]?'disabled':'')+' aria-label="'+discordNames[k]+'"></label>'
+ ).join('')+
+ '<button class="btn secondary" type="submit">Зберегти перемикачі</button></form>':
+ '<div class="notice mt">Для перемикачів і журналу потрібно застосувати нову міграцію D1: <strong>0003_discord_notifications.sql та 0004_discord_capt_news.sql та 0005_discord_announcements.sql</strong>. Сповіщення продовжать працювати з поточними налаштуваннями до міграції.</div>';
+const discordRouteLabels={
+  applications:'Заявки',decisions:'Рішення',events:'Події',
+  capt:'CAPT',news:'Новини',announcements:'Оголошення'
+};
+const discordRouteSecrets={
+  applications:'DISCORD_WEBHOOK_APPLICATIONS',decisions:'DISCORD_WEBHOOK_DECISIONS',
+  events:'DISCORD_WEBHOOK_EVENTS',capt:'DISCORD_WEBHOOK_CAPT',
+  news:'DISCORD_WEBHOOK_NEWS',announcements:'DISCORD_WEBHOOK_ANNOUNCEMENTS'
+};
+const discordRoutesHtml=discord?
+ '<div class="gr-discord-routes"><h3>Окремі Discord-канали</h3>'+
+ '<p class="muted small">Для CAPT, Новин і Оголошень потрібні три різні webhook. Перші три категорії можуть використовувати чинний основний webhook або власні секрети.</p>'+
+ Object.keys(discordRouteLabels).map(kind=>{
+   const route=discord.routes?.[kind]||{configured:false,reason:'missing'};
+   const status=route.reason==='ready'?'Підключено':
+     route.reason==='duplicate'?'Повторюється webhook':
+     route.reason==='invalid'?'Некоректний URL':'Не підключено';
+   return '<div class="gr-discord-route"><div><strong>'+discordRouteLabels[kind]+'</strong>'+
+     '<small>Cloudflare Secret: <code>'+discordRouteSecrets[kind]+'</code></small></div>'+
+     '<span class="gr-discord-route-status '+(route.configured?'is-ready':'is-missing')+'">'+status+'</span>'+
+     '<button class="btn tiny secondary" type="button" data-action="discord-test-route" data-kind="'+kind+'" '+(route.configured?'':'disabled')+'>Тест каналу</button></div>';
+ }).join('')+'</div>':'';
+const appWebhookNames={
+  application_waiting:'Очікує',
+  application_accepted:'Прийнято',
+  application_rejected:'Відхилено'
+};
+const appWebhookSecrets={
+  application_waiting:'DISCORD_WEBHOOK_APPLICATIONS_WAITING',
+  application_accepted:'DISCORD_WEBHOOK_APPLICATIONS_ACCEPTED',
+  application_rejected:'DISCORD_WEBHOOK_APPLICATIONS_REJECTED'
+};
+const applicationWebhooksHtml=discord?
+ '<div class="gr-discord-routes"><h3>Webhook за статусами заявок</h3>'+
+ '<p class="muted small">Для трьох статусів можна вказати три різні Discord-канали. Якщо секрет не заданий, використовується старий webhook заявок або рішень — він позначений як «Загальний».</p>'+
+ Object.keys(appWebhookNames).map(kind=>{
+   const route=discord.applicationRoutes?.[kind]||{configured:false,reason:'missing'};
+   const status=route.reason==='ready'?'Окремий підключено':
+     route.reason==='legacy'?'Загальний webhook':
+     route.reason==='duplicate'?'Webhook повторюється':
+     route.reason==='invalid'?'Некоректний URL':'Не підключено';
+   return '<div class="gr-discord-route"><div><strong>Заявка: '+appWebhookNames[kind]+'</strong>'+
+     '<small>Cloudflare Secret: <code>'+appWebhookSecrets[kind]+'</code></small></div>'+
+     '<span class="gr-discord-route-status '+(route.separate?'is-ready':'is-missing')+'">'+status+'</span>'+
+     '<button class="btn tiny secondary" type="button" data-action="discord-test-route" data-kind="'+kind+'" '+(route.configured?'':'disabled')+'>Тест статусу</button></div>';
+ }).join('')+'</div>':'';
+const discordLogsHtml=discord&&!discord.migrationRequired?
+ '<div class="gr-discord-log"><div class="row space wrap"><h3>Журнал доставки</h3><span class="muted small">Останні 100 відправлень</span></div>'+
+ (discordLogError?'<div class="notice">'+esc(discordLogError)+'</div>':
+ discordLogs.length?'<div class="gr-discord-log-scroll"><table class="gr-discord-table"><thead><tr><th>Дата</th><th>Тип</th><th>Результат</th><th>Помилка</th></tr></thead><tbody>'+
+ discordLogs.map(e=>'<tr><td>'+esc(date(e.created_at))+'</td><td>'+esc(discordNames[e.kind]||e.kind)+'</td>'+
+ '<td><span class="gr-discord-result '+(e.status==='sent'?'is-success':'is-error')+'">'+(e.status==='sent'?'Надіслано':'Помилка')+'</span></td>'+
+ '<td>'+esc(e.status==='failed'?(e.http_status?'HTTP '+e.http_status:e.error_code==='network_error'?'Мережевий збій':'Помилка налаштувань'):'—')+'</td></tr>').join('')+
+ '</tbody></table></div>':'<p class="muted small">Історія порожня. Натисни кнопку тесту або дочекайся нової заявки.</p>')+
+ '</div>':'';
+return `${intro('Налаштування Grizzly','Редагування публічного сайту, правил, Discord та фінансових параметрів.')}<div class="card"><form id="settings-form" class="formgrid">${field('Назва сім’ї','family_name',s.family_name)}${field('Гасло','tagline',s.tagline)}${field('Історія сім’ї','history',s.history,'textarea',true)}${field('Посилання Discord','discord_url',s.discord_url,'url',true,'placeholder="https://discord.gg/..."')}${field('Правила','rules',s.rules,'textarea',true)}${field('Вимоги до кандидатів','requirements',s.requirements,'textarea',true)}${field('Відсоток казни від контрактів','treasury_percent',s.treasury_percent,'number',false,'min="0" max="100"')}${field('CAPT — ставка AFK','capt_afk_rate',s.capt_afk_rate,'number',false,'min="0"')}${field('CAPT — ставка за бій','capt_battle_rate',s.capt_battle_rate,'number',false,'min="0"')}<div class="full form-actions"><button class="btn" type="submit">Зберегти налаштування</button></div></form></div>${discord?'<div class="card mt"><div class="card-head"><h3>Discord-сповіщення</h3><span class="pill">'+discordLabel+'</span></div>'+
+    '<p class="muted small mt">Нові заявки, рішення, заходи, CAPT-оголошення, новини та звичайні оголошення. Webhook зберігається як секрет Cloudflare, не в D1.</p>'+ '<div class="notice mt">'+discordHelp+'</div>'+ 
+    '<div class="row wrap mt"><span class="pill">Заявки: '+(discord.categories.applications?'увімкнено':'вимкнено')+'</span>'+
+    '<span class="pill">Рішення: '+(discord.categories.decisions?'увімкнено':'вимкнено')+'</span>'+
+    '<span class="pill">Події: '+(discord.categories.events?'увімкнено':'вимкнено')+'</span>'+ 
+    '<span class="pill">CAPT: '+(discord.categories.capt?'увімкнено':'вимкнено')+'</span>'+ 
+    '<span class="pill">Новини: '+(discord.categories.news?'увімкнено':'вимкнено')+'</span>'+ 
+    '<span class="pill">Оголошення: '+(discord.categories.announcements?'увімкнено':'вимкнено')+'</span></div>'+
+    applicationWebhooksHtml+discordRoutesHtml+discordSettingsHtml+discordLogsHtml+
+    '<div class="row wrap mt"><button class="btn secondary" type="button" data-action="discord-test" '+(discord.configured?'':'disabled')+'>Надіслати тестове повідомлення</button>'+
+    '<button type="button" class="btn ghost" data-action="discord-refresh">Оновити статус</button><span class="muted small">Worker: famaly · Не надсилай webhook у чат.</span></div></div>':''}<div class="notice mt">Ставки CAPT застосовуються вручну при створенні виплат, щоб керівник контролював підставу нарахування. Права заступників задаються в особових справах.</div>`;}
+async function profile(){const u=state.user;const sessions=(await api('/auth/sessions')).items;return `${intro('Мій профіль','Особисті дані, пароль та активні сесії.')}<div class="grid2"><div class="card"><h3>${esc(u.nickname||u.username)}</h3><div class="stack mt"><div>Логін: <strong>${esc(u.username)}</strong></div><div>Роль доступу: <strong>${esc(roles[u.role])}</strong></div><div>Ігровий ранг: <strong>${esc(rankName(u.rank_id))}</strong></div><div>Напрямок: <strong>${esc(departmentName(u.department_id))}</strong></div><div>Ігровий ID: <strong>${esc(u.game_id||'—')}</strong></div><div>Discord: <strong>${esc(u.discord||'—')}</strong></div></div><button class="btn tiny secondary mt" data-action="edit-user" data-id="${u.id}">Редагувати профіль</button></div><div class="card"><h3>Зміна пароля</h3><form id="password-form" class="stack mt">${field('Поточний пароль','old_password','','password',true,'required')}${field('Новий пароль (12–128 символів)','new_password','','password',true,'minlength="12" required')}<button class="btn" type="submit">Змінити пароль і завершити сесії</button></form></div></div><div class="card mt"><div class="card-head"><h3>Сесії</h3><span class="muted small">Завершення доступу з інших пристроїв</span></div>${table(['Створено','Термін дії','Пристрій','Дія'],sessions.map(x=>`<tr><td>${date(x.created_at)}</td><td>${date(x.expires_at)}</td><td class="wordwrap">${esc(x.user_agent.slice(0,100))}</td><td>${x.revoked_at?badge('Завершено'):`<button class="btn tiny danger" data-action="revoke-session" data-id="${esc(x.id)}">Завершити</button>`}</td></tr>`))}</div>`;}
+async function render(){state.menu=false;let content='';try{if(!state.user){renderPublic();return;}if(['members','ranks','departments','contracts','settings','profile'].includes(state.route))await preload();switch(state.route){case'overview':content=await overview();break;case'members':content=await members();break;case'ranks':content=await ranks();break;case'departments':content=await departments();break;case'tasks':content=await renderModule('tasks');break;case'events':content=await renderModule('events');break;case'gallery':content=await galleryManager();break;case'public_news':content=await newsManager();break;case'public_team':content=await teamManager();break;case'public_achievements':content=await achievementsManager();break;case'public_calendar':content=await calendarManager();break;case'contracts':content=await contracts();break;case'capt':content=await captPage();break;case'fleet':content=await fleetPage();break;case'discipline':case'announcements':case'reports':content=await groupPage(state.route);break;case'finance':content=await finance();break;case'applications':content=await applications();break;case'stats':content=await stats();break;case'audit':content=await auditPage();break;case'settings':content=await settingsPage();break;case'profile':content=await profile();break;default:state.route='overview';content=await overview();}shell(content);}catch(e){if(e.status===401){state.user=null;state.route='overview';renderPublic();toast('Сесію завершено. Увійдіть повторно.',true);return;}shell(intro('Помилка завантаження',e.message)+`<button class="btn mt" data-action="refresh">Повторити</button>`);toast(e.message,true);}}
+async function navigate(route){const url=new URL(location.href);if(url.searchParams.has('view')){url.searchParams.delete('view');history.replaceState(history.state,'',url.pathname+url.search+url.hash);}state.route=route;state.search='';state.sort='new';state.filter='';state.menu=false;location.hash=route;await render();}
+async function initial(){try{state.public=await api('/public');}catch(e){state.public={settings:{tagline:'Сила в єдності.'},gallery:[]};toast('Не вдалося отримати публічні дані. Перевірте D1 та міграції.',true);}try{state.user=(await api('/auth/me')).user;}catch{state.user=null;}if(state.user){try{state.notifications=(await api('/notifications')).items;await preload();}catch(e){toast(e.message,true);}state.route=location.hash.replace('#','')||'overview';}if(new URL(location.href).searchParams.get('view')==='public'){renderPublic();return;}await render();}
+const lines=s=>String(s||'').split(/\n/).map(x=>x.trim()).filter(Boolean);
+function formData(f){return Object.fromEntries(new FormData(f).entries());}
+async function afterSaved(msg='Збережено'){closeModal();toast(msg);if(state.user){state.notifications=(await api('/notifications')).items;await preload();}if(['gallery','public_news','public_team','public_achievements','public_calendar'].includes(state.route))state.public=await api('/public');await render();}
+async function handleSubmit(e){const f=e.target;if(!f.id)return;e.preventDefault();const b=formData(f);const submit=f.querySelector('[type=submit]');if(submit)submit.disabled=true;try{switch(f.id){
+  case 'apply-form':await api('/apply','POST',b);f.reset();toast('Заявку надіслано. Очікуйте рішення рекрутера.');return;
+  case 'login-form':state.user=(await api('/auth/login','POST',b)).user;closeModal();state.notifications=(await api('/notifications')).items;await preload();await navigate('overview');toast('Вхід успішний');return;
+  case 'user-form':{const id=f.dataset.id,old=state.users.find(u=>u.id===id);let payload={...b};if(!id){delete payload.activity;delete payload.status;}else{payload.version=old.version;if(state.user.role==='leader'){payload.permissions=lines((b.permissions||'').replace(/,/g,'\n'));}else delete payload.permissions;}
+    const result=await api(id?`/users/${id}`:'/users',id?'PATCH':'POST',payload);if(!id){closeModal();await preload();await render();credentialReceipt(result.item.username,b.password,result.item.nickname);return;}await afterSaved('Особову справу оновлено');return;}
+  case 'rank-form':{const r=state.ranks.find(x=>x.id===Number(f.dataset.id));await api(`/ranks/${r.id}`,'PATCH',{title:b.title,requirements:b.requirements,checklist:lines(b.checklist),version:r.version});await afterSaved('Ранг оновлено');return;}
+  case 'department-form':{const d=state.departments.find(x=>x.id===f.dataset.id);await api(`/departments/${d.id}`,'PATCH',{...b,version:d.version});await afterSaved();return;}
+  case 'calendar-form':{
+    if(!can('content:manage'))throw new Error('Недостатньо прав');
+    const id=f.dataset.id,old=id?(await api('/records/public_calendar')).items.find(x=>x.id===id):null;
+    if(id&&!old)throw new Error('Захід не знайдено');
+    if(b.ends_at&&b.ends_at<=b.starts_at)throw new Error('Дата завершення має бути після початку');
+    await api(id?'/records/public_calendar/'+encodeURIComponent(id):'/records/public_calendar',id?'PATCH':'POST',{
+      title:b.title,details:b.description,status:b.status||'Заплановано',
+      starts_at:b.starts_at,ends_at:b.ends_at||'',extra:{category:b.category,location:b.location||''},version:old?.version
+    });
+    await afterSaved('Захід збережено');return;}
+  case 'achievement-form':{
+    if(!can('content:manage'))throw new Error('Недостатньо прав для досягнень');
+    const id=f.dataset.id,old=id?(await api('/records/public_achievements')).items.find(a=>a.id===id):null;
+    if(id&&!old)throw new Error('Досягнення не знайдено');
+    const photo=String(b.photo_url||'').trim();
+    if(photo&&!galleryPhoto({evidence:[photo]}))throw new Error('Фото має бути прямим HTTPS-посиланням ImgBB на JPG, PNG, WEBP або GIF');
+    const payload={title:b.title,details:b.description,status:b.status||'Заплановано',
+      evidence:photo?[photo]:[],extra:{category:b.category,achieved_on:b.achieved_on,featured:b.featured==='true'},version:old?.version};
+    await api(id?'/records/public_achievements/'+encodeURIComponent(id):'/records/public_achievements',id?'PATCH':'POST',payload);
+    await afterSaved('Досягнення збережено');return;}
+  case 'team-form':{
+    if(!can('content:manage'))throw new Error('Недостатньо прав для редагування публічних профілів');
+    const id=f.dataset.id,old=id?(await api('/records/public_team')).items.find(x=>x.id===id):null;
+    if(id&&!old)throw new Error('Профіль не знайдено');
+    const photo=String(b.photo_url||'').trim();
+    if(photo&&!galleryPhoto({evidence:[photo]}))throw new Error('Фото має бути прямим HTTPS-посиланням ImgBB на JPG, PNG, WEBP або GIF');
+    const payload={title:b.nickname,details:b.bio||'',status:b.status||'Заплановано',
+      evidence:photo?[photo]:[],extra:{position:b.position,sort_order:Number(b.sort_order??50)},version:old?.version};
+    await api(id?'/records/public_team/'+encodeURIComponent(id):'/records/public_team',id?'PATCH':'POST',payload);
+    await afterSaved('Профіль керівника збережено');return;}
+  case 'news-form':{
+    if(!can('content:manage'))throw new Error('Недостатньо прав для публікації');
+    const id=f.dataset.id,record=id?(await api('/records/public_news')).items.find(r=>r.id===id):null;
+    if(id&&!record)throw new Error('Новину не знайдено');
+    const payload={title:b.title,details:b.details,status:b.status||'Заплановано',evidence:[],
+      extra:{...record?.extra,news_category:b.category,featured:b.featured==='true'},version:record?.version};
+    await api(id?'/records/public_news/'+encodeURIComponent(id):'/records/public_news',id?'PATCH':'POST',payload);
+    await afterSaved('Новину збережено');return;}
+  case 'gallery-form':{
+    const id=f.dataset.id,old=id?(await api('/records/gallery')).items.find(x=>x.id===id):null;
+    const url=String(b.photo_url||'').trim();
+    if(!galleryPhoto({evidence:[url]}))throw new Error('Для галереї потрібне пряме HTTPS-посилання ImgBB на JPG, PNG, WEBP або GIF.');
+    const payload={title:b.title,details:b.details||'',status:b.status||'Заплановано',evidence:[url],
+      extra:{...old?.extra,gallery_category:b.category,featured:b.featured==='true'},version:old?.version};
+    await api(id?'/records/gallery/'+id:'/records/gallery',id?'PATCH':'POST',payload);
+    await afterSaved('Фотографію збережено');return;}
+  case 'record-form':{const mod=f.dataset.module,id=f.dataset.id;const rec=id?(await api(`/records/${mod}`)).items.find(x=>x.id===id):null;const payload={...b,evidence:lines(b.evidence),amount:Number(b.amount||0),version:rec?.version,extra:{...rec?.extra}};if(b.extra){try{payload.extra=JSON.parse(b.extra);}catch{throw new Error('Додаткові дані повинні бути коректним JSON');}}
+    Object.keys(b).filter(k=>k.startsWith('extra_')).forEach(k=>{payload.extra[k.slice(6)]=k==='extra_checklist_completed'||k==='extra_lineup'?lines(b[k]):b[k];delete payload[k];});
+    if(!b.starts_at)delete payload.starts_at;if(!b.ends_at)delete payload.ends_at;await api(id?`/records/${mod}/${id}`:`/records/${mod}`,id?'PATCH':'POST',payload);await afterSaved('Запис збережено');return;}
+  case 'review-form':{const mod=f.dataset.module,id=f.dataset.id,r=(await api(`/records/${mod}`)).items.find(x=>x.id===id);await api(`/records/${mod}/${id}/review`,'POST',{...b,version:r.version});await afterSaved('Рішення записано');return;}
+  case 'contract-form':{const id=f.dataset.id,old=id?(await api('/contracts')).items.find(x=>x.id===id):null;const participant_ids=[...f.querySelectorAll('[name=participant]:checked')].map(x=>x.value);await api(id?`/contracts/${id}`:'/contracts',id?'PATCH':'POST',{...b,participant_ids,amount:Number(b.amount),treasury_percent:Number(b.treasury_percent),evidence:lines(b.evidence),version:old?.version});await afterSaved('Контракт збережено');return;}
+  case 'app-review-form':{const a=(await api('/applications')).items.find(x=>x.id===f.dataset.id);await api(`/applications/${a.id}`,'PATCH',{...b,version:a.version});await afterSaved('Рішення щодо кандидата збережено');return;}
+  case 'ledger-form':await api('/ledger','POST',{...b,amount:Number(b.amount)});await afterSaved('Операцію проведено');return;
+  case 'discord-preferences-form':{
+    if(state.user?.role!=='leader')throw new Error('Недостатньо прав');
+    const enabled=Object.fromEntries(['applications','decisions','events','capt','news','announcements'].map(k=>[k,!!f.elements.namedItem(k)?.checked]));
+    await api('/discord/preferences','PATCH',{enabled,versions:state.discordVersions});
+    await render();toast('Discord-сповіщення оновлено');return;}
+  case 'settings-form':await api('/settings','PATCH',{...b,__versions:state.settingsVersions});state.public=await api('/public');await afterSaved('Налаштування оновлено');return;
+  case 'password-form':await api('/auth/password','POST',b);state.user=null;closeModal();renderPublic();toast('Пароль змінено. Увійдіть повторно.');return;
+  case 'reset-password-form':{const target=state.users.find(u=>u.id===f.dataset.id);await api(`/users/${f.dataset.id}/reset-password`,'POST',b);closeModal();await preload();await render();credentialReceipt(target?.username||'',b.password,target?.nickname||'',true);return;}
+} }catch(err){toast(err.message,true);if(err.status===409)toast('Оновіть сторінку перед повторним редагуванням.',true);}finally{if(submit)submit.disabled=false;}}
+document.addEventListener('submit',handleSubmit);
+document.addEventListener('input',e=>{if(e.target.name==='photo_url'&&e.target.closest('#gallery-form'))updateGalleryFormPreview();if(e.target.name==='photo_url'&&e.target.closest('#team-form'))updateTeamFormPreview();if(e.target.name==='photo_url'&&e.target.closest('#achievement-form'))updateAchievementPreview();if(e.target.id==='search-input'){state.search=e.target.value;const start=e.target.selectionStart;render().then(()=>{const v=$('#search-input');if(v){v.focus();try{v.setSelectionRange(start,start);}catch{}}});}});
+document.addEventListener('change',e=>{if(e.target.id==='status-filter'){state.filter=e.target.value;render();}if(e.target.id==='sort-select'){state.sort=e.target.value;render();}if(e.target.id==='period-filter'){state.period=e.target.value;render();}});
+document.addEventListener('click',async e=>{const back=e.target.closest('[data-backdrop]');if(back&&e.target===back){closeModal();return;}const t=e.target.closest('[data-action],[data-route]');if(!t)return;e.preventDefault();try{if(t.dataset.route){await navigate(t.dataset.route);return;}const act=t.dataset.action,id=t.dataset.id,mod=t.dataset.module;switch(act){
+  case 'show-login':loginModal();break;
+  case 'close-modal':closeModal();break;
+  case 'toggle-menu':$('.shell')?.classList.toggle('menu-open');break;
+  case 'refresh':await render();break;
+  case 'discord-refresh':{if(state.user?.role!=='leader')throw new Error('Недостатньо прав');await render();toast('Статус Discord оновлено');break;}
+  case 'discord-test-route':{if(state.user?.role!=='leader')throw new Error('Недостатньо прав');const kind=t.dataset.kind;const result=await api('/discord/test','POST',{kind});toast(result.message||'Тест надіслано');break;}
+  case 'discord-test':{if(state.user?.role!=='leader')throw new Error('Недостатньо прав');const result=await api('/discord/test','POST',{});toast(result.message||'Тест надіслано');break;}
+  case 'logout':await api('/auth/logout','POST');state.user=null;state.notifications=[];state.route='overview';state.search='';location.hash='home';renderPublic();toast('Ви вийшли з панелі');break;
+  case 'notifications':notifyPopup();break;
+  case 'read-notification':await api(`/notifications/${id}/read`,'POST');state.notifications=(await api('/notifications')).items;notifyPopup();await render();break;
+  case 'generate-login':{
+    const form=$('#user-form');if(!form||form.dataset.id)break;
+    const nickname=form.querySelector('[name="nickname"]')?.value||'';
+    const username=GrizzlyCredentials.generateLogin(nickname,state.users.map(u=>u.username));
+    form.querySelector('[name="username"]').value=username;
+    toast('Логін згенеровано');break;}
+  case 'generate-temp-password':{
+    const input=document.querySelector('#user-form input[name="password"], #reset-password-form input[name="password"]');
+    if(!input)break;
+    input.value=GrizzlyCredentials.generatePassword();
+    toast('Надійний пароль згенеровано');break;}
+  case 'toggle-temp-password':{
+    const input=document.querySelector('#credential-receipt-password, #user-form input[name="password"], #reset-password-form input[name="password"]');
+    if(input)input.type=input.type==='password'?'text':'password';
+    break;}
+  case 'copy-access-invite':{
+    const username=$('#credential-receipt-login')?.value, password=$('#credential-receipt-password')?.value;
+    if(!username||!password)break;
+    await navigator.clipboard.writeText(`🐻 GRIZZLY FAMILY | Особистий доступ\n🌐 ${location.origin}/\n👤 Логін: ${username}\n🔐 Тимчасовий пароль: ${password}\nПісля входу змініть пароль у «Мій профіль». Не передавайте його іншим.`);
+    toast('Дані доступу скопійовано — надішліть особисто');break;}
+  case 'new-user':await preload();userForm();break;
+  case 'edit-user':await preload();userForm(id);break;
+  case 'reset-password':modal('Скидання пароля',`<div class="notice mb">Усі активні сесії цього учасника буде завершено.</div><form id="reset-password-form" data-id="${esc(id)}" class="stack">${field('Новий пароль (від 12 символів)','password','','password',true,'required minlength="12"')}<button type="button" class="btn tiny secondary" data-action="generate-temp-password">Згенерувати надійний пароль</button><button type="button" class="btn tiny ghost" data-action="toggle-temp-password">Показати / приховати</button><button class="btn danger" type="submit">Скинути пароль</button></form>`);break;
+  case 'preview-rank-templates':{
+     const placeholders=state.ranks.filter(r=>Number(r.is_example)===1&&r.title===`Ранг ${String(r.id).padStart(2,'0')} — приклад`);
+     modal('15 рангів Grizzly',`<p class="modal-desc">Заповнити ${placeholders.length} стандартних рангів готовими редагованими прикладами? Уже налаштовані ранги не зміняться. Роль доступу до сайту не залежить від рангу.</p><div class="stack">${state.rankTemplates.map(r=>`<div class="row space"><strong>${r.id}. ${esc(r.title)}</strong><span class="muted small">${r.checklist.length} умов</span></div>`).join('')}</div><div class="form-actions mt"><button class="btn ghost" data-action="close-modal">Скасувати</button><button class="btn" data-action="apply-rank-templates">Заповнити ${placeholders.length} рангів</button></div>`);
+     break;}
+   case 'apply-rank-templates':{
+     const expected=state.ranks.filter(r=>Number(r.is_example)===1&&r.title===`Ранг ${String(r.id).padStart(2,'0')} — приклад`).map(r=>({id:r.id,version:r.version}));
+     if(!expected.length){closeModal();toast('Усі ранги вже заповнено');break;}
+     const result=await api('/ranks/apply-templates','POST',{expected});
+     await afterSaved(`Заповнено ${result.updated} рангів. Можна редагувати кожен окремо.`);break;}
+  case 'edit-rank':rankForm(id);break;
+  case 'edit-department':departmentForm(id);break;
+  case 'new-record':await preload();if(mod==='gallery')galleryForm();else if(mod==='public_news')newsForm();else if(mod==='public_team')teamForm();else if(mod==='public_achievements')achievementForm();else moduleForm(mod);break;
+  case 'edit-record':{const r=(await api(`/records/${mod}`)).items.find(x=>x.id===id);await preload();if(mod==='gallery')galleryForm(r);else if(mod==='public_news')newsForm(r);else if(mod==='public_team')teamForm(r);else if(mod==='public_achievements')achievementForm(r);else moduleForm(mod,r);break;}
+  case 'calendar-new':{
+    if(!can('content:manage'))throw new Error('Недостатньо прав');calendarForm();break;}
+  case 'calendar-edit':{
+    if(!can('content:manage'))throw new Error('Недостатньо прав');
+    const rec=(await api('/records/public_calendar')).items.find(x=>x.id===id);
+    if(!rec)throw new Error('Захід не знайдено');calendarForm(rec);break;}
+  case 'calendar-publish':{
+    if(!can('content:manage'))throw new Error('Недостатньо прав');
+    const rec=(await api('/records/public_calendar')).items.find(x=>x.id===id);
+    if(!rec)throw new Error('Захід не знайдено');
+    await api('/records/public_calendar/'+encodeURIComponent(id),'PATCH',{version:rec.version,status:t.dataset.status});
+    await afterSaved(t.dataset.status==='Погоджено'?'Захід опубліковано':'Захід приховано');break;}
+  case 'calendar-delete':{
+    if(!can('content:manage'))throw new Error('Недостатньо прав');
+    if(!confirm('Видалити публічний захід?'))break;
+    const rec=(await api('/records/public_calendar')).items.find(x=>x.id===id);
+    if(!rec)throw new Error('Захід не знайдено');
+    await api('/records/public_calendar/'+encodeURIComponent(id),'DELETE',{version:rec.version});
+    await afterSaved('Захід видалено');break;}
+  case 'public-calendar-filter':{
+    state.calendarCategory=t.dataset.category||'all';
+    const node=$('#gr-calendar-content');if(node)node.innerHTML=renderPublicCalendar();break;}
+  case 'public-calendar-prev':
+  case 'public-calendar-next':{
+    const [year,month]=grCalendarMonthValue().split('-').map(Number);
+    const d=new Date(Date.UTC(year,month-1+(act==='public-calendar-prev'?-1:1),1));
+    state.calendarMonth=d.getUTCFullYear()+'-'+String(d.getUTCMonth()+1).padStart(2,'0');
+    const node=$('#gr-calendar-content');if(node)node.innerHTML=renderPublicCalendar();break;}
+  case 'achievement-new':{
+    if(!can('content:manage'))throw new Error('Недостатньо прав');
+    achievementForm();break;}
+  case 'achievement-edit':{
+    if(!can('content:manage'))throw new Error('Недостатньо прав');
+    const old=(await api('/records/public_achievements')).items.find(a=>a.id===id);
+    if(!old)throw new Error('Досягнення не знайдено');
+    achievementForm(old);break;}
+  case 'achievement-publish':{
+    if(!can('content:manage'))throw new Error('Недостатньо прав');
+    const old=(await api('/records/public_achievements')).items.find(a=>a.id===id);
+    if(!old)throw new Error('Досягнення не знайдено');
+    await api('/records/public_achievements/'+encodeURIComponent(id),'PATCH',{version:old.version,status:t.dataset.status});
+    await afterSaved(t.dataset.status==='Погоджено'?'Досягнення опубліковано':'Досягнення приховано');break;}
+  case 'achievement-delete':{
+    if(!can('content:manage'))throw new Error('Недостатньо прав');
+    if(!confirm('Видалити це досягнення з історії GRIZZLY?'))break;
+    const old=(await api('/records/public_achievements')).items.find(a=>a.id===id);
+    if(!old)throw new Error('Досягнення не знайдено');
+    await api('/records/public_achievements/'+encodeURIComponent(id),'DELETE',{version:old.version});
+    await afterSaved('Досягнення видалено');break;}
+  case 'achievement-admin-filter':state.achievementAdminFilter=t.dataset.category||'all';await render();break;
+  case 'achievement-filter':{
+    state.achievementFilter=t.dataset.category||'all';
+    const block=$('#gr-achievements-content');
+    if(block)block.innerHTML=renderPublicAchievements();
+    break;}
+  case 'team-new':if(!can('content:manage'))throw new Error('Недостатньо прав');teamForm();break;
+  case 'team-edit':{
+    if(!can('content:manage'))throw new Error('Недостатньо прав');
+    const item=(await api('/records/public_team')).items.find(x=>x.id===id);
+    if(!item)throw new Error('Профіль не знайдено');teamForm(item);break;}
+  case 'team-delete':{
+    if(!can('content:manage'))throw new Error('Недостатньо прав');
+    if(!confirm('Назавжди видалити цей публічний профіль?'))break;
+    const item=(await api('/records/public_team')).items.find(x=>x.id===id);
+    if(!item)throw new Error('Профіль не знайдено');
+    await api('/records/public_team/'+encodeURIComponent(id),'DELETE',{version:item.version});
+    await afterSaved('Профіль видалено');break;}
+  case 'team-publish':{
+    if(!can('content:manage'))throw new Error('Недостатньо прав');
+    const item=(await api('/records/public_team')).items.find(x=>x.id===id);
+    if(!item)throw new Error('Профіль не знайдено');
+    await api('/records/public_team/'+encodeURIComponent(id),'PATCH',{version:item.version,status:t.dataset.status});
+    await afterSaved(t.dataset.status==='Погоджено'?'Профіль опубліковано':'Профіль приховано');break;}
+  case 'news-new':if(!can('content:manage'))throw new Error('Недостатньо прав');newsForm();break;
+  case 'news-edit':{
+    if(!can('content:manage'))throw new Error('Недостатньо прав');
+    const item=(await api('/records/public_news')).items.find(x=>x.id===id);
+    if(!item)throw new Error('Новину не знайдено');newsForm(item);break;}
+  case 'news-publish':{
+    if(!can('content:manage'))throw new Error('Недостатньо прав');
+    const item=(await api('/records/public_news')).items.find(x=>x.id===id);
+    if(!item)throw new Error('Новину не знайдено');
+    await api('/records/public_news/'+encodeURIComponent(id),'PATCH',{version:item.version,status:t.dataset.status});
+    await afterSaved(t.dataset.status==='Погоджено'?'Новину опубліковано':'Новину приховано');break;}
+  case 'gallery-new':galleryForm();break;
+  case 'gallery-admin-filter':state.galleryAdminFilter=t.dataset.category||'all';await render();break;
+  case 'gallery-publish':{
+    if(!can('content:manage'))throw new Error('Недостатньо прав');
+    const item=(await api('/records/gallery')).items.find(x=>x.id===id);
+    if(!item)throw new Error('Запис галереї не знайдено');
+    if(t.dataset.status==='Погоджено'&&!galleryPhoto(item))throw new Error('Для публікації потрібне пряме посилання на зображення ImgBB. Відредагуйте фото.');
+    await api('/records/gallery/'+id,'PATCH',{version:item.version,status:t.dataset.status});
+    await afterSaved(t.dataset.status==='Погоджено'?'Фото опубліковано на головній':'Фото знято з публікації');break;}
+  case 'gallery-filter':state.galleryFilter=t.dataset.category||'all';{
+    const node=$('#gr-gallery-content');if(node)node.innerHTML=renderPublicGallery();break;}
+  case 'gallery-open':publicGalleryLightbox(id);break;
+  case 'gallery-step':publicGalleryStep(Number(t.dataset.offset)||0);break;
+  case 'view-record':await preload();await viewRecord(mod,id);break;
+  case 'review-record':reviewModal(mod,id);break;
+  case 'delete-record':{if(!confirm('Видалити цей запис?'))return;const r=(await api(`/records/${mod}`)).items.find(x=>x.id===id);await api(`/records/${mod}/${id}`,'DELETE',{version:r.version});await afterSaved('Запис видалено');break;}
+  case 'capt-month':{
+    const current=state.captMonth||new Date().toISOString().slice(0,7);
+    const [year,month]=current.split('-').map(Number);
+    const next=new Date(year,month-1+Number(t.dataset.offset||0),1);
+    state.captMonth=next.getFullYear()+'-'+String(next.getMonth()+1).padStart(2,'0');
+    await render();break;}
+  case 'capt-join':
+  case 'capt-leave':{
+    await api('/capt/matches/'+encodeURIComponent(id)+'/signups','POST',{action:act==='capt-join'?'join':'leave'});
+    await renderCaptSignupPanel(id);toast(act==='capt-join'?'Запис на CAPT збережено':'Запис на CAPT скасовано');break;}
+  case 'change-sub':state.sub[state.route]=t.dataset.value;state.search='';state.filter='';await render();break;
+  case 'fleet-condition':state.fleetCondition=t.dataset.value||'all';await render();break;
+  case 'review-app':await appReview(id);break;
+  case 'new-contract':await preload();await contractForm();break;
+  case 'edit-contract':await preload();await contractForm(id);break;
+  case 'view-contract':await preload();await contractView(id);break;
+  case 'settle-contract':{if(!confirm('Підтвердити остаточне нарахування? Дія незворотна.'))return;await api(`/contracts/${id}/settle`,'POST',{version:Number(t.dataset.version)});await afterSaved('Виплати проведено рівно один раз');break;}
+  case 'capt-pay':{if(!confirm('Нарахувати CAPT-виплату за погодженим записом за поточною ставкою?'))return;const r=await api(`/capt-pay/${id}`,'POST');await afterSaved(`CAPT-виплату ${fmt(r.amount)} нараховано`);break;}
+  case 'copy-template':{const rec=(await api('/records/templates')).items.find(x=>x.id===id);if(!rec)return;let content=rec.details||rec.title;for(const placeholder of ['час','місце','ім’я']){const key='{'+placeholder+'}';if(content.includes(key)){const value=prompt(`Значення для ${key}`, '')||'';content=content.replaceAll(key,value);}}await navigator.clipboard.writeText(content);toast('Текст скопійовано');break;}
+  case 'export':{const result=await api(`/export?module=${mod}`);const blob=new Blob([JSON.stringify(result,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`grizzly-${mod}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1500);toast('Експорт створено');break;}
+  case 'new-ledger':await preload();ledgerForm();break;
+  case 'view-ledger':await ledgerModal();break;
+  case 'finance-period':state.financeDays=Number(t.dataset.days)===30?30:7;await render();break;
+  case 'finance-trend-period':state.financeTrendPeriod=t.dataset.value||'12w';await render();break;
+  case 'finance-trend-tab':state.financeTrendTab=t.dataset.value||'chart';await render();break;
+  case 'finance-empty-toggle':state.financeHideEmpty=document.getElementById('finance-hide-empty')?.checked!==false;await render();break;
+  case 'finance-member-search':state.financeMemberSearch=document.getElementById('finance-member-search')?.value||'';await render();break;
+  
+  case 'finance-report-csv':{
+    if(!can('finance:read')&&!can('finance:manage'))throw new Error('Недостатньо прав');
+    const data=await api('/finance/analytics?days='+(state.financeDays||7));
+    const q=v=>'"'+String(v??'').replace(/^[=+@-]/,"'").replace(/"/g,'""')+'"';
+    const rows=[['GRIZZLY Finance',data.report.days+' днів'],['Період від',data.report.from],['Період до',data.report.to],['Надходження',data.report.treasury_income],['Витрати',data.report.expenses],['Зміна казни',data.report.net_change],['Контрактів',data.report.contracts_count],['Нараховано учасникам',data.report.member_earned],['Видано в грі',data.report.member_handed_over],[],['Учасник','Нараховано','Видано','Виплат'],...data.leaderboard.map(r=>[r.nickname||r.username,r.earned,r.handed_over,r.payout_count])];
+    const blob=new Blob(['\uFEFF'+rows.map(r=>r.map(q).join(';')).join('\r\n')],{type:'text/csv;charset=utf-8'});
+    const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='grizzly-finance-report-'+data.report.days+'d.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1500);toast('Звіт CSV створено');break;
+  }
+
+  case 'ledger-filter':state.ledgerKind=document.getElementById('ledger-kind')?.value||'all';state.ledgerDays=document.getElementById('ledger-days')?.value||'all';await ledgerModal();break;
+  case 'ledger-csv':financeCsv(financeRows((await api('/ledger')).items));toast('CSV створено');break;
+  case 'confirm-payout':{if(!can('finance:manage'))throw new Error('Недостатньо прав');if(!confirm('Кошти вже фактично передані гравцю в GTA RP? Підтвердження незворотне.'))return;await api('/payouts/'+encodeURIComponent(id)+'/confirm','POST',{note:''});await render();toast('Фактичну видачу підтверджено');break;}
+
+  case 'rsvp':await api(`/rsvp/${id}`,'POST',{response:t.dataset.value});await viewRecord('events',id);toast('Участь оновлено');break;
+  case 'revoke-session':await api(`/auth/sessions/${id}`,'DELETE');await render();toast('Сесію завершено');break;
+}}catch(err){toast(err.message,true);if(err.status===409)toast('Дані вже змінені. Оновіть розділ.',true);}});
+window.addEventListener('hashchange',()=>{
+  if(!state.user||new URL(location.href).searchParams.get('view')==='public')renderPublic();
+});
+initial();
+,'cost',0,'number',false,'min="0" step="1"'):'')+
+    '<div class="full form-actions"><button type="button" class="btn ghost" data-action="close-modal">Скасувати</button><button type="submit" class="btn">'+esc(options[action])+'</button></div></form>';
+  modal(options[action]+' · '+record.title,fields);
+}
 function moduleForm(mod,r){const cfg=moduleInfo[mod],isEdit=!!r;const canManage=can(cfg[2]);const x=r||{};const fields=`<form id="record-form" data-module="${mod}" data-id="${esc(r?.id||'')}" class="formgrid">${field('Назва / тема *','title',x.title,'text',true,'required maxlength="160"')}${field('Опис / RP-звіт','details',x.details,'textarea',true)}${recordExtraFields(mod,r)}${canManage?`${statusField(x.status||'Заплановано')}${selectField('Виконавець','assignee_id',state.users,x.assignee_id)}${selectField('Напрямок','department_id',state.departments,x.department_id)}${field('Сума / винагорода (ігрова валюта)','amount',x.amount||0,'number',false,'min="0" step="1"')}${field('Початок','starts_at',formatDateField(x.starts_at),'datetime-local')}${field('Термін / завершення','ends_at',formatDateField(x.ends_at),'datetime-local')}`:''}${field('Докази ImgBB (кожне посилання з нового рядка)','evidence',evidenceText(x),'textarea',true)}${canManage?field('Додаткові дані (JSON: склад, номер ТЗ, стан, чекліст тощо)','extra',JSON.stringify(x.extra||{},null,2),'textarea',true):''}<div class="full form-actions"><button type="button" class="btn ghost" data-action="close-modal">Скасувати</button><button type="submit" class="btn">${isEdit?'Зберегти':'Створити'}</button></div></form>`;modal(`${isEdit?'Редагувати':'Створити'} · ${cfg[0]}`,`${isEdit?`<div class="notice mb">Запис із перевіркою версії: чужі зміни не будуть перезаписані.</div>`:''}${fields}`);}
 async function viewRecord(mod,id){const rows=(await api(`/records/${mod}`)).items;const r=rows.find(x=>x.id===id);if(!r)return toast('Запис недоступний',true);const payoutState=mod==='capt_attendance'?(await api('/capt/overview')).attendance.find(x=>x.id===id):null;const canManage=can(moduleInfo[mod][2])&&(state.user.role!=='head'||r.department_id===state.user.department_id);const canEdit=canManage||((r.owner_id===state.user.id||r.assignee_id===state.user.id)&&['reports','promotions','capt_attendance','vehicle_loans','tasks'].includes(mod));const review=canManage&&['reports','promotions'].includes(mod)&&r.owner_id!==state.user.id;const status=mod==='events'?`<div class="hr"></div><div id="rsvp-content" class="muted small">Завантаження учасників…</div>`:'';modal(r.title,`<div class="stack"><div class="row space">${badge(r.status)}<span class="muted small">v${r.version} · ${date(r.updated_at)}</span></div><div class="longtext">${esc(r.details||'Опис не додано')}</div><div class="small muted">Відповідальний: ${esc(userName(r.assignee_id||r.owner_id))} · ${esc(departmentName(r.department_id))}</div>${r.amount?`<div class="small">Винагорода: <strong>${fmt(r.amount)}</strong></div>`:''}${r.starts_at?`<div class="small">Початок: ${esc(r.starts_at.replace('T',' '))}</div>`:''}${links(r)}${Object.keys(r.extra||{}).length?`<div class="card flat"><strong>Додаткова інформація</strong><div class="stack mt small">${Object.entries(r.extra).filter(([k])=>k!=='review_nonce').map(([k,v])=>`<div><span class="muted">${esc(({requested_rank_id:'Цільовий ранг',checklist_completed:'Виконані умови',opponent:'Суперник',place:'Місце',lineup:'Склад на бій',result:'Результат',attendance_type:'Тип участі',match_id:'Бій / тренування',plate:'Номер ТЗ',condition:'Стан',responsible:'Відповідальний',review_comment:'Коментар керівника'})[k]||k)}:</span> <strong>${esc(Array.isArray(v)?v.join(', '):v)}</strong></div>`).join('')}</div></div>`:''}${status}${mod==='capt_matches'?'<div class="hr"></div><section id="capt-signup-panel" class="stack"><p class="muted">Завантаження списку учасників…</p></section>':''}<div class="form-actions">${review?`<button class="btn secondary" data-action="review-record" data-module="${mod}" data-id="${id}">Перевірити</button>`:''}${canEdit?`<button class="btn" data-action="edit-record" data-module="${mod}" data-id="${id}">Редагувати</button>`:''}${mod==='templates'?`<button class="btn secondary" data-action="copy-template" data-id="${id}">Копіювати текст</button>`:''}${mod==='capt_attendance'&&payoutState?.paid===true?'<span class="pill">CAPT-виплату проведено</span>':mod==='capt_attendance'&&r.status==='Погоджено'&&can('finance:manage')?`<button class="btn" data-action="capt-pay" data-id="${id}">₴ Нарахувати CAPT</button>`:''}${canManage?`<button class="btn danger" data-action="delete-record" data-module="${mod}" data-id="${id}">Видалити</button>`:''}</div></div>`);if(mod==='capt_matches')await renderCaptSignupPanel(id);if(mod==='events'){try{const rs=await api(`/rsvp/${id}`);const el=$('#rsvp-content');if(el)el.innerHTML=`<div class="row wrap"><strong>Моя участь: ${esc(rs.own||'Не підтверджено')}</strong><span class="muted">Так: ${rs.counts.yes} · Ні: ${rs.counts.no}</span></div><div class="row mt"><button class="btn tiny" data-action="rsvp" data-id="${id}" data-value="Так">✓ Буду</button><button class="btn tiny ghost" data-action="rsvp" data-id="${id}" data-value="Ні">Не зможу</button></div>${rs.items.length?`<div class="muted small mt">${rs.items.map(i=>`${esc(userName(i.user_id))}: ${esc(i.response)}`).join(' · ')}</div>`:''}`;}catch(e){toast(e.message,true);}}}
 async function renderCaptSignupPanel(id){
