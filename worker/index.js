@@ -706,9 +706,9 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
       if(newAmount<=c.amount)fail(400,'Нова сума повинна бути більшою за стару');
       if(reason.length<10)fail(400,'Вкажіть причину коригування (мінімум 10 символів)');
       const ids=parseJson(c.participant_ids,[]),previous=payoutPreview(c.amount,c.treasury_percent,ids),next=payoutPreview(newAmount,c.treasury_percent,ids);
-      const rows=await allRows(db,'SELECT p.id,p.user_id,p.amount,pc.confirmed_at FROM payouts p LEFT JOIN payout_confirmations pc ON pc.payout_id=p.id WHERE p.contract_id=?',c.id);
+      const rows=await allRows(db,'SELECT p.id,p.user_id,p.amount,pc.confirmed_at,pc.confirmed_by,pc.note FROM payouts p LEFT JOIN payout_confirmations pc ON pc.payout_id=p.id WHERE p.contract_id=?',c.id);
       const ledgerEntry=await db.prepare("SELECT id,amount FROM ledger WHERE reference=? AND kind='treasury'").bind('contract:'+c.id).first();
-      if(rows.length!==ids.length||rows.some(p=>!ids.includes(p.user_id)||p.amount!==0)||previous.per_member!==0||
+      if(rows.length!==ids.length||rows.some(p=>!ids.includes(p.user_id)||p.amount!==0)||previous.per_member!==0||next.per_member<=0||
         !ledgerEntry||ledgerEntry.amount!==previous.treasury)
         fail(409,'Автоматичне коригування дозволене лише для раніше нульових виплат з узгодженим обліком. Зверніться до ручної звірки.');
       const confirmed=rows.filter(x=>!!x.confirmed_at);
@@ -719,7 +719,7 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
       if(b.version!==c.version)fail(409,'Контракт змінився. Перегляньте розрахунок повторно');
       if(b.confirm_reset_zero_confirmations!==true)fail(400,'Потрібно підтвердити скидання старих нульових позначок «Видано»');
       const t=now(),detail=JSON.stringify({old_amount:c.amount,new_amount:newAmount,old_treasury:previous.treasury,
-        new_treasury:next.treasury,old_per_member:0,new_per_member:next.per_member,reset_confirmations:confirmed.length,reason});
+        new_treasury:next.treasury,old_per_member:0,new_per_member:next.per_member,reset_confirmations:confirmed.length,old_confirmations:confirmed.map(x=>({payout_id:x.id,confirmed_at:x.confirmed_at,confirmed_by:x.confirmed_by,note:x.note})),reason});
       const batch=[
         db.prepare('UPDATE contracts SET amount=?,version=version+1,updated_at=? WHERE id=? AND version=? AND amount=? AND settled_at IS NOT NULL')
           .bind(newAmount,t,c.id,c.version,c.amount),
@@ -730,10 +730,10 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
         db.prepare("UPDATE ledger SET amount=?,description=? WHERE reference=? AND kind='treasury' AND amount=? AND EXISTS (SELECT 1 FROM contracts WHERE id=? AND version=? AND amount=?)")
           .bind(next.treasury,'Контракт: '+c.title+' (коригування: '+reason.slice(0,150)+')','contract:'+c.id,previous.treasury,c.id,c.version+1,newAmount),
         db.prepare('INSERT INTO audit(id,actor_id,actor_name,action,entity,entity_id,detail,created_at) SELECT ?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM contracts WHERE id=? AND version=? AND amount=?)')
-          .bind(uuid(),user.id,user.username,'correct_settled_contract','contracts',c.id,detail,t,c.id,c.version+1,newAmount)
+          .bind('correction:'+c.id+':'+(c.version+1),user.id,user.username,'correct_settled_contract','contracts',c.id,detail,t,c.id,c.version+1,newAmount)
       ];
       const result=await db.batch(batch);
-      if(result[0].meta.changes!==1||result[2].meta.changes!==ids.length||result[3].meta.changes!==1||result[4].meta.changes!==1)
+      if(result[0].meta.changes!==1||result[1].meta.changes!==confirmed.length||result[2].meta.changes!==ids.length||result[3].meta.changes!==1||result[4].meta.changes!==1)
         fail(409,'Дані змінилися або облік не збігається. Не повторюйте коригування, перевірте журнал і зверніться до адміністратора.');
       for(const id of ids)await notify(db,id,'Коригування контракту',c.title+': нове нарахування '+next.per_member+'. Фактичну видачу потрібно підтвердити заново.');
       return json({ok:true,preview,version:c.version+1});
