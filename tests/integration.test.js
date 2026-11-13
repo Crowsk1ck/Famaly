@@ -37,6 +37,28 @@ test('leader can safely apply Grizzly rank presets without overwriting custom ra
   const protectedRank=await req('/api/ranks',{token:leader});assert.equal(protectedRank.data.items[0].title,'Почесний новачок');assert.equal(protectedRank.data.items[0].is_example,0);
 });
 test('member submits report with ImgBB evidence; approval only by leader',async()=>{const a=await req('/api/records/reports',{method:'POST',token:member,data:{title:'Звіт за патрулювання',details:'Виконано завдання',evidence:['https://ibb.co/abcDEF1'],status:'Погоджено'}});assert.equal(a.status,201,JSON.stringify(a.data));reportId=a.data.item.id;assert.equal(a.data.item.status,'На перевірці');const deny=await req(`/api/records/reports/${reportId}/review`,{method:'POST',token:member,data:{status:'Погоджено',version:1}});assert.equal(deny.status,403);const edit=await req(`/api/records/reports/${reportId}`,{method:'PATCH',token:member,data:{version:1,title:'Оновлений звіт',details:'Готовий',evidence:['https://i.ibb.co/xyz123/pic.jpg']}});assert.equal(edit.status,200);const stale=await req(`/api/records/reports/${reportId}`,{method:'PATCH',token:member,data:{version:1,title:'Старий запис'}});assert.equal(stale.status,409);const good=await req(`/api/records/reports/${reportId}/review`,{method:'POST',token:leader,data:{status:'Погоджено',comment:'Прийнято',version:2}});assert.equal(good.status,200,JSON.stringify(good.data));const result=(await req('/api/records/reports',{token:member})).data.items[0];assert.equal(result.status,'Погоджено');assert.equal(result.extra.review_comment,'Прийнято');});
+test('fleet stores vehicles with condition, image evidence and member-visible loan history',async()=>{
+  const created=await req('/api/records/vehicles',{method:'POST',token:leader,data:{
+    title:'Obey 8F Drafter',details:'Автомобіль сімейного гаража',status:'Заплановано',
+    extra:{plate:'GRZ-001',model:'Obey 8F Drafter',condition:'ready',location:'Особняк',responsible:'Fighter'},
+    evidence:['https://i.ibb.co/example/vehicle.png']
+  }});
+  assert.equal(created.status,201,JSON.stringify(created.data));
+  const cars=await req('/api/records/vehicles',{token:member});
+  assert.equal(cars.status,200);
+  const car=cars.data.items.find(item=>item.id===created.data.item.id);
+  assert.ok(car);
+  assert.equal(car.extra.plate,'GRZ-001');
+  assert.equal(car.extra.condition,'ready');
+  const forbidden=await req('/api/records/vehicles',{method:'POST',token:member,data:{title:'Несанкціонований транспорт'}});
+  assert.equal(forbidden.status,403);
+  const trip=await req('/api/records/vehicle_loans',{method:'POST',token:member,data:{
+    title:'Виїзд на патруль',details:'Повернути на особняк',extra:{vehicle:'GRZ-001',action:'issue',driver:'Fighter'}
+  }});
+  assert.equal(trip.status,201,JSON.stringify(trip.data));
+  const log=await req('/api/records/vehicle_loans',{token:leader});
+  assert.ok(log.data.items.some(item=>item.id===trip.data.item.id&&item.extra.vehicle==='GRZ-001'));
+});
 test('contract calculation, atomic settlement and no duplicate payment',async()=>{const c=await req('/api/contracts',{method:'POST',token:leader,data:{title:'RP контракт',details:'Перевезення',amount:1001,treasury_percent:20,participant_ids:[memberId],status:'Заплановано'}});assert.equal(c.status,201,JSON.stringify(c.data));contractId=c.data.item.id;assert.equal((await req('/api/contracts',{token:member})).data.items.length,1);const p=await req(`/api/contracts/${contractId}/preview`,{token:member});assert.equal(p.data.preview.treasury,200);assert.equal(p.data.preview.per_member,801);const edit=await req(`/api/contracts/${contractId}`,{method:'PATCH',token:leader,data:{version:1,status:'Погоджено'}});assert.equal(edit.status,200);const paid=await req(`/api/contracts/${contractId}/settle`,{method:'POST',token:leader,data:{version:2}});assert.equal(paid.status,200,JSON.stringify(paid.data));assert.equal(paid.data.preview.per_member,801);const dup=await req(`/api/contracts/${contractId}/settle`,{method:'POST',token:leader,data:{version:2}});assert.equal(dup.status,409);const fin=await req('/api/finance',{token:member});assert.equal(fin.data.own_total,801);assert.equal(fin.data.own_payouts.length,1);const finance=(await req('/api/finance',{token:leader})).data;assert.equal(finance.treasury_balance,200);assert.equal(finance.payout_count,1);});
 test('unconfirmed contract payout dashboard respects finance permissions and totals',async()=>{
   const denied=await req('/api/finance/outstanding',{token:member});
