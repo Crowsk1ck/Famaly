@@ -140,6 +140,28 @@ test('fleet stores vehicles with condition, image evidence and member-visible lo
   assert.ok(log.data.items.some(item=>item.id===trip.data.item.id&&item.extra.vehicle==='GRZ-001'));
 });
 test('contract calculation, atomic settlement and no duplicate payment',async()=>{const c=await req('/api/contracts',{method:'POST',token:leader,data:{title:'RP контракт',details:'Перевезення',amount:1001,treasury_percent:20,participant_ids:[memberId],status:'Заплановано'}});assert.equal(c.status,201,JSON.stringify(c.data));contractId=c.data.item.id;assert.equal((await req('/api/contracts',{token:member})).data.items.length,1);const p=await req(`/api/contracts/${contractId}/preview`,{token:member});assert.equal(p.data.preview.treasury,200);assert.equal(p.data.preview.per_member,801);const edit=await req(`/api/contracts/${contractId}`,{method:'PATCH',token:leader,data:{version:1,status:'Погоджено'}});assert.equal(edit.status,200);const paid=await req(`/api/contracts/${contractId}/settle`,{method:'POST',token:leader,data:{version:2}});assert.equal(paid.status,200,JSON.stringify(paid.data));assert.equal(paid.data.preview.per_member,801);const dup=await req(`/api/contracts/${contractId}/settle`,{method:'POST',token:leader,data:{version:2}});assert.equal(dup.status,409);const fin=await req('/api/finance',{token:member});assert.equal(fin.data.own_total,801);assert.equal(fin.data.own_payouts.length,1);const finance=(await req('/api/finance',{token:leader})).data;assert.equal(finance.treasury_balance,200);assert.equal(finance.payout_count,1);});
+test('all authenticated members see aggregate finance but cannot access details or mutate money',async()=>{
+  const noSession=await req('/api/finance');assert.equal(noSession.status,401);
+  const viewer=await req('/api/finance',{token:member});
+  const leaderFinance=await req('/api/finance',{token:leader});
+  assert.equal(viewer.status,200,JSON.stringify(viewer.data));
+  assert.equal(viewer.data.treasury_balance,leaderFinance.data.treasury_balance);
+  assert.equal(viewer.data.payout_total,leaderFinance.data.payout_total);
+  assert.equal(viewer.data.payout_count,leaderFinance.data.payout_count);
+  assert.deepEqual(viewer.data.totals,leaderFinance.data.totals);
+  assert.deepEqual(viewer.data.month,leaderFinance.data.month);
+  assert.equal(viewer.data.payment_rows,undefined,'Member must not receive other peoples payout records');
+  assert.ok(Array.isArray(viewer.data.own_payouts));
+  assert.equal((await req('/api/ledger',{token:member})).status,403);
+  assert.equal((await req('/api/finance/outstanding',{token:member})).status,403);
+  assert.equal((await req('/api/finance/analytics?days=7',{token:member})).status,403);
+  assert.equal((await req('/api/finance/trends?period=12w',{token:member})).status,403);
+  const write=await req('/api/ledger',{method:'POST',token:member,data:{kind:'expense',amount:100,description:'Unauthorized'}});
+  assert.equal(write.status,403);
+  const app=readFileSync(resolve('public/app.js'),'utf8');
+  assert.match(app,/Загальна статистика казни та власні виплати/);
+  assert.match(app,/can\('finance:manage'\)\?'<button class="btn" data-action="new-ledger"/);
+});
 test('unconfirmed contract payout dashboard respects finance permissions and totals',async()=>{
   const denied=await req('/api/finance/outstanding',{token:member});
   assert.equal(denied.status,403);
