@@ -754,12 +754,12 @@ async function fleetPage(){
  const cards=list.map(car=>{
    const model=car.extra?.model||car.title,photo=galleryPhoto(car);
    const edit=can('fleet:manage')?'<button class="btn tiny secondary" data-action="edit-record" data-module="vehicles" data-id="'+esc(car.id)+'">Редагувати</button>':'';
-   return '<div class="card" style="overflow:hidden">'+(photo?'<img src="'+esc(photo)+'" alt="'+esc(model)+'" loading="lazy" style="width:100%;height:150px;object-fit:cover;border-radius:10px">':'<div style="height:90px;display:grid;place-items:center;font-size:36px;opacity:.55">🚘</div>')+
+   return '<div class="card" style="overflow:hidden">'+(photo?'<button type="button" data-action="fleet-photo" data-id="'+esc(car.id)+'" aria-label="Переглянути фото '+esc(model)+'" style="display:block;width:100%;padding:0;border:0;background:transparent;cursor:zoom-in"><img src="'+esc(photo)+'" alt="'+esc(model)+'" loading="lazy" style="width:100%;height:240px;object-fit:contain;background:#101218;border-radius:10px"></button>':'<div style="height:180px;display:grid;place-items:center;font-size:44px;opacity:.55">🚘</div>')+
     '<div class="row space mt"><h3>'+esc(model)+'</h3>'+badge(fleetConditionLabel(fleetCondition(car)))+'</div>'+
     '<p class="muted small">Номер: '+esc(car.extra?.plate||'Не вказано')+'</p>'+
     '<p class="muted small">Гараж: '+esc(car.extra?.location||'Не вказано')+'</p>'+
     '<p class="muted small">Відповідальний: '+esc(car.extra?.responsible||userName(car.assignee_id)||'—')+'</p>'+
-    '<p class="muted small">Вартість: '+fmt(car.extra?.value||0)+' GTA$ · Пробіг: '+fmt(car.extra?.mileage||0)+' км</p>'+
+    (Number(car.extra?.value)>0?'<p class="muted small">Вартість: '+fmt(car.extra.value)+' GTA$</p>':'')+(Number(car.extra?.mileage)>0?'<p class="muted small">Пробіг: '+fmt(car.extra.mileage)+' км</p>':'')+
     '<div class="row mt" style="flex-wrap:wrap;gap:6px"><button class="btn tiny secondary" data-action="view-record" data-module="vehicles" data-id="'+esc(car.id)+'">Деталі ↗</button>'+edit+'</div></div>';
  }).join('');
  return intro('Автопарк GRIZZLY','Автомобілі сім’ї: реєстрація, технічний стан та відповідальні.',can('fleet:manage')?'<button class="btn" data-action="new-record" data-module="vehicles">＋ Додати автомобіль</button>':'')+
@@ -1224,6 +1224,13 @@ document.addEventListener('click',async e=>{const back=e.target.closest('[data-b
     await renderCaptSignupPanel(id);toast(act==='capt-join'?'Запис на CAPT збережено':'Запис на CAPT скасовано');break;}
   case 'change-sub':state.sub[state.route]=t.dataset.value;state.search='';state.filter='';await render();break;
   case 'fleet-condition':state.fleetCondition=t.dataset.value||'all';await render();break;
+  case 'fleet-photo':{
+    const record=(await api('/records/vehicles')).items.find(x=>x.id===id);
+    const photo=record?galleryPhoto(record):'';
+    if(!photo)throw new Error('Фотографія недоступна');
+    modal(record.extra?.model||record.title,'<div style="display:grid;place-items:center"><img src="'+esc(photo)+'" alt="'+esc(record.title)+'" style="display:block;max-width:100%;max-height:75vh;object-fit:contain;border-radius:10px" loading="eager"></div>');
+    break;
+  }
   case 'review-app':await appReview(id);break;
   case 'new-contract':await preload();await contractForm();break;
   case 'edit-contract':await preload();await contractForm(id);break;
