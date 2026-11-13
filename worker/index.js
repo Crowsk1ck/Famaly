@@ -717,6 +717,45 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
     month.treasury_change=month.contract_treasury+month.contributions-month.expenses-month.bonuses-month.capt;
     return json({own_payouts:own,own_extra:ownExtra,own_total:ownTotal,totals,payout_total:all[0]?.total||0,payout_count:all[0]?.count||0,payment_rows:paymentRows,treasury_balance:(totals.treasury||0)+(totals.contribution||0)-(totals.expense||0)-(totals.bonus||0)-(totals.capt||0),month});
   }
+  // Finance v2.2: aggregated contract/earning analytics, never exposed to ordinary members.
+  if(path==='/api/finance/analytics'&&method==='GET'){
+    if(!can(user,'finance:read')&&!can(user,'finance:manage'))fail(403,'Немає прав');
+    const days=Number(url.searchParams.get('days')||7);
+    if(![7,30].includes(days))fail(400,'Доступні періоди: 7 або 30 днів');
+    const end=now(),start=new Date(Date.now()-days*86400000).toISOString();
+    const [contractSummary,leaderboard,transactions]=await Promise.all([
+      allRows(db,`SELECT c.id,c.title,c.amount,c.treasury_percent,c.settled_at,c.updated_at,
+          COUNT(p.id) payout_count, COALESCE(SUM(p.amount),0) member_total,
+          SUM(CASE WHEN pc.confirmed_at IS NOT NULL THEN 1 ELSE 0 END) confirmed_count
+        FROM contracts c
+        JOIN payouts p ON p.contract_id=c.id
+        LEFT JOIN payout_confirmations pc ON pc.payout_id=p.id
+        WHERE p.created_at>=? AND p.created_at<=?
+        GROUP BY c.id,c.title,c.amount,c.treasury_percent,c.settled_at,c.updated_at
+        ORDER BY c.updated_at DESC LIMIT 200`,start,end),
+      allRows(db,`SELECT p.user_id, u.nickname,u.username,COUNT(p.id) payout_count,
+          SUM(p.amount) earned,
+          SUM(CASE WHEN pc.confirmed_at IS NOT NULL THEN p.amount ELSE 0 END) handed_over
+        FROM payouts p JOIN users u ON u.id=p.user_id
+        LEFT JOIN payout_confirmations pc ON pc.payout_id=p.id
+        WHERE p.created_at>=? AND p.created_at<=?
+        GROUP BY p.user_id,u.nickname,u.username ORDER BY earned DESC, p.user_id ASC LIMIT 100`,start,end),
+      allRows(db,`SELECT kind,COALESCE(SUM(amount),0) amount,COUNT(*) entries
+        FROM ledger WHERE created_at>=? AND created_at<=? GROUP BY kind`,start,end)
+    ]);
+    const kinds=Object.fromEntries(transactions.map(r=>[r.kind,Number(r.amount)||0]));
+    const report={
+      days,from:start,to:end,
+      treasury_income:(kinds.treasury||0)+(kinds.contribution||0),
+      expenses:(kinds.expense||0)+(kinds.bonus||0)+(kinds.capt||0),
+      net_change:(kinds.treasury||0)+(kinds.contribution||0)-(kinds.expense||0)-(kinds.bonus||0)-(kinds.capt||0),
+      contracts_count:contractSummary.length,
+      contracts_amount:contractSummary.reduce((s,r)=>s+Number(r.amount||0),0),
+      member_earned:leaderboard.reduce((s,r)=>s+Number(r.earned||0),0),
+      member_handed_over:leaderboard.reduce((s,r)=>s+Number(r.handed_over||0),0)
+    };
+    return json({report,contracts:contractSummary,leaderboard});
+  }
   if(path==='/api/notifications'&&method==='GET')return json({items:await allRows(db,'SELECT * FROM notifications WHERE user_id=? ORDER BY created_at DESC LIMIT 150',user.id)});
   m=path.match(/^\/api\/notifications\/([\w-]+)\/read$/);if(m&&method==='POST'){await db.prepare('UPDATE notifications SET read_at=? WHERE id=? AND user_id=?').bind(now(),m[1],user.id).run();return json({ok:true});}
   if(path==='/api/audit'&&method==='GET'){if(user.role!=='leader')fail(403,'Лише лідер переглядає журнал');return json({items:await allRows(db,'SELECT * FROM audit ORDER BY created_at DESC LIMIT 1000')});}
