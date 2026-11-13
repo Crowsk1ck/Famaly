@@ -717,6 +717,18 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
     month.treasury_change=month.contract_treasury+month.contributions-month.expenses-month.bonuses-month.capt;
     return json({own_payouts:own,own_extra:ownExtra,own_total:ownTotal,totals,payout_total:all[0]?.total||0,payout_count:all[0]?.count||0,payment_rows:paymentRows,treasury_balance:(totals.treasury||0)+(totals.contribution||0)-(totals.expense||0)-(totals.bonus||0)-(totals.capt||0),month});
   }
+  // Finance v2.5: accrued contract payouts awaiting actual GTA RP handoff.
+  if(path==='/api/finance/outstanding'&&method==='GET'){
+    if(!can(user,'finance:read')&&!can(user,'finance:manage'))fail(403,'Немає прав');
+    const [summary,people]=await Promise.all([
+      db.prepare("SELECT COUNT(*) count,COALESCE(SUM(p.amount),0) amount,MIN(p.created_at) oldest FROM payouts p LEFT JOIN payout_confirmations pc ON pc.payout_id=p.id WHERE pc.payout_id IS NULL").first(),
+      allRows(db,\`SELECT p.user_id,u.nickname,u.username,COUNT(*) count,COALESCE(SUM(p.amount),0) amount,MIN(p.created_at) oldest
+        FROM payouts p JOIN users u ON u.id=p.user_id LEFT JOIN payout_confirmations pc ON pc.payout_id=p.id
+        WHERE pc.payout_id IS NULL
+        GROUP BY p.user_id,u.nickname,u.username ORDER BY amount DESC,p.user_id ASC LIMIT 100\`)
+    ]);
+    return json({count:Number(summary?.count||0),amount:Number(summary?.amount||0),oldest:summary?.oldest||null,people});
+  }
   // Finance v2.2: aggregated contract/earning analytics, never exposed to ordinary members.
   if(path==='/api/finance/analytics'&&method==='GET'){
     if(!can(user,'finance:read')&&!can(user,'finance:manage'))fail(403,'Немає прав');
