@@ -162,6 +162,27 @@ test('all authenticated members see aggregate finance but cannot access details 
   assert.match(app,/Загальна статистика казни та власні виплати/);
   assert.match(app,/can\('finance:manage'\)\?'<button class="btn" data-action="new-ledger"/);
 });
+test('members see all family contracts and payout previews but cannot edit or settle',async()=>{
+  const publicRequest=await req('/api/contracts');assert.equal(publicRequest.status,401);
+  const leaderResponse=await req('/api/contracts',{token:leader});
+  const memberResponse=await req('/api/contracts',{token:member});
+  assert.equal(memberResponse.status,200,JSON.stringify(memberResponse.data));
+  assert.deepEqual(memberResponse.data.items.map(x=>x.id),leaderResponse.data.items.map(x=>x.id));
+  const contract=leaderResponse.data.items[0];assert.ok(contract);
+  const calculation=await req('/api/contracts/'+contract.id+'/preview',{token:member});
+  assert.equal(calculation.status,200,JSON.stringify(calculation.data));
+  assert.equal(calculation.data.preview.amount,contract.amount);
+  const blockedCreate=await req('/api/contracts',{method:'POST',token:member,data:{title:'Без дозволу',amount:1000,participant_ids:[memberId]}});
+  assert.equal(blockedCreate.status,403);
+  const blockedUpdate=await req('/api/contracts/'+contract.id,{method:'PATCH',token:member,data:{version:contract.version,title:'Зміна'}});
+  assert.equal(blockedUpdate.status,403);
+  const blockedSettle=await req('/api/contracts/'+contract.id+'/settle',{method:'POST',token:member,data:{version:contract.version}});
+  assert.equal(blockedSettle.status,403);
+  const app=readFileSync(resolve('public/app.js'),'utf8');
+  assert.match(app,/data-action="contract-filter"/);
+  assert.match(app,/case 'contract-filter':/);
+  assert.match(app,/Спільний реєстр контрактів/);
+});
 test('unconfirmed contract payout dashboard respects finance permissions and totals',async()=>{
   const denied=await req('/api/finance/outstanding',{token:member});
   assert.equal(denied.status,403);
