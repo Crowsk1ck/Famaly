@@ -633,3 +633,8 @@
   .member-mobile-card .btn{min-height:36px}
 }
 @media(max-width:400px){.member-filters{grid-template-columns:minmax(0,1fr)}}
+
+/* Responsive GRIZZLY contract list. */
+.contract-mobile-list{display:none}
+.contract-mobile-card{margin-bottom:12px}
+@media(max-width:720px){.contract-desktop-table{display:none}.contract-mobile-list{display:block}.contract-mobile-card .btn{min-height:40px}}
