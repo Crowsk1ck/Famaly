@@ -25,8 +25,8 @@ test('bootstrap requires secret and creates first leader once',async()=>{const b
 test('login, session and role separation',async()=>{const bad=await req('/api/auth/login',{method:'POST',data:{username:'grizzlyadmin',password:'wrong'}});assert.equal(bad.status,401);const a=await req('/api/auth/login',{method:'POST',data:{username:'grizzlyadmin',password:'admin-unique-123456'}});assert.equal(a.status,200);leader=a.cookie.match(/grizzly_session=([a-f0-9]+)/)[1];assert.match(a.cookie,/HttpOnly/);assert.match(a.cookie,/SameSite=Strict/);assert.match(a.cookie,/Secure/);const no=(await req('/api/users')).status;assert.equal(no,401);const me=await req('/api/auth/me',{token:leader});assert.equal(me.data.user.role,'leader');assert.notEqual(me.data.user.password_hash,'admin-unique-123456');});
 test('family roster includes status, role and department filters with safe rendering',()=>{
   const app=readFileSync(resolve('public/app.js'),'utf8');
-  assert.match(app,/data-action="members-role"/);
-  assert.match(app,/data-action="members-status"/);
+  assert.match(app,/filters\(roleOptions,selectedRole,'members-role'\)/);
+  assert.match(app,/filters\(statusOptions,selectedStatus,'members-status'\)/);
   assert.match(app,/data-action="members-department"/);
   assert.match(app,/id="members-department-filter"/);
   assert.match(app,/new Set\(all\.map\(u=>u\.department_id\)/);
