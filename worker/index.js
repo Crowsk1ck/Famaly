@@ -691,13 +691,13 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
     const b=await body(req);if(!['Так','Ні'].includes(b.response))fail(400,'Оберіть Так або Ні');await db.prepare('INSERT INTO event_rsvps(event_id,user_id,response,updated_at) VALUES(?,?,?,?) ON CONFLICT(event_id,user_id) DO UPDATE SET response=excluded.response,updated_at=excluded.updated_at').bind(m[1],user.id,b.response,now()).run();await audit(db,user,'rsvp','events',m[1],b.response);return json({ok:true});
   }
   if(path==='/api/contracts'&&method==='GET'){
-    const rows=await allRows(db,'SELECT * FROM contracts ORDER BY created_at DESC LIMIT 500');return json({items:rows.filter(c=>can(user,'finance:read')||can(user,'finance:manage')||parseJson(c.participant_ids,[]).includes(user.id)).map(contractView)});
+    const rows=await allRows(db,'SELECT * FROM contracts ORDER BY created_at DESC LIMIT 500');return json({items:rows.map(contractView)});
   }
   if(path==='/api/contracts'&&method==='POST'){
     requirePerm(user,'finance:manage');const b=await body(req),ids=uniqueIds(b.participant_ids);await safeContractUsers(db,ids);const s=await settings(db),pct=percent(b.treasury_percent??s.treasury_percent),amount=money(b.amount),title=str(b.title,160);if(!title)fail(400,'Назва обов’язкова');const id=uuid(),t=now();await db.prepare('INSERT INTO contracts(id,title,details,amount,treasury_percent,participant_ids,status,evidence,owner_id,department_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)').bind(id,title,str(b.details,2500),amount,pct,JSON.stringify(ids),validStatus(b.status||'Заплановано'),JSON.stringify(evidence(b.evidence||[])),user.id,str(b.department_id,80)||null,t,t).run();await audit(db,user,'create','contracts',id);return json({item:contractView(await db.prepare('SELECT * FROM contracts WHERE id=?').bind(id).first())},201);
   }
   m=path.match(/^\/api\/contracts\/([\w-]+)(?:\/(preview|settle))?$/);
-  if(m){const c=await db.prepare('SELECT * FROM contracts WHERE id=?').bind(m[1]).first();if(!c)fail(404,'Контракт не знайдено');if(!can(user,'finance:read')&&!can(user,'finance:manage')&&!parseJson(c.participant_ids,[]).includes(user.id))fail(403,'Немає прав');
+  if(m){const c=await db.prepare('SELECT * FROM contracts WHERE id=?').bind(m[1]).first();if(!c)fail(404,'Контракт не знайдено');// All authenticated family members may inspect contract previews. Settlement and editing remain permission-gated.
     if(m[2]==='preview'&&method==='GET')return json({preview:payoutPreview(c.amount,c.treasury_percent,parseJson(c.participant_ids,[])),settled:!!c.settled_at});
     if(m[2]==='settle'&&method==='POST'){
       requirePerm(user,'finance:manage');if(c.settled_at)fail(409,'Виплати за цим контрактом уже нараховані');if(c.status!=='Погоджено')fail(409,'Перед нарахуванням погодьте контракт');const b=await body(req);if(b.version!==c.version)fail(409,'Контракт змінився. Оновіть сторінку');const p=payoutPreview(c.amount,c.treasury_percent,parseJson(c.participant_ids,[])),t=now(),settlementId=uuid();
