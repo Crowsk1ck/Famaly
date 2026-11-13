@@ -23,6 +23,15 @@ test('passwords are hashed with PBKDF2 and verified',async()=>{const h=await has
 test('public home has no financial/private data',async()=>{const r=await req('/api/public');assert.equal(r.status,200);assert.equal(r.data.settings.family_name,'GRIZZLY');assert.equal(r.data.settings.treasury_percent,undefined);assert.deepEqual(r.data.gallery,[]);});
 test('bootstrap requires secret and creates first leader once',async()=>{const b={username:'grizzlyadmin',password:'admin-unique-123456',nickname:'Grizzly Owner'};assert.equal((await req('/api/setup/bootstrap',{method:'POST',data:b})).status,403);const a=await req('/api/setup/bootstrap',{method:'POST',data:b,headers:{'x-bootstrap-token':env.BOOTSTRAP_TOKEN}});assert.equal(a.status,201);const again=await req('/api/setup/bootstrap',{method:'POST',data:b,headers:{'x-bootstrap-token':env.BOOTSTRAP_TOKEN}});assert.equal(again.status,409);});
 test('login, session and role separation',async()=>{const bad=await req('/api/auth/login',{method:'POST',data:{username:'grizzlyadmin',password:'wrong'}});assert.equal(bad.status,401);const a=await req('/api/auth/login',{method:'POST',data:{username:'grizzlyadmin',password:'admin-unique-123456'}});assert.equal(a.status,200);leader=a.cookie.match(/grizzly_session=([a-f0-9]+)/)[1];assert.match(a.cookie,/HttpOnly/);assert.match(a.cookie,/SameSite=Strict/);assert.match(a.cookie,/Secure/);const no=(await req('/api/users')).status;assert.equal(no,401);const me=await req('/api/auth/me',{token:leader});assert.equal(me.data.user.role,'leader');assert.notEqual(me.data.user.password_hash,'admin-unique-123456');});
+test('family roster includes status, role and department filters with safe rendering',()=>{
+  const app=readFileSync(resolve('public/app.js'),'utf8');
+  assert.match(app,/data-action="members-role"/);
+  assert.match(app,/data-action="members-status"/);
+  assert.match(app,/data-action="members-department"/);
+  assert.match(app,/id="members-department-filter"/);
+  assert.match(app,/new Set\(all\.map\(u=>u\.department_id\)/);
+  assert.match(app,/esc\(u\.nickname\|\|u\.username\)/);
+});
 test('leader creates member, who only accesses own account',async()=>{const a=await req('/api/users',{method:'POST',token:leader,data:{username:'fighter',password:'member-pass-123456',nickname:'Fighter',game_id:'99',role:'member',rank_id:1,department_id:'capt'}});assert.equal(a.status,201,JSON.stringify(a.data));memberId=a.data.item.id;const b=await req('/api/auth/login',{method:'POST',data:{username:'fighter',password:'member-pass-123456'}});assert.equal(b.status,200);member=b.cookie.match(/grizzly_session=([a-f0-9]+)/)[1];const list=await req('/api/users',{token:member});assert.equal(list.data.items.length,1);assert.equal(list.data.items[0].id,memberId);assert.equal((await req('/api/audit',{token:member})).status,403);});
 test('leader can safely apply Grizzly rank presets without overwriting custom ranks',async()=>{
   const unauth=await req('/api/ranks/apply-templates',{method:'POST',data:{expected:[{id:1,version:1}]}});assert.equal(unauth.status,401);
