@@ -8,7 +8,7 @@ import worker,{payoutPreview,hashPassword,verifyPassword,validDiscordWebhookUrl,
 
 const dir=mkdtempSync(join(tmpdir(),'grizzly-test-'));
 const file=join(dir,'local.sqlite');
-const schema=['0001_init.sql','0002_capt_signups.sql','0003_discord_notifications.sql','0004_discord_capt_news.sql','0005_discord_announcements.sql','0006_application_statuses.sql'].map(file=>readFileSync(resolve('migrations',file),'utf8')).join('\n');
+const schema=['0001_init.sql','0002_capt_signups.sql','0003_discord_notifications.sql','0004_discord_capt_news.sql','0005_discord_announcements.sql','0006_application_statuses.sql','0007_payout_confirmations.sql'].map(file=>readFileSync(resolve('migrations',file),'utf8')).join('\n');
 const child=spawn('python',['-u',resolve('tests/db_adapter.py')]);let pending=[],buf='';child.stdout.on('data',d=>{buf+=d.toString();let idx;while((idx=buf.indexOf('\n'))>=0){const line=buf.slice(0,idx);buf=buf.slice(idx+1);const {resolve:res,reject:rej}=pending.shift();const obj=JSON.parse(line);if(obj.error)rej(new Error(obj.error));else res(obj);}});
 function python(payload){return new Promise((res,rej)=>{pending.push({resolve:res,reject:rej});child.stdin.write(JSON.stringify({file,...payload})+'\n');});}
 await python({init:schema});
