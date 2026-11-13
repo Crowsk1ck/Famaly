@@ -1195,5 +1195,37 @@ test('members see all family contracts and payout previews but cannot edit or se
   assert.match(app,/case 'contract-filter':/);
   assert.match(app,/Спільний реєстр контрактів/);
 });
+test('contract amounts synchronize to finance without crediting unsettled money',async()=>{
+  const before=(await req('/api/finance',{token:member})).data;
+  assert.ok(before.contract_summary);
+  const created=await req('/api/contracts',{method:'POST',token:leader,data:{
+    title:'Синхронізація контракту з фінансами',details:'Перевірка обліку',
+    amount:2000,treasury_percent:20,participant_ids:[memberId],status:'Погоджено'
+  }});
+  assert.equal(created.status,201,JSON.stringify(created.data));
+  const id=created.data.item.id;
+  const pending=(await req('/api/finance',{token:member})).data;
+  assert.equal(pending.contract_summary.contracts_count,before.contract_summary.contracts_count+1);
+  assert.equal(pending.contract_summary.contracts_total,before.contract_summary.contracts_total+2000);
+  assert.equal(pending.contract_summary.unsettled_total,before.contract_summary.unsettled_total+2000);
+  assert.equal(pending.contract_summary.approved_pending_total,before.contract_summary.approved_pending_total+2000);
+  assert.equal(pending.treasury_balance,before.treasury_balance,'Unsettled contracts must not increase treasury');
+  assert.equal(pending.payout_total,before.payout_total,'Unsettled contracts must not create payouts');
+  const settle=await req('/api/contracts/'+id+'/settle',{method:'POST',token:leader,data:{version:created.data.item.version}});
+  assert.equal(settle.status,200,JSON.stringify(settle.data));
+  const settled=(await req('/api/finance',{token:member})).data;
+  assert.equal(settled.contract_summary.contracts_total,pending.contract_summary.contracts_total);
+  assert.equal(settled.contract_summary.settled_total,pending.contract_summary.settled_total+2000);
+  assert.equal(settled.contract_summary.unsettled_total,pending.contract_summary.unsettled_total-2000);
+  assert.equal(settled.contract_summary.approved_pending_total,pending.contract_summary.approved_pending_total-2000);
+  assert.equal(settled.treasury_balance,before.treasury_balance+400,'Only 20% treasury share is credited');
+  assert.equal(settled.payout_total,before.payout_total+1600,'Member payouts are tracked separately');
+  assert.equal(settled.payment_rows,undefined,'Regular member cannot view other payout details');
+  const app=readFileSync(resolve('public/app.js'),'utf8');
+  assert.match(app,/Контракти → фінанси/);
+  assert.match(app,/Сума всіх контрактів/);
+  assert.match(app,/Погоджено, очікує нарахування/);
+  assert.match(app,/data-route="contracts"/);
+});
 // Run destructive session-revocation coverage last: other integration tests use this member's active session.
 test('blocking user revokes sessions and stops access',async()=>{const u=(await req('/api/users',{token:leader})).data.items.find(x=>x.id===memberId);const r=await req(`/api/users/${memberId}`,{method:'PATCH',token:leader,data:{...u,status:'blocked'}});assert.equal(r.status,200,JSON.stringify(r.data));assert.equal((await req('/api/auth/me',{token:member})).status,401);});
