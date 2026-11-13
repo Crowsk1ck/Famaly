@@ -744,7 +744,18 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
     const byKind=Object.fromEntries(recentLedger.map(x=>[x.kind,Number(x.total)||0]));
     const month={from:since,through:now(),contract_treasury:byKind.treasury||0,contributions:byKind.contribution||0,expenses:byKind.expense||0,bonuses:byKind.bonus||0,capt:byKind.capt||0,contract_payouts:Number(recentPayout?.total)||0,contract_payout_count:Number(recentPayout?.count)||0};
     month.treasury_change=month.contract_treasury+month.contributions-month.expenses-month.bonuses-month.capt;
-    const shared={own_payouts:own,own_extra:ownExtra,own_total:ownTotal,totals,payout_total:all[0]?.total||0,payout_count:all[0]?.count||0,treasury_balance:(totals.treasury||0)+(totals.contribution||0)-(totals.expense||0)-(totals.bonus||0)-(totals.capt||0),month};
+    // Contract face values are informational. Only confirmed settlement creates treasury ledger entries and payouts.
+    const contractsSummary=await db.prepare(`SELECT
+      COUNT(*) contracts_count,
+      COALESCE(SUM(amount),0) contracts_total,
+      COALESCE(SUM(CASE WHEN settled_at IS NOT NULL THEN amount ELSE 0 END),0) settled_total,
+      COALESCE(SUM(CASE WHEN settled_at IS NULL THEN amount ELSE 0 END),0) unsettled_total,
+      COALESCE(SUM(CASE WHEN settled_at IS NULL AND status='Погоджено' THEN amount ELSE 0 END),0) approved_pending_total,
+      SUM(CASE WHEN settled_at IS NOT NULL THEN 1 ELSE 0 END) settled_count,
+      SUM(CASE WHEN settled_at IS NULL AND status='Погоджено' THEN 1 ELSE 0 END) approved_pending_count
+      FROM contracts`).first();
+    const contract_summary=Object.fromEntries(Object.entries(contractsSummary||{}).map(([key,value])=>[key,Number(value)||0]));
+    const shared={own_payouts:own,own_extra:ownExtra,own_total:ownTotal,totals,payout_total:all[0]?.total||0,payout_count:all[0]?.count||0,treasury_balance:(totals.treasury||0)+(totals.contribution||0)-(totals.expense||0)-(totals.bonus||0)-(totals.capt||0),month,contract_summary};
     // Members see aggregate totals and their own payouts only; individual payout rows stay private.
     return json(detailed?{...shared,payment_rows:paymentRows}:shared);
   }
