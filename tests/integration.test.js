@@ -180,6 +180,26 @@ test('finance trend period filters preserve balance and reject invalid windows',
 });
 test('database persists after new D1 adapter instance',async()=>{env.DB=new DB();const a=await req('/api/finance',{token:member});assert.equal(a.data.own_total,801);const r=await req('/api/records/reports',{token:member});assert.equal(r.data.items[0].status,'Погоджено');env.DB=DB1;});
 test('event RSVP, prohibited links, CSRF and export permissions',async()=>{const ev=await req('/api/records/events',{method:'POST',token:leader,data:{title:'Загальні збори',starts_at:'2026-12-01T19:00'}});assert.equal(ev.status,201);const yes=await req(`/api/rsvp/${ev.data.item.id}`,{method:'POST',token:member,data:{response:'Так'}});assert.equal(yes.status,200);const rs=await req(`/api/rsvp/${ev.data.item.id}`,{token:leader});assert.equal(rs.data.counts.yes,1);const link=await req('/api/records/reports',{method:'POST',token:member,data:{title:'Bad',evidence:['https://evil.example/foo']}});assert.equal(link.status,400);const csrf=await req('/api/auth/logout',{method:'POST',token:member,headers:{origin:'https://evil.example'}});assert.equal(csrf.status,403);const exp=await req('/api/export?module=users',{token:member});assert.equal(exp.data.items.length,1);assert.equal(exp.data.items[0].password_hash,undefined);});
+test('promotion review panel shows evidence and progress while leader cannot self-approve',async()=>{
+ const app=readFileSync(resolve('public/app.js'),'utf8');
+ assert.match(app,/function promotionReviewSummary\(record\)/);
+ assert.match(app,/Автор заявки:/);
+ assert.match(app,/Цільовий ранг:/);
+ assert.match(app,/Докази ImgBB/);
+ assert.match(app,/Самозвіт:/);
+ assert.match(app,/promotionReviewSummary\(r\)/);
+ assert.match(app,/Власну заявку або звіт погоджувати заборонено/);
+ assert.match(app,/case 'review-record':await reviewModal/);
+ const own=await req('/api/records/promotions',{method:'POST',token:leader,data:{
+   title:'Заявка лідера на перевірку',details:'Лише для перевірки захисту',
+   extra:{requested_rank_id:'2',checklist_completed:[]}
+ }});
+ assert.equal(own.status,201,JSON.stringify(own.data));
+ const attempt=await req('/api/records/promotions/'+own.data.item.id+'/review',{method:'POST',token:leader,data:{version:1,status:'Погоджено',comment:'Самопогодження'}});
+ assert.equal(attempt.status,403);
+ const stored=await req('/api/records/promotions',{token:leader});
+ assert.equal(stored.data.items.find(x=>x.id===own.data.item.id).status,'На перевірці');
+});
 test('member requests promotion; approved request updates game rank atomically',async()=>{const pr=await req('/api/records/promotions',{method:'POST',token:member,data:{title:'Заявка на ранг 2',details:'Чекліст виконано',extra:{requested_rank_id:'2',checklist_completed:['Патрулювання','Тренування']},evidence:['https://ibb.co/abcDEF1']}});assert.equal(pr.status,201,JSON.stringify(pr.data));assert.equal(pr.data.item.status,'На перевірці');const bypass=await req(`/api/records/promotions/${pr.data.item.id}`,{method:'PATCH',token:leader,data:{version:1,status:'Погоджено'}});assert.equal(bypass.status,400);const ok=await req(`/api/records/promotions/${pr.data.item.id}/review`,{method:'POST',token:leader,data:{version:1,status:'Погоджено',comment:'Умови виконано'}});assert.equal(ok.status,200,JSON.stringify(ok.data));const u=(await req('/api/auth/me',{token:member})).data.user;assert.equal(u.rank_id,2);});
 test('member can update only own pending promotion checklist without changing rank or privileges',async()=>{
   const rankRows=await req('/api/ranks',{token:member});
