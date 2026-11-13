@@ -54,8 +54,8 @@ test('rank requirements presets preserve existing rank titles and promotion self
   assert.match(app,/class="promotion-requirement"/);
   assert.match(app,/function syncPromotionChecklist\(\)/);
   assert.match(app,/promotionChecklistView\(e\.target\.value,\[\]\)/);
-  assert.match(app,/Самозвіт учасника/);
-  assert.match(app,/Перевірте докази та умови перед погодженням/);
+  assert.match(app,/Самозвіт:/);
+  assert.match(app,/Керівництво перевіряє докази перед рішенням/);
 });
 test('rank dashboard shows fifteen-rank hierarchy, checklists, member counts and promotion actions',()=>{
   const app=readFileSync(resolve('public/app.js'),'utf8');
