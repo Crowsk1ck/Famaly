@@ -86,7 +86,7 @@ test('rank dashboard shows fifteen-rank hierarchy, checklists, member counts and
   const app=readFileSync(resolve('public/app.js'),'utf8');
   assert.match(app,/function rankChecklist\(rank\)/);
   assert.match(app,/api\('\/records\/promotions'\)/);
-  assert.match(app,/state\.users\.filter\(u=>Number\(u\.rank_id\)===Number\(rank\.id\)\)/);
+  assert.match(app,/state\.roster\.filter\(u=>Number\(u\.rank_id\)===Number\(rank\.id\)\)/);
   assert.match(app,/rankChecklist\(rank\)/);
   assert.match(app,/data-action="edit-rank"/);
   assert.match(app,/data-module="promotions"/);
