@@ -455,6 +455,31 @@ function credentialReceipt(username,password,nickname,reset=false){
   </div>`);
 }
 function userForm(id){const u=state.users.find(x=>x.id===id),edit=!!u,manager=can('members:write'),leader=state.user.role==='leader';const roleOptions=Object.entries(roles).filter(([k])=>leader||k==='member').map(([k,v])=>`<option value="${k}" ${(u?.role||'member')===k?'selected':''}>${v}</option>`).join('');const fields=`<form id="user-form" data-id="${esc(id||'')}" class="formgrid">${field('Ігровий нікнейм','nickname',u?.nickname||'','text',false,'required maxlength="80"')}${field('Ігровий ID','game_id',u?.game_id||'')}${field('Discord','discord',u?.discord||'')}${field('Активність','activity',u?.activity||'')}${!edit?`${field('Логін *','username','','text',false,'required minlength="3" autocomplete="off"')}${field('Тимчасовий пароль (12+ символів) *','password','','password',false,'required minlength="12" autocomplete="new-password"')}<div class="full credential-tools"><button type="button" class="btn tiny secondary" data-action="generate-login">Згенерувати логін</button><button type="button" class="btn tiny secondary" data-action="generate-temp-password">Згенерувати пароль</button><button type="button" class="btn tiny ghost" data-action="toggle-temp-password">Показати / приховати</button><span class="muted small">20 випадкових символів, пароль буде показано лише під час видачі доступу.</span></div>`:''}${(manager||!edit)?`<div class="field"><label>Роль доступу</label><select name="role" class="select">${roleOptions}</select></div>${selectField('Ігровий ранг','rank_id',state.ranks,u?.rank_id)}${selectField('Напрямок','department_id',state.departments,u?.department_id)}${field('Дата вступу','joined_at',u?.joined_at||new Date().toISOString().slice(0,10),'date')}<div class="field"><label>Статус акаунта</label><select name="status" class="select"><option value="active" ${u?.status==='active'?'selected':''}>Активний</option><option value="blocked" ${u?.status==='blocked'?'selected':''}>Заблокований</option></select></div>`:''}${leader&&edit?field('Індивідуальні права через кому (порожньо = без прав при збереженні)','permissions',Array.isArray(u.custom_permissions)?u.permissions.join(', '):u.custom_permissions?.items?.join(', ')||'', 'textarea',true):''}<div class="full form-actions"><button type="button" class="btn ghost" data-action="close-modal">Закрити</button><button class="btn" type="submit">${edit?'Зберегти зміни':'Створити акаунт'}</button></div></form>`;modal(edit?'Особова справа / '+(u.nickname||u.username):'Новий учасник',`<p class="modal-desc">${edit?'Редагування запису з перевіркою версії.':'Логін та пароль потрібно особисто передати учаснику.'}</p>${fields}${edit&&leader?`<div class="hr"></div><button class="btn tiny danger" data-action="reset-password" data-id="${esc(id)}">Скинути пароль і всі сесії</button>`:''}`);}
+function rankRequirementsMissing(rank){return !String(rank.requirements||'').trim()||String(rank.requirements||'').trim()==='Умови встановлює керівник';}
+function promotionProgress(record){
+ const target=Number(record?.extra?.requested_rank_id||0);
+ const current=state.ranks.find(r=>Number(r.id)===target-1);
+ const needed=current?rankChecklist(current):[];
+ const completed=Array.isArray(record?.extra?.checklist_completed)?record.extra.checklist_completed:[];
+ return {needed,done:needed.filter(item=>completed.includes(item)).length,total:needed.length};
+}
+function promotionChecklistView(targetId,completed=[]){
+ const source=state.ranks.find(rank=>Number(rank.id)===Number(targetId)-1);
+ const checklist=source?rankChecklist(source):[];
+ if(!source)return '<div class="notice">Для цього рангу автоматичний чекліст не передбачено. Рішення приймає лідер сім’ї.</div>';
+ if(!checklist.length)return '<div class="notice">Керівник ще не додав вимоги до попереднього рангу. Уточніть їх перед поданням заявки.</div>';
+ return '<div class="full card flat"><strong>Вимоги для переходу з «'+esc(source.title)+'»</strong><p class="muted small">Позначайте лише те, що виконали. Підтвердження здійснює керівництво.</p>'+
+  '<div class="stack mt">'+checklist.map((item,index)=>'<label class="row" style="gap:8px;align-items:flex-start"><input type="checkbox" class="promotion-requirement" data-requirement="'+esc(item)+'" '+(completed.includes(item)?'checked':'')+'><span class="small">'+esc(item)+'</span></label>').join('')+'</div><div class="small muted mt" id="promotion-progress">Виконано: '+checklist.filter(x=>completed.includes(x)).length+' із '+checklist.length+'</div></div>';
+}
+function syncPromotionChecklist(){
+ const form=document.querySelector('#record-form[data-module="promotions"]');
+ if(!form)return;
+ const checked=[...form.querySelectorAll('.promotion-requirement:checked')].map(input=>input.dataset.requirement);
+ const hidden=form.querySelector('[name="extra_checklist_completed"]');
+ if(hidden)hidden.value=checked.join('\n');
+ const info=form.querySelector('#promotion-progress');
+ if(info)info.textContent='Виконано: '+checked.length+' із '+form.querySelectorAll('.promotion-requirement').length;
+}
 function rankChecklist(rank){
  try{const result=JSON.parse(rank.checklist||'[]');return Array.isArray(result)?result.filter(x=>typeof x==='string'&&x.trim()):[];}catch{return [];}
 }
@@ -464,6 +489,7 @@ async function ranks(){
  const query=String(state.search||'').trim().toLocaleLowerCase('uk');
  const entries=state.ranks.filter(r=>[r.title,r.requirements,...rankChecklist(r),String(r.id)].some(x=>String(x||'').toLocaleLowerCase('uk').includes(query))).sort((a,b)=>a.id-b.id);
  const placeholders=state.ranks.filter(r=>Number(r.is_example)===1&&r.title==='Ранг '+String(r.id).padStart(2,'0')+' — приклад');
+ const missing=state.ranks.filter(rank=>rankRequirementsMissing(rank)&&state.rankTemplates?.some(t=>t.id===rank.id));
  const counts={total:state.ranks.length,pending:requests.filter(r=>r.status==='На перевірці'||r.status==='На доопрацювання').length,approved:requests.filter(r=>r.status==='Погоджено').length,members:state.users.length};
  const cards=entries.map(rank=>{
   const checklist=rankChecklist(rank),holders=state.users.filter(u=>Number(u.rank_id)===Number(rank.id)),next=state.ranks.find(x=>Number(x.id)===Number(rank.id)+1);
@@ -482,7 +508,7 @@ async function ranks(){
    const destination=state.ranks.find(r=>r.id===Number(x.extra?.requested_rank_id));
    return '<tr><td>'+esc(userName(x.owner_id))+'</td><td>'+esc(destination?.title||'Ранг не вказано')+'</td><td>'+badge(x.status)+'</td><td>'+date(x.created_at)+'</td><td><button class="btn tiny secondary" data-action="view-record" data-module="promotions" data-id="'+esc(x.id)+'">Відкрити</button></td></tr>';
  });
- return intro('Ранги та підвищення','15 ігрових рангів GRIZZLY, вимоги, учасники та заявки. Ранг не змінює права доступу до панелі.',state.user.role==='leader'&&placeholders.length?'<button class="btn" data-action="preview-rank-templates">🐻 Заповнити ранги GRIZZLY</button>':'')+
+ return intro('Ранги та підвищення','15 ігрових рангів GRIZZLY, вимоги, учасники та заявки. Ранг не змінює права доступу до панелі.',(state.user.role==='leader'?(placeholders.length?'<button class="btn" data-action="preview-rank-templates">🐻 Заповнити ранги GRIZZLY</button>':'')+(missing.length?'<button class="btn secondary" data-action="rank-fill-requirements">＋ Заповнити вимоги ('+missing.length+')</button>':''):'') )+
   '<div class="cards">'+[['Рангів',counts.total],['Учасників',counts.members],['Заявок на розгляді',counts.pending],['Погоджених заявок',counts.approved]].map(([name,value])=>'<div class="card stat"><div class="muted small">'+name+'</div><div class="number">'+value+'</div></div>').join('')+'</div>'+
   '<div class="toolbar mt">'+searchBar()+'<span class="muted small">Показано '+entries.length+' з '+state.ranks.length+' рангів</span>'+
   '<button class="btn tiny secondary" data-action="new-record" data-module="promotions">＋ Подати заявку</button></div>'+
@@ -498,7 +524,7 @@ function links(r){return (r.evidence||[]).length?`<div class="row wrap">${r.evid
 async function renderModule(mod){const cfg=moduleInfo[mod];if(!cfg)return empty('Розділ відсутній');if(mod==='blacklist'&&!can('discipline:manage'))return empty('Недостатньо прав');const data=await api(`/records/${mod}`);const list=applyFilters(data.items.filter(x=>searchMatch(x.title,x.details,x.status,userName(x.assignee_id))));const create=can(cfg[2])||['reports','promotions','capt_attendance','vehicle_loans'].includes(mod);return `${intro(cfg[0],cfg[1],create?`<button class="btn" data-action="new-record" data-module="${mod}">＋ Додати запис</button>`:'')}<div class="toolbar">${searchBar()}${filterControls()}${exportButton(mod)}<span class="muted small">${list.length} записів</span></div>${table(['Назва / опис','Відповідальний','Статус','Дата','Дії'],list.map(x=>`<tr><td class="table-title">${esc(x.title)}<div class="muted wordwrap" style="max-width:330px">${esc(x.details.slice(0,110))}</div></td><td>${esc(userName(x.assignee_id||x.owner_id))}<div class="muted">${esc(departmentName(x.department_id))}</div></td><td>${badge(x.status)}</td><td>${date(x.starts_at||x.created_at)}</td><td><button class="btn tiny secondary" data-action="view-record" data-id="${esc(x.id)}" data-module="${mod}">Відкрити ↗</button></td></tr>`))}`;}
 function recordExtraFields(mod,r){const ex=r?.extra||{};const text=(label,key)=>field(label,`extra_${key}`,ex[key]||'');const area=(label,key)=>field(label,`extra_${key}`,Array.isArray(ex[key])?ex[key].join('\n'):ex[key]||'','textarea',true);const pick=(label,key,opts)=>`<div class="field"><label>${esc(label)}</label><select class="select" name="extra_${key}">${opts.map(([v,t])=>`<option value="${v}" ${ex[key]===v?'selected':''}>${esc(t)}</option>`).join('')}</select></div>`;
  switch(mod){
- case 'promotions':return `<div class="field full"><label>Цільовий ранг *</label><select name="extra_requested_rank_id" class="select" required><option value="">Оберіть ранг</option>${state.ranks.map(rank=>`<option value="${rank.id}" ${Number(ex.requested_rank_id)===rank.id?'selected':''}>${esc(rank.title)}</option>`).join('')}</select><small>Перевірте умови рангу у розділі «Ранги»</small></div>${area('Виконані умови / чекліст (по одному пункту)','checklist_completed')}`;
+ case 'promotions':return `<div class="field full"><label>Цільовий ранг *</label><select name="extra_requested_rank_id" class="select" required><option value="">Оберіть ранг</option>${state.ranks.map(rank=>`<option value="${rank.id}" ${Number(ex.requested_rank_id)===rank.id?'selected':''}>${esc(rank.title)}</option>`).join('')}</select><small>Перевірте умови рангу у розділі «Ранги»</small></div><div id="promotion-requirement-box" class="full">${promotionChecklistView(ex.requested_rank_id||'',Array.isArray(ex.checklist_completed)?ex.checklist_completed:[])}</div><textarea name="extra_checklist_completed" class="textarea" style="display:none" aria-hidden="true">${esc(Array.isArray(ex.checklist_completed)?ex.checklist_completed.join('\n'):'')}</textarea>`;
  case 'capt_matches':return `${text('Суперник','opponent')}${text('Місце проведення','place')}${field('Кількість місць в основному складі (1–50)','extra_lineup_limit',ex.lineup_limit??8,'number',false,'min="1" max="50" step="1"')}${area('Ручні примітки щодо складу (не впливають на автоматичний набір)','lineup')}<div class="field"><label>Підсумок бою (для статистики)</label><select class="select" name="extra_outcome">${[['','Не вказано'],['win','Перемога'],['loss','Поразка'],['draw','Нічия'],['cancelled','Скасовано']].map(([v,label])=>`<option value="${v}" ${ex.outcome===v?'selected':''}>${label}</option>`).join('')}</select></div>${text('Результат / рахунок','result')}`;
  case 'capt_training':return `${text('Тема тренування','topic')}${text('Інструктор','instructor')}`;
  case 'capt_attendance':return `${pick('Тип участі','attendance_type',[['battle','Бій'],['afk','AFK']])}${text('ID бою / тренування','match_id')}${text('Відмітка відвідування','attendance_note')}`;
@@ -1122,7 +1148,7 @@ async function handleSubmit(e){const f=e.target;if(!f.id)return;e.preventDefault
 } }catch(err){toast(err.message,true);if(err.status===409)toast('Оновіть сторінку перед повторним редагуванням.',true);}finally{if(submit)submit.disabled=false;}}
 document.addEventListener('submit',handleSubmit);
 document.addEventListener('input',e=>{if(e.target.name==='photo_url'&&e.target.closest('#gallery-form'))updateGalleryFormPreview();if(e.target.name==='photo_url'&&e.target.closest('#team-form'))updateTeamFormPreview();if(e.target.name==='photo_url'&&e.target.closest('#achievement-form'))updateAchievementPreview();if(e.target.id==='search-input'){state.search=e.target.value;const start=e.target.selectionStart;render().then(()=>{const v=$('#search-input');if(v){v.focus();try{v.setSelectionRange(start,start);}catch{}}});}});
-document.addEventListener('change',e=>{if(state.route==='members'&&['members-role-filter','members-status-filter','members-department-filter','members-sort-filter'].includes(e.target.id)){const key={'members-role-filter':'membersRole','members-status-filter':'membersStatus','members-department-filter':'membersDepartment','members-sort-filter':'membersSort'}[e.target.id];state[key]=e.target.value;render();return;}if(e.target.id==='status-filter'){state.filter=e.target.value;render();}if(e.target.id==='sort-select'){state.sort=e.target.value;render();}if(e.target.id==='period-filter'){state.period=e.target.value;render();}});
+document.addEventListener('change',e=>{if(e.target.matches('#record-form[data-module="promotions"] [name="extra_requested_rank_id"]')){const form=e.target.form,box=form.querySelector('#promotion-requirement-box');if(box){box.innerHTML=promotionChecklistView(e.target.value,[]);syncPromotionChecklist();}return;}if(e.target.matches('.promotion-requirement')){syncPromotionChecklist();return;}if(state.route==='members'&&['members-role-filter','members-status-filter','members-department-filter','members-sort-filter'].includes(e.target.id)){const key={'members-role-filter':'membersRole','members-status-filter':'membersStatus','members-department-filter':'membersDepartment','members-sort-filter':'membersSort'}[e.target.id];state[key]=e.target.value;render();return;}if(e.target.id==='status-filter'){state.filter=e.target.value;render();}if(e.target.id==='sort-select'){state.sort=e.target.value;render();}if(e.target.id==='period-filter'){state.period=e.target.value;render();}});
 document.addEventListener('click',async e=>{const back=e.target.closest('[data-backdrop]');if(back&&e.target===back){closeModal();return;}const t=e.target.closest('[data-action],[data-route]');if(!t)return;e.preventDefault();try{if(t.dataset.route){await navigate(t.dataset.route);return;}const act=t.dataset.action,id=t.dataset.id,mod=t.dataset.module;switch(act){
   case 'show-login':loginModal();break;
   case 'close-modal':closeModal();break;
@@ -1167,6 +1193,21 @@ document.addEventListener('click',async e=>{const back=e.target.closest('[data-b
      const result=await api('/ranks/apply-templates','POST',{expected});
      await afterSaved(`Заповнено ${result.updated} рангів. Можна редагувати кожен окремо.`);break;}
   case 'rank-promotions-list':state.sub.reports='promotions';await navigate('reports');break;
+  case 'rank-fill-requirements':{
+    if(state.user.role!=='leader')throw new Error('Лише лідер може змінювати вимоги');
+    await preload();
+    const eligible=state.ranks.filter(rank=>rankRequirementsMissing(rank)&&state.rankTemplates?.some(x=>x.id===rank.id));
+    if(!eligible.length){toast('Немає рангів з незаповненими вимогами');break;}
+    if(!confirm('Заповнити рекомендовані RP-вимоги та чеклісти для '+eligible.length+' рангів? Назви, вже налаштовані вимоги та ранги учасників не зміняться.'))break;
+    let saved=0;
+    for(const rank of eligible){
+      const template=state.rankTemplates.find(x=>x.id===rank.id);
+      await api('/ranks/'+rank.id,'PATCH',{title:rank.title,requirements:template.requirements,checklist:template.checklist,version:rank.version});
+      saved++;
+    }
+    await afterSaved('Рекомендовані вимоги додано: '+saved);
+    break;
+  }
   case 'edit-rank':rankForm(id);break;
   case 'edit-department':departmentForm(id);break;
   case 'new-record':await preload();if(mod==='vehicles')fleetVehicleForm();else if(mod==='gallery')galleryForm();else if(mod==='public_news')newsForm();else if(mod==='public_team')teamForm();else if(mod==='public_achievements')achievementForm();else moduleForm(mod);break;
