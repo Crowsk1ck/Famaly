@@ -623,41 +623,6 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
     await audit(db,user,'capt_pay','capt_attendance',r.id,`${payee}:${amount}`);await notify(db,payee,'CAPT-виплата нарахована',`${r.title}: ${amount}`);return json({ok:true,amount,recipient_id:payee});
   }
   // Uniform, permission-checked CRUD used for all operational modules.
-  // Dedicated fleet workflow. Vehicle state and loan/maintenance log are written together.
-  m=path.match(/^\/api\/fleet\/vehicles\/([\w-]+)\/action$/);
-  if(m&&method==='POST'){
-    requirePerm(user,'fleet:manage');
-    const car=await db.prepare("SELECT * FROM records WHERE id=? AND module='vehicles' AND deleted_at IS NULL").bind(m[1]).first();
-    if(!car)fail(404,'Автомобіль не знайдено');
-    const b=await body(req),action=b.action;
-    if(!['issue','return','repair','ready'].includes(action))fail(400,'Невірна дія з транспортом');
-    const extra=parseJson(car.extra,{}),condition=String(extra.condition||'ready').toLowerCase();
-    const held=str(extra.current_driver,100);
-    const driver=str(b.driver,100),note=str(b.note,1000);
-    const cost=money(b.cost||0);
-    if(action==='issue'&&(held||!['ready','справний',''].includes(condition)))fail(409,'Автомобіль недоступний для видачі');
-    if(action==='return'&&!held)fail(409,'Автомобіль не було видано');
-    if(action==='repair'&&held)fail(409,'Спочатку поверніть автомобіль');
-    if(action==='ready'&&!['repair','ремонт','на ремонті'].includes(condition))fail(409,'Автомобіль не перебуває на ремонті');
-    if(action==='issue'&&!driver)fail(400,'Вкажіть водія');
-    if(action==='repair'&&!note)fail(400,'Вкажіть причину ремонту');
-    const t=now(),logId=uuid(),owner=action==='issue'?driver:action==='return'?held:driver||str(extra.responsible,100);
-    if(action==='issue'){extra.current_driver=driver;extra.checked_out_at=t;}
-    if(action==='return'){delete extra.current_driver;delete extra.checked_out_at;}
-    if(action==='repair'){extra.condition='repair';extra.repair_started_at=t;}
-    if(action==='ready'){extra.condition='ready';delete extra.repair_started_at;}
-    const labels={issue:'Видано',return:'Повернено',repair:'Початок ремонту',ready:'Завершення ремонту'};
-    const logExtra={vehicle_id:car.id,vehicle:extra.plate||car.title,driver:owner,action,cost};
-    const changes=await db.batch([
-      db.prepare("UPDATE records SET extra=?,version=version+1,updated_at=? WHERE id=? AND module='vehicles' AND deleted_at IS NULL AND version=?")
-        .bind(JSON.stringify(extra),t,car.id,car.version),
-      db.prepare("INSERT INTO records(id,module,title,details,status,owner_id,assignee_id,department_id,amount,evidence,extra,created_at,updated_at) SELECT ?,'vehicle_loans',? ,?,'Завершено',?,?,?,0,'[]',?,?,? WHERE EXISTS(SELECT 1 FROM records WHERE id=? AND version=? AND updated_at=?)")
-        .bind(logId,labels[action]+' · '+car.title,note,user.id,null,car.department_id,JSON.stringify(logExtra),t,t,car.id,car.version+1,t)
-    ]);
-    if(changes[0]?.meta?.changes!==1||changes[1]?.meta?.changes!==1)fail(409,'Запис змінено. Оновіть сторінку');
-    await audit(db,user,action,'vehicles',car.id,owner);
-    return json({ok:true,vehicle_id:car.id,action,log_id:logId});
-  }
   m=path.match(/^\/api\/records\/([a-z_]+)(?:\/([\w-]+))?(?:\/(review))?$/);
   if(m&&MODULES[m[1]]){
     const mod=m[1],id=m[2],review=m[3],cfg=MODULES[mod];
