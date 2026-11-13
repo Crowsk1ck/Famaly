@@ -44,6 +44,31 @@ test('family roster has compact filters, Ukrainian statuses, sorting and mobile 
   assert.match(css,/\.member-mobile-list\{display:block\}/);
 });
 test('leader creates member, who only accesses own account',async()=>{const a=await req('/api/users',{method:'POST',token:leader,data:{username:'fighter',password:'member-pass-123456',nickname:'Fighter',game_id:'99',role:'member',rank_id:1,department_id:'capt'}});assert.equal(a.status,201,JSON.stringify(a.data));memberId=a.data.item.id;const b=await req('/api/auth/login',{method:'POST',data:{username:'fighter',password:'member-pass-123456'}});assert.equal(b.status,200);member=b.cookie.match(/grizzly_session=([a-f0-9]+)/)[1];const list=await req('/api/users',{token:member});assert.equal(list.data.items.length,1);assert.equal(list.data.items[0].id,memberId);assert.equal((await req('/api/audit',{token:member})).status,403);});
+test('every logged-in family member sees roster without other accounts or private fields',async()=>{
+  const denied=await req('/api/members');
+  assert.equal(denied.status,401);
+  const roster=await req('/api/members',{token:member});
+  assert.equal(roster.status,200,JSON.stringify(roster.data));
+  assert.equal(roster.data.items.length,2);
+  const others=roster.data.items.filter(u=>u.id!==memberId);
+  assert.equal(others.length,1);
+  assert.equal(others[0].role,'leader');
+  const visible=['id','nickname','role','rank_id','department_id','game_id','status','joined_at'];
+  for(const u of roster.data.items){
+    assert.deepEqual(Object.keys(u).sort(),visible.slice().sort());
+    for(const secret of ['username','password_hash','discord','permissions','custom_permissions','activity','version','created_at','updated_at']){
+      assert.equal(Object.hasOwn(u,secret),false,secret);
+    }
+  }
+  const accounts=await req('/api/users',{token:member});
+  assert.equal(accounts.data.items.length,1,'Private user accounts remain restricted');
+  assert.equal(accounts.data.items[0].id,memberId);
+  const app=readFileSync(resolve('public/app.js'),'utf8');
+  assert.match(app,/api\('\/members'\)/);
+  assert.match(app,/const all=state\.roster/);
+  assert.match(app,/data-action="view-member"/);
+  assert.match(app,/state\.users\.some\(account=>account\.id===u\.id\)/);
+});
 test('rank requirements presets preserve existing rank titles and promotion self-reports are explicit',()=>{
   const app=readFileSync(resolve('public/app.js'),'utf8');
   assert.match(app,/function rankRequirementsMissing\(rank\)/);
