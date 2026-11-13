@@ -506,7 +506,8 @@ async function ranks(){
  const recent=requests.slice().sort((a,b)=>String(b.created_at||'').localeCompare(String(a.created_at||''))).slice(0,8);
  const recentRows=recent.map(x=>{
    const destination=state.ranks.find(r=>r.id===Number(x.extra?.requested_rank_id));
-   return '<tr><td>'+esc(userName(x.owner_id))+'</td><td>'+esc(destination?.title||'Ранг не вказано')+'</td><td>'+badge(x.status)+'</td><td>'+date(x.created_at)+'</td><td><button class="btn tiny secondary" data-action="view-record" data-module="promotions" data-id="'+esc(x.id)+'">Відкрити</button></td></tr>';
+   const progress=promotionProgress(x);
+   return '<tr><td>'+esc(userName(x.owner_id))+'</td><td>'+esc(destination?.title||'Ранг не вказано')+'</td><td>'+badge(x.status)+'</td><td>'+(progress.total?'<span class="small">Заявлено: '+progress.done+'/'+progress.total+'</span>':'<span class="muted small">Без чекліста</span>')+'</td><td>'+date(x.created_at)+'</td><td><button class="btn tiny secondary" data-action="view-record" data-module="promotions" data-id="'+esc(x.id)+'">Відкрити</button></td></tr>';
  });
  return intro('Ранги та підвищення','15 ігрових рангів GRIZZLY, вимоги, учасники та заявки. Ранг не змінює права доступу до панелі.',(state.user.role==='leader'?(placeholders.length?'<button class="btn" data-action="preview-rank-templates">🐻 Заповнити ранги GRIZZLY</button>':'')+(missing.length?'<button class="btn secondary" data-action="rank-fill-requirements">＋ Заповнити вимоги ('+missing.length+')</button>':''):'') )+
   '<div class="cards">'+[['Рангів',counts.total],['Учасників',counts.members],['Заявок на розгляді',counts.pending],['Погоджених заявок',counts.approved]].map(([name,value])=>'<div class="card stat"><div class="muted small">'+name+'</div><div class="number">'+value+'</div></div>').join('')+'</div>'+
@@ -514,7 +515,7 @@ async function ranks(){
   '<button class="btn tiny secondary" data-action="new-record" data-module="promotions">＋ Подати заявку</button></div>'+
   (entries.length?'<div class="grid3">'+cards+'</div>':empty('Рангів не знайдено','Змініть пошуковий запит.'))+
   '<div class="row space mt"><div><h2>Заявки на підвищення</h2><p class="muted small">Останні доступні вам заявки. Погоджені рішення оновлюють ігровий ранг.</p></div><button class="btn tiny secondary" data-action="rank-promotions-list">Усі заявки ↗</button></div>'+
-  (recent.length?table(['Учасник','Цільовий ранг','Статус','Дата','Дія'],recentRows):empty('Заявок поки немає','Створіть першу заявку на підвищення.'));
+  (recent.length?table(['Учасник','Цільовий ранг','Статус','Прогрес','Дата','Дія'],recentRows):empty('Заявок поки немає','Створіть першу заявку на підвищення.'));
 }
 function rankForm(id){const r=state.ranks.find(x=>x.id===Number(id));modal(`Редагування рангу ${id}`,`<form id="rank-form" data-id="${id}" class="formgrid">${field('Назва рангу','title',r.title,'text',true,'required')}${field('Умови підвищення','requirements',r.requirements,'textarea',true)}${field('Чекліст (кожна вимога з нового рядка)','checklist',JSON.parse(r.checklist||'[]').join('\n'),'textarea',true)}<div class="full form-actions"><button class="btn" type="submit">Зберегти ранг</button></div></form>`);}
 async function departments(){const list=state.departments;return `${intro('Напрямки сім’ї','Керівники напрямків працюють лише зі своїм підрозділом.')}<div class="grid3">${list.map(d=>`<div class="card"><span class="overline">ПІДРОЗДІЛ</span><h3 class="mt">${esc(d.title)}</h3><p class="muted small mt">Відповідальний: ${esc(userName(d.head_id))}</p><p class="muted small">Учасників: ${state.users.filter(u=>u.department_id===d.id).length}</p>${state.user.role==='leader'?`<button class="btn tiny secondary mt" data-action="edit-department" data-id="${esc(d.id)}">Налаштувати →</button>`:''}</div>`).join('')}</div>`;}
@@ -816,7 +817,11 @@ async function renderCaptSignupPanel(id){
      +'<div class="form-actions">'+(d.open?(d.own?'<button class="btn secondary" data-action="capt-leave" data-id="'+esc(id)+'">Скасувати мій запис</button>':'<button class="btn" data-action="capt-join" data-id="'+esc(id)+'">＋ Записатися на бій</button>'):'<span class="pill">Запис закрито</span>')+'</div>';
   }catch(err){if(el.isConnected)el.innerHTML='<div class="notice">Не вдалося завантажити склад: '+esc(err.message)+'. Перевірте міграцію CAPT у D1.</div>';}
 }
-function reviewModal(mod,id){modal('Рішення керівництва',`<form id="review-form" data-module="${mod}" data-id="${id}" class="stack"><div class="field"><label>Рішення</label><select name="status" class="select"><option>Погоджено</option><option>На доопрацювання</option><option>Відхилено</option></select></div>${field('Коментар керівника','comment','','textarea',true)}<button class="btn" type="submit">Зберегти рішення</button></form>`);}
+async function reviewModal(mod,id){
+ const record=mod==='promotions'?(await api('/records/promotions')).items.find(x=>x.id===id):null;
+ const progress=record?promotionProgress(record):null;
+ const guide=progress?'<div class="notice mb"><strong>Самозвіт учасника:</strong> '+(progress.total?progress.done+' з '+progress.total+' вимог позначено виконаними.':'Затверджений чекліст не налаштований.')+' Перевірте докази та умови перед погодженням.</div>':'';
+ modal('Рішення керівництва',guide+`<form id="review-form" data-module="${mod}" data-id="${id}" class="stack"><div class="field"><label>Рішення</label><select name="status" class="select"><option>Погоджено</option><option>На доопрацювання</option><option>Відхилено</option></select></div>${field('Коментар керівника','comment','','textarea',true)}<button class="btn" type="submit">Зберегти рішення</button></form>`);}
 function grouped(mods,title,description){const active=state.sub[state.route]||mods[0];return `<div class="tabs mb">${mods.map(m=>`<button data-action="change-sub" data-value="${m}" class="tab ${m===active?'active':''}">${esc(moduleInfo[m][0])}</button>`).join('')}</div>`;}
 function fleetCondition(record){
   const v=String(record.extra?.condition||'').toLowerCase().trim();
@@ -1310,7 +1315,7 @@ document.addEventListener('click',async e=>{const back=e.target.closest('[data-b
   case 'gallery-open':publicGalleryLightbox(id);break;
   case 'gallery-step':publicGalleryStep(Number(t.dataset.offset)||0);break;
   case 'view-record':await preload();await viewRecord(mod,id);break;
-  case 'review-record':reviewModal(mod,id);break;
+  case 'review-record':await reviewModal(mod,id);break;
   case 'delete-record':{if(!confirm('Видалити цей запис?'))return;const r=(await api(`/records/${mod}`)).items.find(x=>x.id===id);await api(`/records/${mod}/${id}`,'DELETE',{version:r.version});await afterSaved('Запис видалено');break;}
   case 'capt-month':{
     const current=state.captMonth||new Date().toISOString().slice(0,7);
