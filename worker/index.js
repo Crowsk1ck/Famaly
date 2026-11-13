@@ -437,6 +437,15 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
     const b=await body(req);if(!await verifyPassword(String(b.old_password||''),user.password_hash))fail(403,'Поточний пароль неправильний');const pw=await hashPassword(b.new_password);await db.batch([db.prepare('UPDATE users SET password_hash=?,updated_at=?,version=version+1 WHERE id=?').bind(pw,now(),user.id),db.prepare('UPDATE sessions SET revoked_at=? WHERE user_id=?').bind(now(),user.id)]);await audit(db,user,'password_change','users',user.id);return json({ok:true,reauth:true},200,{'Set-Cookie':clearCookie(req)});
   }
   let m=path.match(/^\/api\/auth\/sessions\/([\w-]+)$/);if(m&&method==='DELETE'){const target=await db.prepare('SELECT user_id FROM sessions WHERE id=?').bind(m[1]).first();if(!target||target.user_id!==user.id)fail(404,'Не знайдено');await db.prepare('UPDATE sessions SET revoked_at=? WHERE id=? AND user_id=?').bind(now(),m[1],user.id).run();return json({ok:true});}
+  // Authenticated family roster: public-in-family gameplay fields only.
+  // Keep /api/users restricted to own/managed accounts and their private profile data.
+  if(path==='/api/members'&&method==='GET'){
+    const rows=await allRows(db,'SELECT id,nickname,role,rank_id,department_id,game_id,status,joined_at FROM users ORDER BY created_at DESC');
+    return json({items:rows.map(u=>({
+      id:u.id,nickname:u.nickname||'Учасник',role:u.role,rank_id:u.rank_id,
+      department_id:u.department_id,game_id:u.game_id,status:u.status,joined_at:u.joined_at
+    }))});
+  }
   if(path==='/api/users'&&method==='GET'){
     const all=await allRows(db,'SELECT * FROM users ORDER BY created_at DESC');return json({items:all.filter(u=>u.id===user.id||can(user,'members:read')&&manageInDepartment(user,u.department_id)).map(safeUser)});
   }
