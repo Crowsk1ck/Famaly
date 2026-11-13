@@ -690,7 +690,15 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
   if(path==='/api/finance'&&method==='GET'){
     const own=await allRows(db,'SELECT p.*,c.title contract_title FROM payouts p JOIN contracts c ON c.id=p.contract_id WHERE p.user_id=? ORDER BY p.created_at DESC',user.id);const ownExtra=await allRows(db,"SELECT id,kind,amount,description,created_at FROM ledger WHERE recipient_id=? AND kind IN ('capt','bonus') ORDER BY created_at DESC",user.id);const ownTotal=own.reduce((s,r)=>s+r.amount,0)+ownExtra.reduce((s,r)=>s+r.amount,0);
     if(!can(user,'finance:read')&&!can(user,'finance:manage'))return json({own_payouts:own,own_extra:ownExtra,own_total:ownTotal});
-    const ledger=await allRows(db,'SELECT kind,COALESCE(SUM(amount),0) total FROM ledger GROUP BY kind');const all=await allRows(db,'SELECT COALESCE(SUM(amount),0) total, COUNT(*) count FROM payouts');const totals=Object.fromEntries(ledger.map(x=>[x.kind,x.total]));return json({own_payouts:own,own_extra:ownExtra,own_total:ownTotal,totals,payout_total:all[0]?.total||0,payout_count:all[0]?.count||0,treasury_balance:(totals.treasury||0)+(totals.contribution||0)-(totals.expense||0)-(totals.bonus||0)-(totals.capt||0)});
+    const ledger=await allRows(db,'SELECT kind,COALESCE(SUM(amount),0) total FROM ledger GROUP BY kind');const all=await allRows(db,'SELECT COALESCE(SUM(amount),0) total, COUNT(*) count FROM payouts');const totals=Object.fromEntries(ledger.map(x=>[x.kind,x.total]));
+    // A rolling 30-day view; timestamps are stored as sortable UTC ISO strings.
+    const since=new Date(Date.now()-30*86400000).toISOString();
+    const recentLedger=await allRows(db,'SELECT kind,COALESCE(SUM(amount),0) total FROM ledger WHERE created_at>=? GROUP BY kind',since);
+    const recentPayout=await db.prepare('SELECT COALESCE(SUM(amount),0) total,COUNT(*) count FROM payouts WHERE created_at>=?').bind(since).first();
+    const byKind=Object.fromEntries(recentLedger.map(x=>[x.kind,Number(x.total)||0]));
+    const month={from:since,through:now(),contract_treasury:byKind.treasury||0,contributions:byKind.contribution||0,expenses:byKind.expense||0,bonuses:byKind.bonus||0,capt:byKind.capt||0,contract_payouts:Number(recentPayout?.total)||0,contract_payout_count:Number(recentPayout?.count)||0};
+    month.treasury_change=month.contract_treasury+month.contributions-month.expenses-month.bonuses-month.capt;
+    return json({own_payouts:own,own_extra:ownExtra,own_total:ownTotal,totals,payout_total:all[0]?.total||0,payout_count:all[0]?.count||0,treasury_balance:(totals.treasury||0)+(totals.contribution||0)-(totals.expense||0)-(totals.bonus||0)-(totals.capt||0),month});
   }
   if(path==='/api/notifications'&&method==='GET')return json({items:await allRows(db,'SELECT * FROM notifications WHERE user_id=? ORDER BY created_at DESC LIMIT 150',user.id)});
   m=path.match(/^\/api\/notifications\/([\w-]+)\/read$/);if(m&&method==='POST'){await db.prepare('UPDATE notifications SET read_at=? WHERE id=? AND user_id=?').bind(now(),m[1],user.id).run();return json({ok:true});}
