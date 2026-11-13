@@ -72,6 +72,22 @@ test('twelve-week financial trends are private and reconcile weekly sums',async(
   assert.equal(members[0].handed_over,801);
   assert.equal(members[0].weekly.reduce((s,n)=>s+n,0),801);
 });
+test('finance trend period filters preserve balance and reject invalid windows',async()=>{
+  const all=await req('/api/finance/trends?period=all',{token:leader});
+  const seven=await req('/api/finance/trends?period=7',{token:leader});
+  const thirty=await req('/api/finance/trends?period=30',{token:leader});
+  const ninety=await req('/api/finance/trends?period=90',{token:leader});
+  const bad=await req('/api/finance/trends?period=invalid',{token:leader});
+  assert.equal(bad.status,400);
+  for(const response of [all,seven,thirty,ninety]){
+    assert.equal(response.status,200,JSON.stringify(response.data));
+    assert.ok(response.data.weeks.length>=1);
+    const last=response.data.weeks.at(-1);
+    assert.equal(last.balance,response.data.opening_balance+response.data.weeks.reduce((s,w)=>s+w.net,0));
+  }
+  assert.ok(all.data.weeks.length>=thirty.data.weeks.length);
+  assert.ok(ninety.data.weeks.length>=thirty.data.weeks.length);
+});
 test('database persists after new D1 adapter instance',async()=>{env.DB=new DB();const a=await req('/api/finance',{token:member});assert.equal(a.data.own_total,801);const r=await req('/api/records/reports',{token:member});assert.equal(r.data.items[0].status,'Погоджено');env.DB=DB1;});
 test('event RSVP, prohibited links, CSRF and export permissions',async()=>{const ev=await req('/api/records/events',{method:'POST',token:leader,data:{title:'Загальні збори',starts_at:'2026-12-01T19:00'}});assert.equal(ev.status,201);const yes=await req(`/api/rsvp/${ev.data.item.id}`,{method:'POST',token:member,data:{response:'Так'}});assert.equal(yes.status,200);const rs=await req(`/api/rsvp/${ev.data.item.id}`,{token:leader});assert.equal(rs.data.counts.yes,1);const link=await req('/api/records/reports',{method:'POST',token:member,data:{title:'Bad',evidence:['https://evil.example/foo']}});assert.equal(link.status,400);const csrf=await req('/api/auth/logout',{method:'POST',token:member,headers:{origin:'https://evil.example'}});assert.equal(csrf.status,403);const exp=await req('/api/export?module=users',{token:member});assert.equal(exp.data.items.length,1);assert.equal(exp.data.items[0].password_hash,undefined);});
 test('member requests promotion; approved request updates game rank atomically',async()=>{const pr=await req('/api/records/promotions',{method:'POST',token:member,data:{title:'Заявка на ранг 2',details:'Чекліст виконано',extra:{requested_rank_id:'2',checklist_completed:['Патрулювання','Тренування']},evidence:['https://ibb.co/abcDEF1']}});assert.equal(pr.status,201,JSON.stringify(pr.data));assert.equal(pr.data.item.status,'На перевірці');const bypass=await req(`/api/records/promotions/${pr.data.item.id}`,{method:'PATCH',token:leader,data:{version:1,status:'Погоджено'}});assert.equal(bypass.status,400);const ok=await req(`/api/records/promotions/${pr.data.item.id}/review`,{method:'POST',token:leader,data:{version:1,status:'Погоджено',comment:'Умови виконано'}});assert.equal(ok.status,200,JSON.stringify(ok.data));const u=(await req('/api/auth/me',{token:member})).data.user;assert.equal(u.rank_id,2);});
