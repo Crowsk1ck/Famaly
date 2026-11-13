@@ -181,6 +181,26 @@ test('finance trend period filters preserve balance and reject invalid windows',
 test('database persists after new D1 adapter instance',async()=>{env.DB=new DB();const a=await req('/api/finance',{token:member});assert.equal(a.data.own_total,801);const r=await req('/api/records/reports',{token:member});assert.equal(r.data.items[0].status,'Погоджено');env.DB=DB1;});
 test('event RSVP, prohibited links, CSRF and export permissions',async()=>{const ev=await req('/api/records/events',{method:'POST',token:leader,data:{title:'Загальні збори',starts_at:'2026-12-01T19:00'}});assert.equal(ev.status,201);const yes=await req(`/api/rsvp/${ev.data.item.id}`,{method:'POST',token:member,data:{response:'Так'}});assert.equal(yes.status,200);const rs=await req(`/api/rsvp/${ev.data.item.id}`,{token:leader});assert.equal(rs.data.counts.yes,1);const link=await req('/api/records/reports',{method:'POST',token:member,data:{title:'Bad',evidence:['https://evil.example/foo']}});assert.equal(link.status,400);const csrf=await req('/api/auth/logout',{method:'POST',token:member,headers:{origin:'https://evil.example'}});assert.equal(csrf.status,403);const exp=await req('/api/export?module=users',{token:member});assert.equal(exp.data.items.length,1);assert.equal(exp.data.items[0].password_hash,undefined);});
 test('member requests promotion; approved request updates game rank atomically',async()=>{const pr=await req('/api/records/promotions',{method:'POST',token:member,data:{title:'Заявка на ранг 2',details:'Чекліст виконано',extra:{requested_rank_id:'2',checklist_completed:['Патрулювання','Тренування']},evidence:['https://ibb.co/abcDEF1']}});assert.equal(pr.status,201,JSON.stringify(pr.data));assert.equal(pr.data.item.status,'На перевірці');const bypass=await req(`/api/records/promotions/${pr.data.item.id}`,{method:'PATCH',token:leader,data:{version:1,status:'Погоджено'}});assert.equal(bypass.status,400);const ok=await req(`/api/records/promotions/${pr.data.item.id}/review`,{method:'POST',token:leader,data:{version:1,status:'Погоджено',comment:'Умови виконано'}});assert.equal(ok.status,200,JSON.stringify(ok.data));const u=(await req('/api/auth/me',{token:member})).data.user;assert.equal(u.rank_id,2);});
+test('member can update only own pending promotion checklist without changing rank or privileges',async()=>{
+  const rankRows=await req('/api/ranks',{token:member});
+  assert.equal(rankRows.status,200);
+  const source=rankRows.data.items.find(r=>r.id===2);
+  const requirement=JSON.parse(source.checklist)[0];
+  assert.ok(requirement);
+  const created=await req('/api/records/promotions',{method:'POST',token:member,data:{title:'Прогрес до рангу 3',extra:{requested_rank_id:'3',checklist_completed:[]},evidence:['https://ibb.co/abcDEF1']}});
+  assert.equal(created.status,201,JSON.stringify(created.data));
+  const id=created.data.item.id;
+  const changed=await req('/api/records/promotions/'+id,{method:'PATCH',token:member,data:{version:1,extra:{requested_rank_id:'3',checklist_completed:[requirement]}}});
+  assert.equal(changed.status,200,JSON.stringify(changed.data));
+  const list=await req('/api/records/promotions',{token:member});
+  const saved=list.data.items.find(x=>x.id===id);
+  assert.deepEqual(saved.extra.checklist_completed,[requirement]);
+  assert.equal(Number(saved.extra.requested_rank_id),3);
+  const bypass=await req('/api/records/promotions/'+id,{method:'PATCH',token:member,data:{version:saved.version,extra:{requested_rank_id:'15',checklist_completed:[requirement]}}});
+  assert.equal(bypass.status,403);
+  const fake=await req('/api/records/promotions/'+id,{method:'PATCH',token:member,data:{version:saved.version,extra:{checklist_completed:['неіснуюча вимога']}}});
+  assert.equal(fake.status,400);
+});
 test('CAPT rate payout is credited only once to recipient',async()=>{const a=await req('/api/records/capt_attendance',{method:'POST',token:member,data:{title:'CAPT тренування / бій',extra:{attendance_type:'battle'}}});assert.equal(a.status,201);const rec=a.data.item;const r=await req(`/api/records/capt_attendance/${rec.id}`,{method:'PATCH',token:leader,data:{version:1,status:'Погоджено'}});assert.equal(r.status,200);const payout=await req(`/api/capt-pay/${rec.id}`,{method:'POST',token:leader});assert.equal(payout.status,200,JSON.stringify(payout.data));assert.equal(payout.data.amount,200000);const duplicate=await req(`/api/capt-pay/${rec.id}`,{method:'POST',token:leader});assert.equal(duplicate.status,409);const f=(await req('/api/finance',{token:member})).data;assert.equal(f.own_total,200801);});
 test('CAPT overview respects permissions, existing records and payout status',async()=>{
   const anonymous=await req('/api/capt/overview');
