@@ -44,6 +44,19 @@ test('family roster has compact filters, Ukrainian statuses, sorting and mobile 
   assert.match(css,/\.member-mobile-list\{display:block\}/);
 });
 test('leader creates member, who only accesses own account',async()=>{const a=await req('/api/users',{method:'POST',token:leader,data:{username:'fighter',password:'member-pass-123456',nickname:'Fighter',game_id:'99',role:'member',rank_id:1,department_id:'capt'}});assert.equal(a.status,201,JSON.stringify(a.data));memberId=a.data.item.id;const b=await req('/api/auth/login',{method:'POST',data:{username:'fighter',password:'member-pass-123456'}});assert.equal(b.status,200);member=b.cookie.match(/grizzly_session=([a-f0-9]+)/)[1];const list=await req('/api/users',{token:member});assert.equal(list.data.items.length,1);assert.equal(list.data.items[0].id,memberId);assert.equal((await req('/api/audit',{token:member})).status,403);});
+test('rank requirements presets preserve existing rank titles and promotion self-reports are explicit',()=>{
+  const app=readFileSync(resolve('public/app.js'),'utf8');
+  assert.match(app,/function rankRequirementsMissing\(rank\)/);
+  assert.match(app,/rankRequirementsMissing\(rank\)&&state\.rankTemplates/);
+  assert.match(app,/data-action="rank-fill-requirements"/);
+  assert.match(app,/case 'rank-fill-requirements':/);
+  assert.match(app,/title:rank\.title,requirements:template\.requirements,checklist:template\.checklist,version:rank\.version/);
+  assert.match(app,/class="promotion-requirement"/);
+  assert.match(app,/function syncPromotionChecklist\(\)/);
+  assert.match(app,/promotionChecklistView\(e\.target\.value,\[\]\)/);
+  assert.match(app,/Самозвіт учасника/);
+  assert.match(app,/Перевірте докази та умови перед погодженням/);
+});
 test('rank dashboard shows fifteen-rank hierarchy, checklists, member counts and promotion actions',()=>{
   const app=readFileSync(resolve('public/app.js'),'utf8');
   assert.match(app,/function rankChecklist\(rank\)/);
