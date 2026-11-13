@@ -498,7 +498,7 @@ async function ranks(){
     '<h3>'+esc(rank.title)+'</h3>'+
     '<div class="muted small">Учасників із рангом: <strong>'+holders.length+'</strong></div>'+
     (rank.requirements?'<div class="small longtext">'+esc(rank.requirements)+'</div>':'<p class="muted small">Умови підвищення не заповнено</p>')+
-    (checklist.length?'<div class="small"><strong>Вимоги / чекліст</strong><ul style="padding-left:18px;margin:8px 0">'+checklist.map(item=>'<li>'+esc(item)+'</li>').join('')+'</ul></div>':'')+
+    (checklist.length?'<details class="small"><summary style="cursor:pointer;font-weight:600">Вимоги / чекліст ('+checklist.length+')</summary><ul style="padding-left:18px;margin:8px 0">'+checklist.map(item=>'<li>'+esc(item)+'</li>').join('')+'</ul></details>':'')+
     (next?'<div class="muted small">Наступний: '+esc(next.title)+'</div>':'<div class="muted small">Найвищий ранг сім’ї</div>')+
     (state.user.role==='leader'?'<div class="mt" style="margin-top:auto"><button class="btn tiny secondary" data-action="edit-rank" data-id="'+rank.id+'">Редагувати ранг</button></div>':'')+
     '</article>';
