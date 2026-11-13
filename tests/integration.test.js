@@ -85,8 +85,11 @@ test('finance trend period filters preserve balance and reject invalid windows',
     const last=response.data.weeks.at(-1);
     assert.equal(last.balance,response.data.opening_balance+response.data.weeks.reduce((s,w)=>s+w.net,0));
   }
-  assert.ok(all.data.weeks.length>=thirty.data.weeks.length);
+  // 'all' begins with the first real transaction, while fixed windows may include earlier empty weeks.
+  assert.ok(all.data.weeks.length>=1);
   assert.ok(ninety.data.weeks.length>=thirty.data.weeks.length);
+  assert.equal(all.data.weeks.reduce((s,w)=>s+w.net,0),200);
+  assert.equal(all.data.opening_balance,0);
 });
 test('database persists after new D1 adapter instance',async()=>{env.DB=new DB();const a=await req('/api/finance',{token:member});assert.equal(a.data.own_total,801);const r=await req('/api/records/reports',{token:member});assert.equal(r.data.items[0].status,'Погоджено');env.DB=DB1;});
 test('event RSVP, prohibited links, CSRF and export permissions',async()=>{const ev=await req('/api/records/events',{method:'POST',token:leader,data:{title:'Загальні збори',starts_at:'2026-12-01T19:00'}});assert.equal(ev.status,201);const yes=await req(`/api/rsvp/${ev.data.item.id}`,{method:'POST',token:member,data:{response:'Так'}});assert.equal(yes.status,200);const rs=await req(`/api/rsvp/${ev.data.item.id}`,{token:leader});assert.equal(rs.data.counts.yes,1);const link=await req('/api/records/reports',{method:'POST',token:member,data:{title:'Bad',evidence:['https://evil.example/foo']}});assert.equal(link.status,400);const csrf=await req('/api/auth/logout',{method:'POST',token:member,headers:{origin:'https://evil.example'}});assert.equal(csrf.status,403);const exp=await req('/api/export?module=users',{token:member});assert.equal(exp.data.items.length,1);assert.equal(exp.data.items[0].password_hash,undefined);});
