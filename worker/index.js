@@ -647,7 +647,27 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
       if(!review&&method==='PATCH'){
         const b=await body(req);if(!Number.isInteger(b.version))fail(428,'Потрібна версія');const manager=permittedRecord(user,mod,old,'manage');const self=old.owner_id===user.id||old.assignee_id===user.id;
         if(!manager&&!(self&&(cfg.memberUpdate||cfg.memberCreate)))fail(403,'Недостатньо прав');if(!manager&&['Погоджено','Відхилено','Завершено'].includes(b.status))fail(403,'Погодження тільки керівником');if(cfg.review&&manager&&b.status&&b.status!==old.status&&['Погоджено','Відхилено','На доопрацювання','Завершено'].includes(b.status))fail(400,'Для рішення використовуйте спеціальне погодження');
-        if(mod==='promotions'&&old.status==='Погоджено')fail(409,'Погоджене підвищення не можна змінювати');const p=recordPayload(b,user,mod,old);if(mod==='capt_matches')captMatchPayload(p,old);if(mod==='gallery')validateGalleryPayload(p);if(mod==='public_news')validatePublicNewsPayload(p);if(mod==='public_team')validatePublicTeamPayload(p);if(mod==='public_achievements')validatePublicAchievementPayload(p);if(mod==='public_calendar')validatePublicCalendarPayload(p);if(!manager){p.assignee_id=old.assignee_id;p.department_id=old.department_id;p.amount=old.amount;p.starts_at=old.starts_at;p.ends_at=old.ends_at;p.extra=parseJson(old.extra,{});p.status=cfg.review?'На перевірці':p.status;}
+        if(mod==='promotions'&&old.status==='Погоджено')fail(409,'Погоджене підвищення не можна змінювати');const p=recordPayload(b,user,mod,old);if(mod==='capt_matches')captMatchPayload(p,old);if(mod==='gallery')validateGalleryPayload(p);if(mod==='public_news')validatePublicNewsPayload(p);if(mod==='public_team')validatePublicTeamPayload(p);if(mod==='public_achievements')validatePublicAchievementPayload(p);if(mod==='public_calendar')validatePublicCalendarPayload(p);if(!manager){
+          p.assignee_id=old.assignee_id;p.department_id=old.department_id;p.amount=old.amount;p.starts_at=old.starts_at;p.ends_at=old.ends_at;
+          const originalExtra=parseJson(old.extra,{});
+          if(mod==='promotions'&&old.owner_id===user.id){
+            if(!['На перевірці','На доопрацювання'].includes(old.status))
+              fail(403,'Заявку з рішенням керівництва вже не можна редагувати');
+            if(b.extra?.requested_rank_id!==undefined&&String(b.extra.requested_rank_id)!==String(originalExtra.requested_rank_id))
+              fail(403,'Цільовий ранг заявки змінювати не дозволено');
+            const checks=b.extra?.checklist_completed;
+            if(checks!==undefined){
+              if(!Array.isArray(checks)||checks.length>30||checks.some(x=>typeof x!=='string'||x.length>250))
+                fail(400,'Некоректний чекліст підвищення');
+              const fromRank=Number(originalExtra.requested_rank_id)-1;
+              const rank=fromRank>=1?await db.prepare('SELECT checklist FROM ranks WHERE id=?').bind(fromRank).first():null;
+              const allowed=parseJson(rank?.checklist||'[]',[]);
+              if(!checks.every(x=>allowed.includes(x)))fail(400,'Вимога відсутня в налаштованому чеклісті рангу');
+              originalExtra.checklist_completed=[...new Set(checks)];
+            }
+          }
+          p.extra=originalExtra;p.status=cfg.review?'На перевірці':p.status;
+        }
         if(user.role==='head'&&!manageInDepartment(user,p.department_id))fail(403,'Напрямок недоступний');const r=await db.prepare('UPDATE records SET title=?,details=?,status=?,assignee_id=?,department_id=?,amount=?,starts_at=?,ends_at=?,evidence=?,extra=?,version=version+1,updated_at=? WHERE id=? AND version=?').bind(p.title,p.details,p.status,p.assignee_id,p.department_id,p.amount,p.starts_at,p.ends_at,JSON.stringify(p.evidence),JSON.stringify(p.extra),now(),id,b.version).run();if(r.meta.changes!==1)fail(409,'Запис змінено іншим користувачем');await audit(db,user,'update',mod,id);if(mod==='public_calendar'&&old.status!=='Погоджено'&&p.status==='Погоджено')queueDiscord(ctx,db,env,'events',{event:p.title,startsAt:p.starts_at,location:p.extra.location});if(mod==='public_news'&&old.status!=='Погоджено'&&p.status==='Погоджено')queueDiscord(ctx,db,env,publicNewsDiscordKind(p.extra.news_category),{event:p.title,message:p.extra.news_category==='announcement'?p.details:undefined});return json({ok:true});
       }
       if(!review&&method==='DELETE'){
