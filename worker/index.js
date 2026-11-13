@@ -722,10 +722,10 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
     if(!can(user,'finance:read')&&!can(user,'finance:manage'))fail(403,'Немає прав');
     const [summary,people]=await Promise.all([
       db.prepare("SELECT COUNT(*) count,COALESCE(SUM(p.amount),0) amount,MIN(p.created_at) oldest FROM payouts p LEFT JOIN payout_confirmations pc ON pc.payout_id=p.id WHERE pc.payout_id IS NULL").first(),
-      allRows(db,\`SELECT p.user_id,u.nickname,u.username,COUNT(*) count,COALESCE(SUM(p.amount),0) amount,MIN(p.created_at) oldest
+      allRows(db,`SELECT p.user_id,u.nickname,u.username,COUNT(*) count,COALESCE(SUM(p.amount),0) amount,MIN(p.created_at) oldest
         FROM payouts p JOIN users u ON u.id=p.user_id LEFT JOIN payout_confirmations pc ON pc.payout_id=p.id
         WHERE pc.payout_id IS NULL
-        GROUP BY p.user_id,u.nickname,u.username ORDER BY amount DESC,p.user_id ASC LIMIT 100\`)
+        GROUP BY p.user_id,u.nickname,u.username ORDER BY amount DESC,p.user_id ASC LIMIT 100`)
     ]);
     return json({count:Number(summary?.count||0),amount:Number(summary?.amount||0),oldest:summary?.oldest||null,people});
   }
