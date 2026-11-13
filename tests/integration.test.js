@@ -168,7 +168,11 @@ test('members see all family contracts and payout previews but cannot edit or se
   const memberResponse=await req('/api/contracts',{token:member});
   assert.equal(memberResponse.status,200,JSON.stringify(memberResponse.data));
   assert.deepEqual(memberResponse.data.items.map(x=>x.id),leaderResponse.data.items.map(x=>x.id));
-  const contract=leaderResponse.data.items[0];assert.ok(contract);
+  const created=await req('/api/contracts',{method:'POST',token:leader,data:{title:'Контракт для перевірки загального доступу',details:'Тест доступу',amount:1500,participant_ids:[memberId],treasury_percent:20,status:'Погоджено'}});
+  assert.equal(created.status,201,JSON.stringify(created.data));
+  const contract=created.data.item;
+  const afterCreation=await req('/api/contracts',{token:member});
+  assert.ok(afterCreation.data.items.some(x=>x.id===contract.id));
   const calculation=await req('/api/contracts/'+contract.id+'/preview',{token:member});
   assert.equal(calculation.status,200,JSON.stringify(calculation.data));
   assert.equal(calculation.data.preview.amount,contract.amount);
