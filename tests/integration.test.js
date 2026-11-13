@@ -44,6 +44,19 @@ test('family roster has compact filters, Ukrainian statuses, sorting and mobile 
   assert.match(css,/\.member-mobile-list\{display:block\}/);
 });
 test('leader creates member, who only accesses own account',async()=>{const a=await req('/api/users',{method:'POST',token:leader,data:{username:'fighter',password:'member-pass-123456',nickname:'Fighter',game_id:'99',role:'member',rank_id:1,department_id:'capt'}});assert.equal(a.status,201,JSON.stringify(a.data));memberId=a.data.item.id;const b=await req('/api/auth/login',{method:'POST',data:{username:'fighter',password:'member-pass-123456'}});assert.equal(b.status,200);member=b.cookie.match(/grizzly_session=([a-f0-9]+)/)[1];const list=await req('/api/users',{token:member});assert.equal(list.data.items.length,1);assert.equal(list.data.items[0].id,memberId);assert.equal((await req('/api/audit',{token:member})).status,403);});
+test('rank dashboard shows fifteen-rank hierarchy, checklists, member counts and promotion actions',()=>{
+  const app=readFileSync(resolve('public/app.js'),'utf8');
+  assert.match(app,/function rankChecklist\(rank\)/);
+  assert.match(app,/api\('\/records\/promotions'\)/);
+  assert.match(app,/state\.users\.filter\(u=>Number\(u\.rank_id\)===Number\(rank\.id\)\)/);
+  assert.match(app,/rankChecklist\(rank\)/);
+  assert.match(app,/data-action="edit-rank"/);
+  assert.match(app,/data-module="promotions"/);
+  assert.match(app,/data-action="rank-promotions-list"/);
+  assert.match(app,/case 'rank-promotions-list':/);
+  assert.match(app,/esc\(rank\.title\)/);
+  assert.match(app,/esc\(item\)/);
+});
 test('leader can safely apply Grizzly rank presets without overwriting custom ranks',async()=>{
   const unauth=await req('/api/ranks/apply-templates',{method:'POST',data:{expected:[{id:1,version:1}]}});assert.equal(unauth.status,401);
   const denied=await req('/api/ranks/apply-templates',{method:'POST',token:member,data:{expected:[{id:1,version:1}]}});assert.equal(denied.status,403);
