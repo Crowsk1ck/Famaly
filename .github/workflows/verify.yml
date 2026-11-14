@@ -29,6 +29,10 @@ jobs:
           node --check public/credential-generator.js
       - name: Integration and generator tests
         run: npm test
+      - name: Static frontend performance budgets
+        run: node scripts/check-performance-budget.mjs
+      - name: Synthetic offline encrypted D1 restore drill
+        run: bash scripts/check-backup-roundtrip.sh
 
 
   panel_browser_acceptance:
