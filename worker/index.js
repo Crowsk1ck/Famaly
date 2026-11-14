@@ -99,7 +99,7 @@ async function activitySnapshot(db,viewer,departmentId){
  if(!['leader','deputy','head','member'].includes(viewer.role))fail(403,'Недостатньо прав');
  if(viewer.role==='head'&&!viewer.head_appointed)fail(403,'Призначення керівника не підтверджено');
  if(viewer.role==='head'&&departmentId&&departmentId!==viewer.department_id)fail(403,'Доступ тільки до власного підрозділу');
- const users=await allRows(db,"SELECT id,nickname,department_id,role,status FROM users WHERE status='active' ORDER BY nickname COLLATE NOCASE");
+ const users=await allRows(db,"SELECT id,nickname,department_id,role,status,joined_at FROM users WHERE status='active' ORDER BY nickname COLLATE NOCASE");
  const allowed=users.filter(x=>viewer.role==='leader'||viewer.role==='deputy'?
   (!departmentId||x.department_id===departmentId):
   viewer.role==='head'?x.department_id===viewer.department_id:x.id===viewer.id);
@@ -107,13 +107,14 @@ async function activitySnapshot(db,viewer,departmentId){
  const day30=new Date(Date.now()-30*86400000).toISOString();
  // Only operational actions; logins, profile edits, and money movements do not count as RP activity.
  const [actions,absences]=await Promise.all([
-  allRows(db,`SELECT actor_id,MAX(created_at) AS last_action,COUNT(*) AS count_30,
+  allRows(db,`SELECT actor_id,MAX(created_at) AS last_action,
+   SUM(CASE WHEN created_at>=? THEN 1 ELSE 0 END) AS count_30,
    SUM(CASE WHEN created_at>=? THEN 1 ELSE 0 END) AS count_7 FROM audit
-   WHERE created_at>=? AND action IN ('create','update','review','submit')
+   WHERE action IN ('create','update','review','submit')
    AND entity IN ('tasks','reports','promotions','events','capt_matches','capt_training',
     'capt_attendance','vehicles','vehicle_loans','discipline','notices','gallery',
     'public_news','department_weekly_report')
-   GROUP BY actor_id`,day7,day30),
+   GROUP BY actor_id`,day30,day7),
   allRows(db,"SELECT owner_id,starts_at,ends_at,extra FROM records WHERE module=? AND status='Погоджено' AND deleted_at IS NULL",ABSENCE_MODULE)
  ]);
  const totals=new Map(actions.map(x=>[x.actor_id,x]));
@@ -121,7 +122,7 @@ async function activitySnapshot(db,viewer,departmentId){
  const items=allowed.map(x=>{
   const a=totals.get(x.id);
   const leave=absences.find(r=>r.owner_id===x.id&&r.starts_at<=today&&r.ends_at>=today);
-  return {id:x.id,nickname:x.nickname,department_id:x.department_id,role:x.role,
+  return {id:x.id,nickname:x.nickname,department_id:x.department_id,role:x.role,joined_at:x.joined_at||null,
    actions_7:Number(a?.count_7||0),actions_30:Number(a?.count_30||0),
    last_action:a?.last_action||null,
    absence:leave?parseJson(leave.extra,{}).type||'vacation':null};
@@ -160,13 +161,17 @@ async function dossier(db,viewer,subject){
   history,latest_records:records.slice(0,30).map(r=>({id:r.id,title:r.title,module:r.module,status:r.status,created_at:r.created_at})),
   can_manage:personnelManage(viewer,subject)};
 }
-function inactivityRows(activity,days){
+export function inactivityRows(activity,days){
  const nowMs=Date.now();
  return activity.items.map(r=>{
-  const stamp=r.last_action?Date.parse(r.last_action):NaN;
-  const elapsed=Number.isFinite(stamp)?Math.max(0,Math.floor((nowMs-stamp)/86400000)):null;
-  return {...r,days_since_action:elapsed,approved_absence:!!r.absence,
-   overdue:!r.absence&&(elapsed===null||elapsed>=days)};
+  // When an account has no audited work yet, use its join date as a grace-period baseline.
+  // Unknown timestamps do not imply an established member is already overdue.
+  const lastAction=r.last_action?Date.parse(r.last_action):NaN;
+  const joined=r.joined_at?Date.parse(r.joined_at):NaN;
+  const baseline=Number.isFinite(lastAction)?lastAction:joined;
+  const elapsed=Number.isFinite(baseline)?Math.max(0,Math.floor((nowMs-baseline)/86400000)):null;
+  return {...r,days_since_action:elapsed,activity_baseline:Number.isFinite(lastAction)?'last_action':Number.isFinite(joined)?'joined_at':'unknown',
+   approved_absence:!!r.absence,overdue:!r.absence&&elapsed!==null&&elapsed>=days};
  });
 }
 function weeklyMetrics(departmentId,visibleRecords,contracts,applications,goals,from=Date.now()-7*86400000,to=Date.now()){

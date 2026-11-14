@@ -776,10 +776,12 @@ function absenceTable(items){
 function inactivityTable(items){
  const rows=items.map(x=>'<tr><td><strong>'+esc(x.nickname)+'</strong></td><td>'+esc(departmentName(x.department_id))+'</td>'+
   '<td class="mono">'+fmt(x.actions_7)+'</td><td class="mono">'+fmt(x.actions_30)+'</td>'+
-  '<td>'+esc(x.days_since_action===null?'Немає записів':x.days_since_action+' дн.')+'</td><td>'+
-  (x.approved_absence?badge('Погоджена відсутність'):x.overdue?'<span class="badge red">Неактив</span>':'<span class="badge green">Є активність</span>')+'</td>'+
+  '<td>'+esc(x.days_since_action===null?'Немає дати':x.activity_baseline==='joined_at'?'Від вступу: '+x.days_since_action+' дн.':x.days_since_action+' дн.')+'</td><td>'+
+  (x.approved_absence?badge('Погоджена відсутність'):x.overdue?'<span class="badge red">Неактив</span>':
+    x.activity_baseline==='unknown'?badge('Недостатньо даних'):
+    x.activity_baseline==='joined_at'?badge('Новий учасник'):'<span class="badge green">Є активність</span>')+'</td>'+
   '<td><button class="btn tiny secondary" data-action="open-dossier" data-id="'+esc(x.id)+'">Досьє ↗</button></td></tr>');
- return rows.length?table(['Учасник','Напрямок','7 днів','30 днів','Без дій','Стан',''],rows):empty('Немає учасників');
+ return rows.length?table(['Учасник','Напрямок','7 днів','30 днів','Період обліку','Стан',''],rows):empty('Немає учасників');
 }
 async function inactivityPage(){
  if(!['leader','deputy','head'].includes(state.user.role))return intro('Недостатньо прав');
@@ -793,7 +795,7 @@ async function inactivityPage(){
  state.departments.map(d=>'<option value="'+esc(d.id)+'"'+(dep===d.id?' selected':'')+'>'+esc(d.title)+'</option>').join('')+'</select>':'';
  return intro('Контроль неактиву','Відсутність робочих дій у панелі за вибраний термін — це не показник GTA-онлайну.')+
   '<div class="card gr-v10-toolbar"><label>Період <select id="inactivity-days-select" class="select">'+[7,14,30].map(n=>'<option value="'+n+'"'+(days===n?' selected':'')+'>'+n+' днів</option>').join('')+'</select></label>'+select+
-  '<span>Без зафіксованих дій: <strong>'+overdue+'</strong></span><span>На погодженій відсутності: <strong>'+exempt+'</strong></span></div>'+
+  '<span>Потребують уваги: <strong>'+overdue+'</strong></span><span>На погодженій відсутності: <strong>'+exempt+'</strong></span></div>'+
   '<div class="card gr-activity-table">'+inactivityTable(response.items)+'</div>';
 }
 async function dossierPage(){

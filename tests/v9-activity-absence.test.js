@@ -17,7 +17,7 @@ test('v9 has 7/30 day activity and vacation/absence pages in the family panel',(
 });
 test('activity is based on actual audited operations and does not infer game online',()=>{
  assert.match(worker,/\/api\/activity/);
- assert.match(worker,/COUNT\(\*\) AS count_30/);
+ assert.match(worker,/SUM\(CASE WHEN created_at>=\? THEN 1 ELSE 0 END\) AS count_30/);
  assert.match(worker,/CASE WHEN created_at>=\? THEN 1 ELSE 0 END/);
  assert.match(worker,/action IN \('create','update','review','submit'\)/);
  assert.match(worker,/не час у GTA 5/);
