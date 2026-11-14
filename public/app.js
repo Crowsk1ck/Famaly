@@ -1927,7 +1927,48 @@ async function initial(){
 const lines=s=>String(s||'').split(/\n/).map(x=>x.trim()).filter(Boolean);
 function formData(f){return Object.fromEntries(new FormData(f).entries());}
 async function afterSaved(msg='Збережено'){closeModal();toast(msg);if(state.user){state.notifications=(await api('/notifications')).items;await preload();}if(['gallery','public_news','public_team','public_achievements','public_calendar'].includes(state.route))state.public=await api('/public');await render();}
-async function handleSubmit(e){const f=e.target;if(!f.id)return;e.preventDefault();const b=formData(f);const submit=f.querySelector('[type=submit]');if(submit)submit.disabled=true;try{switch(f.id){
+// Keep an in-flight form locked even when Enter or another submit event fires.
+// The form fields remain editable so a failed save never erases user input.
+function formSavingState(form,busy){
+ const buttons=Array.from(form.querySelectorAll('[type="submit"]'));
+ for(const button of buttons)button.disabled=busy;
+ if(busy){
+  form.dataset.saving='true';
+  form.setAttribute('aria-busy','true');
+  let status=form.querySelector('[data-form-save-status]');
+  if(!status){
+   status=document.createElement('p');
+   status.className='gr-form-save-status muted small';
+   status.dataset.formSaveStatus='1';
+   status.setAttribute('role','status');
+   status.setAttribute('aria-live','polite');
+   form.append(status);
+  }
+  status.textContent='Збереження…';
+ }else{
+  delete form.dataset.saving;
+  form.removeAttribute('aria-busy');
+  form.querySelector('[data-form-save-status]')?.remove();
+ }
+}
+function saveErrorMessage(err){
+ if(err?.status===409)return 'Запис уже змінено. Оновіть дані перед повторним збереженням.';
+ if(err?.status===428)return 'Запис застарів. Оновіть розділ і спробуйте ще раз.';
+ if(err?.status===403)return 'Недостатньо прав для цієї дії. Перевірте свій доступ.';
+ if(err?.status===429)return 'Забагато запитів. Повторіть дію пізніше.';
+ if(!navigator.onLine)return 'Немає з’єднання з мережею. Перевірте інтернет і спробуйте знову.';
+ return err?.message||'Не вдалося зберегти. Спробуйте ще раз.';
+}
+async function handleSubmit(e){
+ const f=e.target;
+ if(!f.id)return;
+ e.preventDefault();
+ if(f.dataset.saving==='true')return;
+ const b=formData(f);
+ f.querySelector('[data-form-save-error]')?.remove();
+ formSavingState(f,true);
+ let failed=null;
+ try{switch(f.id){
   case 'apply-form':await api('/apply','POST',b);f.reset();toast('Заявку надіслано. Очікуйте рішення рекрутера.');return;
   case 'login-form':state.user=(await api('/auth/login','POST',b)).user;closeModal();state.notifications=(await api('/notifications')).items;await preload();await navigate('overview');toast('Вхід успішний');return;
   case 'user-form':{const id=f.dataset.id,old=state.users.find(u=>u.id===id);let payload={...b};if(!id){delete payload.activity;delete payload.status;}else{payload.version=old.version;if(state.user.role==='leader'){payload.permissions=lines((b.permissions||'').replace(/,/g,'\n'));}else delete payload.permissions;}
@@ -2026,7 +2067,21 @@ async function handleSubmit(e){const f=e.target;if(!f.id)return;e.preventDefault
   case 'settings-form':await api('/settings','PATCH',{...b,__versions:state.settingsVersions});state.public=await api('/public');await afterSaved('Налаштування оновлено');return;
   case 'password-form':await api('/auth/password','POST',b);state.user=null;closeModal();renderPublic();toast('Пароль змінено. Увійдіть повторно.');return;
   case 'reset-password-form':{const target=state.users.find(u=>u.id===f.dataset.id);await api(`/users/${f.dataset.id}/reset-password`,'POST',b);closeModal();await preload();await render();credentialReceipt(target?.username||'',b.password,target?.nickname||'',true);return;}
-} }catch(err){toast(err.message,true);if(err.status===409)toast('Оновіть сторінку перед повторним редагуванням.',true);}finally{if(submit)submit.disabled=false;}}
+} }catch(err){
+ failed=saveErrorMessage(err);
+ toast(failed,true);
+}finally{
+ formSavingState(f,false);
+ if(failed&&f.isConnected){
+  const feedback=document.createElement('p');
+  feedback.className='gr-form-save-error';
+  feedback.setAttribute('role','alert');
+  feedback.textContent=failed;
+  f.querySelector('[data-form-save-error]')?.remove();
+  feedback.dataset.formSaveError='1';
+  f.append(feedback);
+ }
+}}
 document.addEventListener('change',async event=>{
  const control=event.target;
  if(!control||!['discord-log-kind','discord-log-status','discord-outbox-status','discord-outbox-route'].includes(control.id))return;
