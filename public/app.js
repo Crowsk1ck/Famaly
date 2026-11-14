@@ -24,7 +24,7 @@ const nav=[
   {id:'activity',text:'Активність 7/30 днів',icon:'◷',group:'ГОЛОВНЕ'},
   {id:'inactivity',text:'Контроль неактиву',icon:'◴',group:'ГОЛОВНЕ'},
   {id:'departments',text:'Підрозділи',icon:'▦',group:'ПІДРОЗДІЛИ'},
-  {id:'workspace',text:'Робочий простір',icon:'▤',group:'ПІДРОЗДІЛИ'},
+  {id:'workspace',text:'Управління підрозділом',icon:'▤',group:'ПІДРОЗДІЛИ'},
   {id:'leadership',text:'Контроль керівників',icon:'▥',group:'ПІДРОЗДІЛИ'},
   {id:'capt',text:'CAPT',icon:'◎',group:'ОПЕРАЦІЇ'},
   {id:'contracts',text:'Контракти',icon:'▤',group:'ОПЕРАЦІЇ'},
