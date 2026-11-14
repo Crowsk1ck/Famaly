@@ -2612,3 +2612,71 @@ test('v12 personnel Discord preferences persist independently and reject stale v
  assert.equal(restore.status,200,JSON.stringify(restore.data));
  for(const kind of keys)assert.equal(restore.data.enabled[kind],original.enabled[kind]);
 });
+
+
+test('v16.0 acceptance: leader, deputy, head and member see only permitted account actions',async()=>{
+ const leaderInfo=(await req('/api/auth/me',{token:leader})).data.user;
+ const suffix='v16a';
+ const accountDefs=[
+  {username:'deputy_'+suffix,password:'deputy-acceptance-123456',nickname:'Acceptance Deputy',role:'deputy',department_id:'capt'},
+  {username:'head_'+suffix,password:'head-acceptance-123456',nickname:'Acceptance Head',role:'head',department_id:'capt'},
+  {username:'member_'+suffix,password:'member-acceptance-123456',nickname:'Acceptance Member',role:'member',department_id:'capt'}
+ ];
+ const accounts={};const tokens={};
+ for(const def of accountDefs){
+  const result=await req('/api/users',{method:'POST',token:leader,data:def});
+  assert.equal(result.status,201,JSON.stringify(result.data));
+  accounts[def.role]=result.data.item;
+  const login=await req('/api/auth/login',{method:'POST',data:{username:def.username,password:def.password}});
+  assert.equal(login.status,200,JSON.stringify(login.data));
+  tokens[def.role]=login.cookie.match(/grizzly_session=([a-f0-9]+)/)[1];
+ }
+ const roster=await req('/api/members',{token:tokens.member});
+ assert.equal(roster.status,200);
+ for(const kind of ['member','deputy','head']){
+  assert.ok(roster.data.items.some(u=>u.id===accounts[kind].id));
+ }
+ for(const row of roster.data.items){
+  for(const privateField of ['username','password_hash','permissions','discord','activity','version','created_at']){
+   assert.equal(Object.hasOwn(row,privateField),false,'Roster must not disclose '+privateField);
+  }
+ }
+ const memberAccounts=await req('/api/users',{token:tokens.member});
+ assert.equal(memberAccounts.status,200);
+ assert.deepEqual(memberAccounts.data.items.map(u=>u.id),[accounts.member.id]);
+ const headAccounts=await req('/api/users',{token:tokens.head});
+ assert.equal(headAccounts.status,200);
+ assert.ok(headAccounts.data.items.some(u=>u.id===accounts.head.id));
+ assert.ok(headAccounts.data.items.some(u=>u.id===accounts.member.id),
+  'Head may see private account list within their own department, but not mutate it');
+ const deputyAccounts=await req('/api/users',{token:tokens.deputy});
+ assert.equal(deputyAccounts.status,200);
+ assert.ok(deputyAccounts.data.items.some(u=>u.id===leaderInfo.id));
+ const memberChanges=await req('/api/users/'+accounts.member.id,{method:'PATCH',token:tokens.member,
+  data:{nickname:'My profile updated in v16 acceptance',version:accounts.member.version}});
+ assert.equal(memberChanges.status,200,JSON.stringify(memberChanges.data));
+ assert.equal(memberChanges.data.item.nickname,'My profile updated in v16 acceptance');
+ const memberEscalation=await req('/api/users/'+accounts.member.id,{method:'PATCH',token:tokens.member,
+  data:{role:'leader',version:memberChanges.data.item.version}});
+ assert.equal(memberEscalation.status,403);
+ const memberEditsHead=await req('/api/users/'+accounts.head.id,{method:'PATCH',token:tokens.member,
+  data:{nickname:'Spoof',version:accounts.head.version}});
+ assert.equal(memberEditsHead.status,403);
+ const headEditsMember=await req('/api/users/'+accounts.member.id,{method:'PATCH',token:tokens.head,
+  data:{nickname:'Head spoof',version:memberChanges.data.item.version}});
+ assert.equal(headEditsMember.status,403,'Unappointed head never gets members:write');
+ const deputyEditsLeader=await req('/api/users/'+leaderInfo.id,{method:'PATCH',token:tokens.deputy,
+  data:{nickname:'Deputy spoof',version:leaderInfo.version}});
+ assert.equal(deputyEditsLeader.status,403,'Deputy cannot modify leader account');
+ const deputyWorkspace=await req('/api/leadership-overview',{token:tokens.deputy});
+ assert.equal(deputyWorkspace.status,200);
+ for(const role of ['head','member']){
+  assert.equal((await req('/api/leadership-overview',{token:tokens[role]})).status,403,role);
+ }
+ assert.equal((await req('/api/department-workspace?department=capt',{token:tokens.head})).status,403,
+  'A head must be actively appointed before opening the team workspace');
+ assert.equal((await req('/api/ledger',{token:tokens.member})).status,403);
+ assert.equal((await req('/api/ledger',{token:tokens.head})).status,403);
+ assert.equal((await req('/api/auth/me',{token:leader})).data.user.role,'leader');
+ assert.equal((await req('/api/auth/me',{token:tokens.member})).data.user.role,'member');
+});

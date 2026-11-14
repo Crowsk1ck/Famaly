@@ -7,7 +7,7 @@ const app=readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
 const css=readFileSync(new URL('../public/style.css',import.meta.url),'utf8');
 const begin=app.indexOf('function selectedMemberRows(');
 const midway=app.indexOf('function syncMembersBulkUi(){',begin);
-const end=app.indexOf('function memberStatusLabel(',midway);
+const end=app.indexOf('\n// v16.0: mirror',midway);
 assert.ok(begin>=0&&midway>begin&&end>midway);
 const helpers=runInNewContext(app.slice(begin,midway)+
  '\n({selectedMemberRows,selectedMembersCsv})',{
