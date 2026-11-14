@@ -29,3 +29,4 @@ jobs:
           node --check public/credential-generator.js
       - name: Integration and generator tests
         run: npm test
+

@@ -1696,6 +1696,23 @@ document.addEventListener('click',async e=>{const back=e.target.closest('[data-b
   case 'rsvp':await api(`/rsvp/${id}`,'POST',{response:t.dataset.value});await viewRecord('events',id);toast('Участь оновлено');break;
   case 'revoke-session':await api(`/auth/sessions/${id}`,'DELETE');await render();toast('Сесію завершено');break;
 }}catch(err){toast(err.message,true);if(err.status===409)toast('Дані вже змінені. Оновіть розділ.',true);}});
+// Keep public routes inside one document. Full navigations briefly display the
+// crawler-friendly prerender shell, which looked like a broken loading screen.
+const publicPathSet=new Set(Object.values(grPublicPaths));
+document.addEventListener('click',event=>{
+  const link=event.target.closest('a[href]');
+  if(!link||event.defaultPrevented||event.button!==0||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey||link.hasAttribute('download')||(link.target&&link.target!=='_self'))return;
+  const url=new URL(link.href,location.href);
+  if(url.origin!==location.origin||!publicPathSet.has(url.pathname)||url.hash||url.search)return;
+  event.preventDefault();
+  const target=url.pathname+(state.user?'?view=public':'');
+  if(location.pathname+location.search!==target)history.pushState({grizzlyPublic:true},'',target);
+  renderPublic();
+});
+window.addEventListener('popstate',()=>{
+  if(!state.user||new URL(location.href).searchParams.get('view')==='public'||publicPathSet.has(location.pathname)&&location.pathname!=='/')renderPublic();
+  else render();
+});
 window.addEventListener('hashchange',()=>{
   if(!state.user||new URL(location.href).searchParams.get('view')==='public')renderPublic();
 });
