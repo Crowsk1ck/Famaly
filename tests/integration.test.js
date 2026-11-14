@@ -653,7 +653,7 @@ test('Discord webhook validation and formatter forbid spoofed hosts and mentions
   const alert=buildDiscordNotification('applications',{
     nickname:'@everyone <@123456789012345678>',gameId:'99'
   });
-  assert.deepEqual(alert.allowed_mentions,{parse:[]});
+  assert.deepEqual(alert.allowed_mentions,{parse:[],roles:['1563285390989987962']});
   assert.ok(!JSON.stringify(alert).includes('@everyone'));
   assert.ok(JSON.stringify(alert).includes('99'));
   assert.equal(alert.embeds.length,1);
@@ -716,7 +716,7 @@ test('Discord settings and delivery enforce leader access and notify once per me
     assert.ok(!JSON.stringify(applicant).includes('@everyone'));
     assert.ok(!JSON.stringify(applicant).includes('PRIVATE_CONTACT'));
     assert.ok(!JSON.stringify(applicant).includes('PRIVATE MOTIVATION'));
-    assert.deepEqual(applicant.allowed_mentions,{parse:[]});
+    assert.deepEqual(applicant.allowed_mentions,{parse:[],roles:['1563285390989987962']});
     const apps=await req('/api/applications',{token:leader});
     const item=apps.data.items.find(a=>a.nickname==='@everyone Grizzly candidate');
     assert.ok(item);
@@ -745,7 +745,7 @@ test('Discord settings and delivery enforce leader access and notify once per me
     assert.equal(sent.length,4);
     assert.ok(JSON.stringify(sent[3]).includes('GRIZZLY open event'));
     assert.ok(JSON.stringify(sent[3]).includes('18:30'));
-    assert.deepEqual(sent[3].allowed_mentions,{parse:[]});
+    assert.deepEqual(sent[3].allowed_mentions,{parse:[],roles:['1563285390989987962']});
     const publicData=(await req('/api/public')).data;
     assert.ok(!JSON.stringify(publicData).includes(webhook));
     assert.ok(!JSON.stringify((await req('/api/settings',{token:leader})).data).includes(webhook));
@@ -877,7 +877,7 @@ test('CAPT announcements and family news notify only on explicit public-news pub
     assert.ok(JSON.stringify(sent[0]).includes('CAPT збори'));
     assert.ok(!JSON.stringify(sent[0]).includes('PUBLIC_CAPT_DETAILS'));
     assert.ok(!JSON.stringify(sent[0]).includes('PRIVATE_CAPT_NOTE'));
-    assert.deepEqual(sent[0].allowed_mentions,{parse:[]});
+    assert.deepEqual(sent[0].allowed_mentions,{parse:[],roles:['1563285390989987962']});
     assert.ok(!JSON.stringify(sent[0]).includes('<@123456789012345678>'));
     const sameStatus=await req('/api/records/public_news/'+id,{method:'PATCH',token:leader,ctx,data:{
       version:2,status:'Погоджено',title:'CAPT збори оновлено'
@@ -964,7 +964,7 @@ test('General announcements use a distinct webhook, not CAPT/news or the legacy 
     assert.ok(sent[0].payload.embeds[0].title.includes('Оголошення'));
     assert.ok(JSON.stringify(sent[0].payload).includes('Збори на маєтку'));
     assert.ok(!JSON.stringify(sent[0].payload).includes('SECRET_NOT_FOR_DISCORD'));
-    assert.deepEqual(sent[0].payload.allowed_mentions,{parse:[]});
+    assert.deepEqual(sent[0].payload.allowed_mentions,{parse:[],roles:['1563285390989987962']});
     const same=await req('/api/records/public_news/'+draft.data.item.id,{method:'PATCH',token:leader,ctx,data:{
       version:2,status:'Погоджено',title:'Оголошення оновлено'
     }});
