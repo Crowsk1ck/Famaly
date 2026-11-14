@@ -680,6 +680,20 @@ async function ranks(){
   (recent.length?table(['Учасник','Цільовий ранг','Статус','Прогрес','Дата','Дія'],recentRows):empty('Заявок поки немає','Створіть першу заявку на підвищення.'));
 }
 function rankForm(id){const r=state.ranks.find(x=>x.id===Number(id));modal(`Редагування рангу ${id}`,`<form id="rank-form" data-id="${id}" class="formgrid">${field('Назва рангу','title',r.title,'text',true,'required')}${field('Умови підвищення','requirements',r.requirements,'textarea',true)}${field('Чекліст (кожна вимога з нового рядка)','checklist',JSON.parse(r.checklist||'[]').join('\n'),'textarea',true)}<div class="full form-actions"><button class="btn" type="submit">Зберегти ранг</button></div></form>`);}
+// Department-specific menu: show shared operations plus the specialty of the selected team.
+// The server remains the final authority for row visibility and write permissions.
+const workspaceDepartmentSections=Object.freeze({
+ capt:['personnel','tasks','reports','capt_matches','capt_training','capt_attendance','events','contracts','finance'],
+ farm:['personnel','tasks','reports','contracts','finance','promotions'],
+ fleet:['personnel','vehicles','vehicle_loans','tasks','reports','contracts','finance'],
+ discipline:['personnel','discipline','blacklist','tasks','reports'],
+ recruitment:['personnel','applications','tasks','reports','notices'],
+ events:['personnel','events','notices','tasks','reports','gallery','public_calendar']
+});
+function workspaceTabs(departmentId,sections){
+ const allowed=workspaceDepartmentSections[departmentId]||['personnel','tasks','reports','contracts','finance'];
+ return allowed.map(id=>sections.find(section=>section.id===id)).filter(Boolean);
+}
 async function departmentWorkspace(){
  const user=state.user;
  if(!['leader','deputy','head'].includes(user.role))return intro('Доступ до підрозділу','Тільки призначені керівники та вище керівництво.');
@@ -701,15 +715,21 @@ async function departmentWorkspace(){
   {id:'contracts',title:'Контракти',group:'Керування',count:contracts.length},
   {id:'finance',title:'Фінанси підрозділу',group:'Керування',count:financeSummary.contracts.count},
   ...(dept.id==='recruitment'&&can('recruitment:manage')?[{id:'applications',title:'Заявки на вступ',group:'Рекрутинг',count:recruitmentItems.length}]:[]),...sections];
- const active=allSections.find(x=>x.id===id)||allSections[0];
+ const focusedSections=workspaceTabs(dept.id,allSections);
+ const active=focusedSections.find(x=>x.id===id)||focusedSections[0];
  const selector=user.role==='head'
   ?'<span class="badge blue">Мій підрозділ</span>'
   :'<label class="gr-workspace-select-label">Підрозділ <select class="select" id="workspace-department-select" aria-label="Оберіть підрозділ">'+
    available.map(d=>'<option value="'+esc(d.id)+'"'+(d.id===dept.id?' selected':'')+'>'+esc(d.title)+'</option>').join('')+'</select></label>';
  const stats=[['Активні учасники',data.summary.members],['Активні завдання',data.summary.tasks_open],
-  ['Звіти на перевірці',data.summary.reports_review],['Контракти',data.summary.contracts_count],
-  ['Контрактів нараховано',data.summary.contracts_settled]];
- const buttons=allSections.map(x=>'<button type="button" class="gr-workspace-tab'+(x.id===active.id?' active':'')+'" data-action="workspace-section" data-value="'+esc(x.id)+'" aria-pressed="'+(x.id===active.id)+'"><span>'+esc(x.title)+'</span><span class="gr-workspace-count">'+fmt(x.count||0)+'</span></button>').join('');
+  ['Звіти на перевірці',data.summary.reports_review],
+  dept.id==='capt'?['CAPT — бої',sections.find(x=>x.id==='capt_matches')?.count||0]:
+  dept.id==='fleet'?['Автомобілі',sections.find(x=>x.id==='vehicles')?.count||0]:
+  dept.id==='recruitment'?['Заявки на вступ',recruitmentItems.length]:
+  dept.id==='discipline'?['Дисципліна',sections.find(x=>x.id==='discipline')?.count||0]:
+  dept.id==='events'?['Заходи',sections.find(x=>x.id==='events')?.count||0]:
+  ['Контракти',data.summary.contracts_count]];
+ const buttons=focusedSections.map(x=>'<button type="button" class="gr-workspace-tab'+(x.id===active.id?' active':'')+'" data-action="workspace-section" data-value="'+esc(x.id)+'" aria-pressed="'+(x.id===active.id)+'"><span>'+esc(x.title)+'</span><span class="gr-workspace-count">'+fmt(x.count||0)+'</span></button>').join('');
  const membersRows=members.map(m=>'<tr><td class="table-title">'+esc(m.nickname)+'</td><td>'+esc(rankName(m.rank_id))+'</td><td>'+esc(roles[m.role]||m.role)+'</td><td>'+badge(m.status)+'</td></tr>');
  const contractRows=contracts.map(c=>'<tr><td class="table-title">'+esc(c.title)+'</td><td class="mono">'+fmt(c.amount)+'</td><td>'+badge(c.settled_at?'Нараховано':c.status)+'</td><td><button class="btn tiny secondary" data-action="view-contract" data-id="'+esc(c.id)+'">Переглянути ↗</button></td></tr>');
  let content='';
@@ -747,7 +767,7 @@ async function departmentWorkspace(){
  return intro('Управління підрозділом','Окремий робочий простір керівника: особовий склад, контракти та всі доступні операційні розділи.')+
   '<div class="card gr-workspace-head"><div class="row space wrap"><div><div class="overline">GRIZZLY / ПІДРОЗДІЛ</div><h2>'+esc(dept.title)+'</h2><p class="muted small">Керівник: '+esc(userName(dept.head_id))+'</p></div>'+selector+'</div></div>'+
   '<div class="cards gr-workspace-stats">'+stats.map(([label,value])=>'<div class="card stat"><span class="muted small">'+esc(label)+'</span><div class="number">'+fmt(value)+'</div></div>').join('')+'</div>'+
-  '<div class="gr-workspace-layout"><nav class="card gr-workspace-nav" aria-label="Розділи підрозділу"><h3>Розділи керівника</h3><p class="small muted">Дані тільки обраного напрямку.</p>'+buttons+'</nav>'+
+  '<div class="gr-workspace-layout"><nav class="card gr-workspace-nav" aria-label="Розділи підрозділу"><h3>Розділи '+esc(dept.title)+'</h3><p class="small muted">Тільки потрібні вкладки цього підрозділу.</p>'+buttons+'</nav>'+
   '<section class="card gr-workspace-content"><div class="card-head"><div><h3>'+esc(active.title)+'</h3>'+
   '<p class="small muted">У підрозділі: '+fmt(active.count||0)+' записів'+(active.attention?' · На перевірці: '+fmt(active.attention):'')+'</p></div>'+create+'</div>'+
   content+'</section></div>';

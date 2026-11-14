@@ -887,3 +887,30 @@
  .gr-workspace-select-label select{max-width:100%;width:100%}
  .gr-workspace-content{padding:14px}
 }
+
+/* Department workspace refinement: compact focused menu and aligned summary cards */
+.gr-workspace-head{margin-bottom:12px}
+.gr-workspace-stats{
+ display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr));
+ gap:10px;margin-bottom:14px;
+}
+.gr-workspace-stats>.stat{min-width:0;min-height:94px;padding:15px 17px;margin:0}
+.gr-workspace-stats>.stat .number{font-size:clamp(1.3rem,2vw,1.8rem)}
+.gr-workspace-layout{grid-template-columns:minmax(190px,225px) minmax(0,1fr);gap:14px}
+.gr-workspace-nav{max-height:none;overflow:visible;align-self:start;padding:14px}
+.gr-workspace-nav>h3{margin-bottom:3px;font-size:.94rem}
+.gr-workspace-nav>p{font-size:.75rem;margin-bottom:8px}
+.gr-workspace-content{min-height:280px}
+.gr-workspace-content .empty{min-height:160px}
+@media(max-width:1050px){
+ .gr-workspace-stats{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:880px){
+ .gr-workspace-layout{grid-template-columns:minmax(0,1fr)}
+ .gr-workspace-nav{max-height:none;overflow-x:auto;overflow-y:hidden;padding:10px}
+}
+@media(max-width:500px){
+ .gr-workspace-stats{gap:8px}
+ .gr-workspace-stats>.stat{min-height:86px;padding:11px}
+ .gr-workspace-stats>.stat .number{font-size:1.4rem}
+}
