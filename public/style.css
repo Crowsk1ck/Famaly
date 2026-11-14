@@ -1070,3 +1070,25 @@
 form[aria-busy="true"] [type="submit"]{cursor:progress;opacity:.65}
 @keyframes gr-save-spinner{to{transform:rotate(360deg)}}
 @media(prefers-reduced-motion:reduce){.gr-form-save-status::before{animation:none;border-right-color:currentColor}}
+
+
+/* v15.4: unread inbox, accessible badge and compact touch-friendly shortcuts */
+.gr-notification-trigger{position:relative;min-width:42px;min-height:42px}
+.gr-notif-count{position:absolute;top:-5px;right:-7px;display:grid;place-items:center;
+ min-width:19px;height:19px;padding:0 4px;border-radius:99px;background:#c64859;color:white;
+ border:2px solid #20242e;font-size:.65rem;font-weight:800;line-height:1}
+.gr-notification-filters{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}
+.gr-notification-filters .btn{min-height:36px}
+.gr-notification-filters .gr-notif-selected{border-color:#ce6b7d;color:#fff;background:#58313e}
+.gr-notification-list{max-height:min(55vh,460px);overflow-y:auto;overscroll-behavior:contain}
+.notif-item.gr-notif-unread{border-left:3px solid #ce6b7d;padding-left:9px;background:rgba(206,107,125,.065)}
+.gr-notif-foot{gap:8px;align-items:center;margin-top:8px}
+.gr-notif-foot .btn{min-height:38px}
+.gr-notification-result{margin:9px 0 0}
+@media(max-width:560px){
+ .notif-pop{position:fixed;left:12px;right:12px;top:65px;width:auto;max-width:none;
+  max-height:calc(100dvh - 80px);overflow:auto;z-index:75}
+ .gr-notification-list{max-height:calc(100dvh - 225px)}
+ .gr-notif-foot .btn{min-height:44px}
+ .gr-notification-filters .btn{min-height:42px;flex:1}
+}

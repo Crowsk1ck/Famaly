@@ -436,8 +436,54 @@ function sidebar(){
   return `${group}<a href="#${n.id}" class="sideitem ${state.route===n.id?'active':''} ${collapsed(n.group)?'gr-nav-hidden':''}" data-route="${n.id}"><span class="ni">${n.icon}</span>${esc(n.text)}</a>`;
  }).join('')}</nav><div class="side-bottom"><div class="row"><div class="avatar">${esc((state.user.nickname||state.user.username).slice(0,1).toUpperCase())}</div><div style="min-width:0"><strong class="small">${esc(state.user.nickname||state.user.username)}</strong><div class="muted small">${esc(roles[state.user.role])}</div></div></div><button class="btn ghost tiny sidebar-logout" data-action="logout">Вийти ↗</button></div></aside>`;
 }
-function shell(content){const unread=state.notifications.filter(x=>!x.read_at).length;$('#app').innerHTML=`<div class="shell ${state.menu?'menu-open':''}">${sidebar()}<button type="button" class="gr-menu-scrim" data-action="close-menu" aria-label="Закрити меню"></button><div class="app-main"><header class="topbar"><div class="row"><button type="button" class="iconbtn mobile-menu" data-action="toggle-menu" aria-label="Відкрити меню" aria-expanded="false" aria-controls="gr-panel-navigation">☰</button><div><small>GRIZZLY / ${esc(roles[state.user.role])}</small><h2>${esc(nav.find(n=>n.id===state.route)?.text||'Огляд')}</h2></div></div><div class="row"><div class="notif-menu"><button class="iconbtn" data-action="notifications" aria-label="Сповіщення">♧${unread?'<span class="alert-dot"></span>':''}</button><div id="notif-pop" class="notif-pop hide"></div></div><button class="iconbtn" data-route="profile" title="Мій профіль">◌</button></div></header><div class="app-content">${content}</div></div></div>`;}
-function notifyPopup(){const el=$('#notif-pop');if(!el)return;el.classList.toggle('hide');el.innerHTML=`<div class="card-head"><h3>Сповіщення</h3><span class="pill">${state.notifications.filter(x=>!x.read_at).length} нових</span></div>${state.notifications.length?state.notifications.slice(0,12).map(n=>`<div class="notif-item"><div class="row space"><strong class="small">${esc(n.title)}</strong>${n.read_at?'':`<button class="btn tiny ghost" data-action="read-notification" data-id="${esc(n.id)}">✓</button>`}</div><div class="muted small">${esc(n.details)}</div><div class="muted small">${date(n.created_at)}</div></div>`).join(''):empty('Немає сповіщень','Нові події з’являться тут.')}`;}
+function shell(content){const unread=state.notifications.filter(x=>!x.read_at).length;$('#app').innerHTML=`<div class="shell ${state.menu?'menu-open':''}">${sidebar()}<button type="button" class="gr-menu-scrim" data-action="close-menu" aria-label="Закрити меню"></button><div class="app-main"><header class="topbar"><div class="row"><button type="button" class="iconbtn mobile-menu" data-action="toggle-menu" aria-label="Відкрити меню" aria-expanded="false" aria-controls="gr-panel-navigation">☰</button><div><small>GRIZZLY / ${esc(roles[state.user.role])}</small><h2>${esc(nav.find(n=>n.id===state.route)?.text||'Огляд')}</h2></div></div><div class="row"><div class="notif-menu"><button type="button" class="iconbtn gr-notification-trigger" data-action="notifications" aria-label="Сповіщення, непрочитаних: ${unread}" aria-expanded="false" aria-controls="notif-pop">♧${unread?'<span class="gr-notif-count">'+esc(unread>99?'99+':unread)+'</span>':''}</button><div id="notif-pop" class="notif-pop hide" role="region" aria-label="Вхідні сповіщення"></div></div><button class="iconbtn" data-route="profile" title="Мій профіль">◌</button></div></header><div class="app-content">${content}</div></div></div>`;}
+function notificationRoute(notification){
+ const title=String(notification?.title||'').toLocaleLowerCase('uk');
+ const direct=[
+  [/особов|доган|заохоченн|кадров|рішення знято/, 'dossier'],
+  [/відсутн|відпуст|неактив/, 'absences'],
+  [/тижневий звіт|звіт/, 'reports'],
+  [/підвищенн/, 'ranks'],
+  [/капт|capt/, 'capt'],
+  [/контракт/, 'contracts'],
+  [/виплат|фінанс/, 'finance'],
+  [/набір|заявк.*вступ/, 'applications'],
+  [/завданн|запис/, 'members']
+ ];
+ const matched=direct.find(([re])=>re.test(title));
+ const route=matched?.[1]||null;
+ return route&&nav.some(item=>item.id===route&&visible(item))?route:null;
+}
+function notificationItems(filter='all'){
+ const items=[...(state.notifications||[])].sort((a,b)=>Number(!!a.read_at)-Number(!!b.read_at)||
+  String(b.created_at||'').localeCompare(String(a.created_at||'')));
+ return filter==='unread'?items.filter(x=>!x.read_at):items;
+}
+function notifyPopup(force){
+ const el=$('#notif-pop');
+ if(!el)return;
+ const open=force===undefined?el.classList.contains('hide'):Boolean(force);
+ el.classList.toggle('hide',!open);
+ const trigger=document.querySelector('[data-action="notifications"]');
+ trigger?.setAttribute('aria-expanded',String(open));
+ if(!open)return;
+ const unread=state.notifications.filter(x=>!x.read_at).length;
+ const filter=state.notificationFilter==='unread'?'unread':'all';
+ const notices=notificationItems(filter).slice(0,30);
+ const total=notificationItems(filter).length;
+ el.innerHTML='<div class="card-head"><h3>Сповіщення</h3><span class="pill">'+fmt(unread)+' непрочитаних</span></div>'+
+ '<div class="gr-notification-filters" role="group" aria-label="Фільтр сповіщень">'+
+ [['all','Усі'],['unread','Непрочитані']].map(([key,label])=>
+ '<button type="button" class="btn tiny secondary'+(filter===key?' gr-notif-selected':'')+'" data-action="notification-filter" data-filter="'+key+'" aria-pressed="'+(filter===key)+'">'+label+'</button>').join('')+'</div>'+
+ (notices.length?'<div class="gr-notification-list">'+notices.map(n=>{
+  const route=notificationRoute(n);
+  return '<div class="notif-item'+(n.read_at?'':' gr-notif-unread')+'"><div class="row space">'+
+  '<strong class="small">'+esc(n.title)+'</strong>'+
+  (n.read_at?'':'<button type="button" class="btn tiny ghost" data-action="read-notification" data-id="'+esc(n.id)+'" aria-label="Позначити прочитаним: '+esc(n.title)+'">✓</button>')+
+  '</div><div class="muted small">'+esc(n.details||'')+'</div><div class="row space wrap gr-notif-foot"><span class="muted small">'+esc(date(n.created_at))+'</span>'+
+  (route?'<button type="button" class="btn tiny secondary" data-action="notification-open" data-id="'+esc(n.id)+'" data-route-target="'+esc(route)+'">Перейти ↗</button>':'')+'</div></div>';
+ }).join('')+'</div><p class="muted small gr-notification-result">Показано '+notices.length+' із '+total+'</p>':
+ empty(filter==='unread'?'Усі повідомлення прочитані':'Немає сповіщень','Нові події з’являться тут.'));}
 function table(headers,rows){return rows.length?`<div class="tablewrap"><table><thead><tr>${headers.map(s=>`<th>${esc(s)}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table></div>`:empty();}
 // Render large lists in bounded pages. The complete authorized dataset stays available
 // for filtering/export; only visible rows and mobile cards are converted into HTML.
@@ -2166,7 +2212,25 @@ document.addEventListener('click',async e=>{const back=e.target.closest('[data-b
   case 'discord-test':{if(state.user?.role!=='leader')throw new Error('Недостатньо прав');const result=await api('/discord/test','POST',{});toast(result.message||'Тест надіслано');break;}
   case 'logout':await api('/auth/logout','POST');state.user=null;state.notifications=[];state.route='overview';state.search='';location.hash='home';renderPublic();toast('Ви вийшли з панелі');break;
   case 'notifications':notifyPopup();break;
-  case 'read-notification':await api(`/notifications/${id}/read`,'POST');state.notifications=(await api('/notifications')).items;notifyPopup();await render();break;
+  case 'notification-filter':state.notificationFilter=t.dataset.filter==='unread'?'unread':'all';notifyPopup(true);break;
+  case 'read-notification':{
+    await api(`/notifications/${id}/read`,'POST');
+    state.notifications=(await api('/notifications')).items;
+    await render();
+    notifyPopup(true);
+    break;
+  }
+  case 'notification-open':{
+    const notification=state.notifications.find(n=>n.id===id);
+    const route=notification&&notificationRoute(notification);
+    if(!route||route!==t.dataset.routeTarget)break;
+    if(!notification.read_at){
+      await api(`/notifications/${id}/read`,'POST');
+      state.notifications=(await api('/notifications')).items;
+    }
+    await navigate(route);
+    break;
+  }
   case 'generate-login':{
     const form=$('#user-form');if(!form||form.dataset.id)break;
     const nickname=form.querySelector('[name="nickname"]')?.value||'';
