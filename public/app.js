@@ -1592,7 +1592,13 @@ async function settingsPage(){const response=await api('/settings');const s=resp
 if(discord)state.discordVersions=discord.versions||{};
 let discordLogs=[],discordLogError='';
 if(discord&&!discord.migrationRequired){
-  try{discordLogs=(await api('/discord/deliveries')).items||[];}catch(e){discordLogError=e.message;}
+  try{
+    const kind=state.discordLogKind||'all',status=state.discordLogStatus||'all';
+    const response=await api('/discord/deliveries?kind='+encodeURIComponent(kind)+'&status='+encodeURIComponent(status));
+    discordLogs=response.items||[];
+    state.discordLogTotals=response.totals||null;
+    state.discordLogMore=!!response.has_more;
+  }catch(e){discordLogError=e.message;}
 }
 
 const discordLabel=discord?.reason==='missing'?'Секрет відсутній':discord?.reason==='invalid'?'Некоректний URL':discord?.configured?'Секрет знайдено':'Не підключено';
@@ -1660,7 +1666,18 @@ const applicationWebhooksHtml=discord?
      '<button class="btn tiny secondary" type="button" data-action="discord-test-route" data-kind="'+kind+'" '+(route.configured?'':'disabled')+'>Тест статусу</button></div>';
  }).join('')+'</div>':'';
 const discordLogsHtml=discord&&!discord.migrationRequired?
- '<div class="gr-discord-log"><div class="row space wrap"><h3>Журнал доставки</h3><span class="muted small">Останні 100 відправлень</span></div>'+
+ '<div class="gr-discord-log"><div class="row space wrap"><h3>Журнал доставки</h3><span class="muted small">Останні 300 записів, до 100 результатів</span></div>'+
+ '<div class="row wrap mt"><label class="muted small">Тип <select class="select" id="discord-log-kind">'+
+ '<option value="all">Усі канали</option>'+
+ Object.entries(discordNames).filter(([key])=>key!=='test').map(([key,label])=>
+  '<option value="'+key+'"'+((state.discordLogKind||'all')===key?' selected':'')+'>'+esc(label)+'</option>').join('')+
+ '</select></label><label class="muted small">Доставка <select class="select" id="discord-log-status">'+
+ [['all','Усі'],['sent','Надіслано'],['failed','Помилка']].map(([value,label])=>
+  '<option value="'+value+'"'+((state.discordLogStatus||'all')===value?' selected':'')+'>'+label+'</option>').join('')+
+ '</select></label></div>'+
+ (state.discordLogTotals?'<p class="muted small mt">Записів: '+fmt(state.discordLogTotals.recorded)+
+ ' · Успішно: '+fmt(state.discordLogTotals.sent)+' · Помилки: '+fmt(state.discordLogTotals.failed)+
+ (state.discordLogMore?' · Показано перші 100':'')+'</p>':'')+
  (discordLogError?'<div class="notice">'+esc(discordLogError)+'</div>':
  discordLogs.length?'<div class="gr-discord-log-scroll"><table class="gr-discord-table"><thead><tr><th>Дата</th><th>Тип</th><th>Результат</th><th>Помилка</th></tr></thead><tbody>'+
  discordLogs.map(e=>'<tr><td>'+esc(date(e.created_at))+'</td><td>'+esc(discordNames[e.kind]||e.kind)+'</td>'+
@@ -1786,6 +1803,14 @@ async function handleSubmit(e){const f=e.target;if(!f.id)return;e.preventDefault
   case 'password-form':await api('/auth/password','POST',b);state.user=null;closeModal();renderPublic();toast('Пароль змінено. Увійдіть повторно.');return;
   case 'reset-password-form':{const target=state.users.find(u=>u.id===f.dataset.id);await api(`/users/${f.dataset.id}/reset-password`,'POST',b);closeModal();await preload();await render();credentialReceipt(target?.username||'',b.password,target?.nickname||'',true);return;}
 } }catch(err){toast(err.message,true);if(err.status===409)toast('Оновіть сторінку перед повторним редагуванням.',true);}finally{if(submit)submit.disabled=false;}}
+document.addEventListener('change',async event=>{
+ const control=event.target;
+ if(!control||!['discord-log-kind','discord-log-status'].includes(control.id))return;
+ if(state.user?.role!=='leader')return;
+ if(control.id==='discord-log-kind')state.discordLogKind=control.value;
+ else state.discordLogStatus=control.value;
+ try{await render();}catch(err){toast(err.message,true);}
+});
 document.addEventListener('submit',handleSubmit);
 document.addEventListener('input',e=>{if(e.target.closest('#contract-correction-form')){const f=e.target.closest('form');f.dataset.previewAmount='';f.dataset.previewReason='';const btn=f.querySelector('[data-action="contract-correction-save"]');if(btn)btn.disabled=true;const box=f.querySelector('#contract-correction-preview');if(box)box.textContent='Дані змінено. Повторіть попередній розрахунок.';}if(e.target.name==='photo_url'&&e.target.closest('#gallery-form'))updateGalleryFormPreview();if(e.target.name==='photo_url'&&e.target.closest('#team-form'))updateTeamFormPreview();if(e.target.name==='photo_url'&&e.target.closest('#achievement-form'))updateAchievementPreview();if(e.target.id==='search-input'){state.search=e.target.value;const start=e.target.selectionStart;render().then(()=>{const v=$('#search-input');if(v){v.focus();try{v.setSelectionRange(start,start);}catch{}}});}});
 document.addEventListener('change',e=>{if(e.target.id==='dossier-user-select'){state.dossierUser=e.target.value;void render();return;}if(e.target.id==='inactivity-days-select'){state.inactivityDays=Number(e.target.value);void render();return;}if(e.target.id==='inactivity-department-select'){state.inactivityDepartment=e.target.value;void render();return;}if(e.target.id==='activity-department-filter'){state.activityDepartment=e.target.value;void render();return;}if(e.target.id==='workspace-department-select'){state.workspaceDepartment=e.target.value;state.workspaceSection='personnel';void render();return;}if(e.target.id==='gr-gallery-sort'){state.gallerySort=e.target.value;const node=$('#gr-gallery-content');if(node)node.innerHTML=renderPublicGallery();return;}if(e.target.id==='gr-achievement-sort'){state.achievementSort=e.target.value;const node=$('#gr-achievements-content');if(node)node.innerHTML=renderPublicAchievements();return;}if(e.target.matches('#record-form[data-module="promotions"] [name="extra_requested_rank_id"]')){const form=e.target.form,box=form.querySelector('#promotion-requirement-box');if(box){box.innerHTML=promotionChecklistView(e.target.value,[]);syncPromotionChecklist();}return;}if(e.target.matches('.promotion-requirement')){syncPromotionChecklist();return;}if(state.route==='members'&&['members-role-filter','members-status-filter','members-department-filter','members-sort-filter'].includes(e.target.id)){const key={'members-role-filter':'membersRole','members-status-filter':'membersStatus','members-department-filter':'membersDepartment','members-sort-filter':'membersSort'}[e.target.id];state[key]=e.target.value;render();return;}if(e.target.id==='contract-department-filter'){state.contractDepartment=e.target.value;render();return;}if(e.target.id==='status-filter'){state.filter=e.target.value;render();}if(e.target.id==='sort-select'){state.sort=e.target.value;render();}if(e.target.id==='period-filter'){state.period=e.target.value;render();}});
