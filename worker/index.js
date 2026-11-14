@@ -1110,7 +1110,11 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
   if(path==='/api/discord/status'&&method==='GET'){
     if(user.role!=='leader')fail(403,'Лише лідер переглядає інтеграцію Discord');
     return json({...discordWebhookDiagnostic(env.DISCORD_WEBHOOK_URL),
-      worker:'famaly',routes:discordRouteDiagnostics(env),applicationRoutes:applicationRouteDiagnostics(env),...await discordPreferences(db,env)});
+      worker:'famaly',routes:discordRouteDiagnostics(env),applicationRoutes:applicationRouteDiagnostics(env),
+      roleMentions:Object.fromEntries([...DISCORD_PREFERENCE_KINDS,...Object.keys(APPLICATION_WEBHOOK_ROUTES)].map(kind=>{
+        const id=discordMentionRole(env,kind);
+        return [kind,{enabled:!!id,role_id:id||null}];
+      })),...await discordPreferences(db,env)});
   }
   if(path==='/api/discord/preferences'&&method==='PATCH'){
     if(user.role!=='leader')fail(403,'Лише лідер змінює Discord-сповіщення');

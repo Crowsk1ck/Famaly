@@ -1637,7 +1637,9 @@ const discordRoutesHtml=discord?
      route.reason==='duplicate'?'Повторюється webhook':
      route.reason==='invalid'?'Некоректний URL':'Не підключено';
    return '<div class="gr-discord-route"><div><strong>'+discordRouteLabels[kind]+'</strong>'+
-     '<small>Cloudflare Secret: <code>'+discordRouteSecrets[kind]+'</code></small></div>'+
+     '<small>Cloudflare Secret: <code>'+discordRouteSecrets[kind]+'</code></small>'+
+     '<small>Згадка ролі: '+(discord.roleMentions?.[kind]?.enabled?
+      '<code>'+esc(discord.roleMentions[kind].role_id)+'</code>':'вимкнено')+'</small></div>'+
      '<span class="gr-discord-route-status '+(route.configured?'is-ready':'is-missing')+'">'+status+'</span>'+
      '<button class="btn tiny secondary" type="button" data-action="discord-test-route" data-kind="'+kind+'" '+(route.configured?'':'disabled')+'>Тест каналу</button></div>';
  }).join('')+'</div>':'';
@@ -1661,7 +1663,9 @@ const applicationWebhooksHtml=discord?
      route.reason==='duplicate'?'Webhook повторюється':
      route.reason==='invalid'?'Некоректний URL':'Не підключено';
    return '<div class="gr-discord-route"><div><strong>Заявка: '+appWebhookNames[kind]+'</strong>'+
-     '<small>Cloudflare Secret: <code>'+appWebhookSecrets[kind]+'</code></small></div>'+
+     '<small>Cloudflare Secret: <code>'+appWebhookSecrets[kind]+'</code></small>'+
+     '<small>Згадка ролі: '+(discord.roleMentions?.[kind]?.enabled?
+      '<code>'+esc(discord.roleMentions[kind].role_id)+'</code>':'вимкнено')+'</small></div>'+
      '<span class="gr-discord-route-status '+(route.separate?'is-ready':'is-missing')+'">'+status+'</span>'+
      '<button class="btn tiny secondary" type="button" data-action="discord-test-route" data-kind="'+kind+'" '+(route.configured?'':'disabled')+'>Тест статусу</button></div>';
  }).join('')+'</div>':'';
