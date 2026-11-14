@@ -2293,6 +2293,81 @@ test('v14.6 stale delete, valid delete and repeated delete preserve soft-delete 
   'A deleted record must not generate a second success audit');
 });
 
+test('v14.7 member department transfer is versioned and leaves no partial changes on conflict',async()=>{
+ const departments=(await req('/api/departments',{token:leader})).data.items;
+ const from=departments.find(d=>d.id==='farm')||departments[0];
+ const to=departments.find(d=>d.id!==from.id);
+ assert.ok(from&&to);
+ const created=await req('/api/users',{method:'POST',token:leader,data:{
+  username:'v147transfermember',password:'v147-transfer-strong-password',
+  nickname:'Transfer Original',role:'member',department_id:from.id
+ }});
+ assert.equal(created.status,201,JSON.stringify(created.data));
+ const old=created.data.item;
+ const changed=await req('/api/users/'+old.id,{method:'PATCH',token:leader,data:{
+  ...old,department_id:to.id,nickname:'Transfer Approved'
+ }});
+ assert.equal(changed.status,200,JSON.stringify(changed.data));
+ assert.equal(changed.data.item.department_id,to.id);
+ assert.equal(changed.data.item.version,old.version+1);
+ const stale=await req('/api/users/'+old.id,{method:'PATCH',token:leader,data:{
+  ...old,department_id:from.id,nickname:'Stale Transfer'
+ }});
+ assert.equal(stale.status,409);
+ const after=(await req('/api/users',{token:leader})).data.items.find(x=>x.id===old.id);
+ assert.equal(after.department_id,to.id);
+ assert.equal(after.nickname,'Transfer Approved');
+ assert.equal(after.version,old.version+1);
+ const log=(await req('/api/audit',{token:leader})).data.items;
+ assert.equal(log.filter(x=>x.entity==='users'&&x.entity_id===old.id&&x.action==='update').length,1);
+});
+
+test('v14.7 department head assignment rejects invalid status and outdated versions',async()=>{
+ const departments=(await req('/api/departments',{token:leader})).data.items;
+ const department=departments.find(d=>d.id==='events')||departments[0];
+ assert.ok(department);
+ const originalHead=department.head_id||'';
+ const created=await req('/api/users',{method:'POST',token:leader,data:{
+  username:'v147headcandidate',password:'v147-head-strong-password',
+  nickname:'Head Candidate',role:'head',department_id:department.id
+ }});
+ assert.equal(created.status,201,JSON.stringify(created.data));
+ const newHeadId=created.data.item.id;
+ const originalCandidate=created.data.item;
+ const blocked=await req('/api/users/'+newHeadId,{method:'PATCH',token:leader,data:{
+  ...originalCandidate,status:'blocked'
+ }});
+ assert.equal(blocked.status,200,JSON.stringify(blocked.data));
+ const denied=await req('/api/departments/'+department.id,{method:'PATCH',token:leader,data:{
+  title:department.title,head_id:newHeadId,version:department.version
+ }});
+ assert.equal(denied.status,400);
+ const unchanged=(await req('/api/departments',{token:leader})).data.items.find(x=>x.id===department.id);
+ assert.equal(unchanged.head_id||'',originalHead);
+ assert.equal(unchanged.version,department.version);
+ const restoredCandidate=await req('/api/users/'+newHeadId,{method:'PATCH',token:leader,data:{
+  ...blocked.data.item,status:'active'
+ }});
+ assert.equal(restoredCandidate.status,200,JSON.stringify(restoredCandidate.data));
+ const appointed=await req('/api/departments/'+department.id,{method:'PATCH',token:leader,data:{
+  title:department.title,head_id:newHeadId,version:department.version
+ }});
+ assert.equal(appointed.status,200,JSON.stringify(appointed.data));
+ const stale=await req('/api/departments/'+department.id,{method:'PATCH',token:leader,data:{
+  title:'Stale head assignment',head_id:originalHead,version:department.version
+ }});
+ assert.equal(stale.status,409);
+ const assigned=(await req('/api/departments',{token:leader})).data.items.find(x=>x.id===department.id);
+ assert.equal(assigned.head_id,newHeadId);
+ assert.equal(assigned.version,department.version+1);
+ const restored=await req('/api/departments/'+department.id,{method:'PATCH',token:leader,data:{
+  title:department.title,head_id:originalHead,version:assigned.version
+ }});
+ assert.equal(restored.status,200,JSON.stringify(restored.data));
+ const final=(await req('/api/departments',{token:leader})).data.items.find(x=>x.id===department.id);
+ assert.equal(final.head_id||'',originalHead);
+});
+
 // Run destructive session-revocation coverage last: other integration tests use this member's active session.
 test('blocking user revokes sessions and stops access',async()=>{const u=(await req('/api/users',{token:leader})).data.items.find(x=>x.id===memberId);const r=await req(`/api/users/${memberId}`,{method:'PATCH',token:leader,data:{...u,status:'blocked'}});assert.equal(r.status,200,JSON.stringify(r.data));assert.equal((await req('/api/auth/me',{token:member})).status,401);});
 
