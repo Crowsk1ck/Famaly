@@ -32,6 +32,17 @@ const MODULES = {
   bonuses: {manage:'finance:manage', restricted:true},
   capt_payments: {manage:'finance:manage', restricted:true}
 };
+// Department workspaces reuse existing records and privileges; no parallel ledger or D1 tables.
+const DEPARTMENT_WORKSPACE_MODULES = [
+ ['tasks','Завдання','Робота'],['reports','Звіти','Робота'],['promotions','Підвищення','Робота'],
+ ['events','Заходи','Робота'],['capt_matches','CAPT — бої','CAPT'],['capt_training','CAPT — тренування','CAPT'],
+ ['capt_attendance','CAPT — участь','CAPT'],['vehicles','Автопарк','Ресурси'],
+ ['vehicle_loans','Видача транспорту','Ресурси'],['discipline','Дисципліна','Адміністрування'],
+ ['blacklist','Чорний список','Адміністрування'],['notices','Оголошення','Адміністрування'],
+ ['templates','Шаблони','Адміністрування'],['gallery','Галерея','Контент'],
+ ['public_news','Новини сайту','Контент'],['public_team','Керівництво сайту','Контент'],
+ ['public_achievements','Досягнення сайту','Контент'],['public_calendar','Календар сайту','Контент']
+];
 const PUBLIC_SETTINGS = ['family_name','tagline','history','discord_url','rules','requirements'];
 const ALL_SETTINGS = [...PUBLIC_SETTINGS,'treasury_percent','capt_afk_rate','capt_battle_rate'];
 
@@ -534,6 +545,44 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
       treasury_contract_income:num(treasury.amount),
       payouts:{count:num(payout.count),accrued:num(payout.amount),handed_over:num(payout.handed_over)},
       capt:{records:num(capt.count),approved:num(capt.approved),paid_count:num(captPayments.count),paid_total:num(captPayments.total)}});
+  }
+  if(path==='/api/department-workspace'&&method==='GET'){
+    if(!['leader','deputy','head'].includes(user.role))fail(403,'Панель доступна керівництву');
+    const requested=str(url.searchParams.get('department'),80);
+    const departmentId=user.role==='head'?user.department_id:requested;
+    if(!departmentId)fail(400,'Оберіть підрозділ');
+    if(user.role==='head'&&requested&&requested!==departmentId)fail(403,'Доступ лише до свого підрозділу');
+    const dept=await db.prepare('SELECT id,title,head_id FROM departments WHERE id=?').bind(departmentId).first();
+    if(!dept)fail(404,'Підрозділ не знайдено');
+    // Role "head" alone does not grant access. The leader must appoint this exact active head.
+    if(user.role==='head'&&dept.head_id!==user.id)fail(403,'Лідер ще не призначив вас керівником цього підрозділу');
+    const [allRecords,members,contracts]=await Promise.all([
+      allRows(db,'SELECT * FROM records WHERE department_id=? AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 1500',dept.id),
+      allRows(db,"SELECT id,nickname,role,rank_id,status,joined_at FROM users WHERE department_id=? ORDER BY created_at DESC",dept.id),
+      allRows(db,'SELECT * FROM contracts WHERE department_id=? ORDER BY created_at DESC LIMIT 500',dept.id)
+    ]);
+    const sections=DEPARTMENT_WORKSPACE_MODULES.map(([mod,title,group])=>{
+      const cfg=MODULES[mod];
+      const items=allRecords.filter(r=>r.module===mod&&permittedRecord(user,mod,r)).map(mapRecord);
+      const mayManage=can(user,cfg.manage)&&manageInDepartment(user,dept.id)&&!cfg.restricted;
+      const maySubmit=!!cfg.memberCreate;
+      return {id:mod,title,group,items,count:items.length,can_create:mayManage||maySubmit,
+        can_manage:mayManage,can_review:!!cfg.review&&mayManage,
+        attention:items.filter(r=>r.status==='На перевірці').length,
+        active:items.filter(r=>!['Завершено','Відхилено','Погоджено'].includes(r.status)).length};
+    });
+    return json({
+      department:dept,sections,
+      members:members.map(m=>({id:m.id,nickname:m.nickname||'Учасник',role:m.role,rank_id:m.rank_id,status:m.status,joined_at:m.joined_at})),
+      contracts:contracts.map(contractView),
+      summary:{
+        members:members.filter(m=>m.status==='active').length,
+        tasks_open:sections.find(x=>x.id==='tasks').active,
+        reports_review:sections.find(x=>x.id==='reports').attention,
+        contracts_count:contracts.length,
+        contracts_settled:contracts.filter(c=>!!c.settled_at).length
+      }
+    });
   }
   if(path==='/api/departments'&&method==='GET')return json({items:await allRows(db,'SELECT * FROM departments ORDER BY rowid')});
   m=path.match(/^\/api\/departments\/([\w-]+)$/);if(m&&method==='PATCH'){
