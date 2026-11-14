@@ -1877,6 +1877,74 @@ test('v13.1 leader sees only outbox metadata, with route/status filters',async()
   assert.equal((await req('/api/discord/outbox?route=unknown',{token:leader})).status,400);
  }finally{if(previous===undefined)delete env.DISCORD_OUTBOX_ENABLED;else env.DISCORD_OUTBOX_ENABLED=previous;}
 });
+test('v14.1 audit is leader-only and denied personnel writes do not create audit entries',async()=>{
+ const deputyUsername='v141auditdeputy';
+ const deputyPassword='v141auditdeputy-strong-12345';
+ const created=await req('/api/users',{method:'POST',token:leader,data:{
+  username:deputyUsername,password:deputyPassword,nickname:'Audit deputy',role:'deputy'
+ }});
+ assert.equal(created.status,201,JSON.stringify(created.data));
+ const logged=await req('/api/auth/login',{method:'POST',data:{username:deputyUsername,password:deputyPassword}});
+ assert.equal(logged.status,200);
+ const deputyToken=logged.cookie.match(/grizzly_session=([a-f0-9]+)/)[1];
+ assert.equal((await req('/api/audit')).status,401);
+ assert.equal((await req('/api/audit',{token:member})).status,403);
+ assert.equal((await req('/api/audit',{token:deputyToken})).status,403);
+ const before=await req('/api/audit',{token:leader});
+ assert.equal(before.status,200);
+ const forbidden=await req('/api/personnel-actions',{method:'POST',token:member,data:{
+  user_id:memberId,kind:'warning',details:'Unauthorized self sanction for audit regression'
+ }});
+ assert.equal(forbidden.status,403);
+ const createdAction=await req('/api/personnel-actions',{method:'POST',token:leader,data:{
+  user_id:memberId,kind:'warning',details:'Valid discipline decision audit regression'
+ }});
+ assert.equal(createdAction.status,201,JSON.stringify(createdAction.data));
+ const actionId=createdAction.data.item.id;
+ const auditAfter=await req('/api/audit',{token:leader});
+ assert.equal(auditAfter.status,200);
+ const creation=auditAfter.data.items.filter(x=>x.entity==='personnel_actions'&&x.entity_id===actionId);
+ assert.equal(creation.length,1,'Authorized creation must have one audit entry');
+ assert.equal(creation[0].action,'create');
+ assert.ok(creation[0].actor_id);
+ assert.ok(!auditAfter.data.items.some(x=>x.entity==='personnel_actions'&&
+  x.detail?.includes('Unauthorized self sanction for audit regression')),
+  'Rejected operation must not produce a successful personnel audit');
+ const denied=await req('/api/personnel-actions/'+actionId,{method:'PATCH',token:member,data:{
+  version:createdAction.data.item.version,reason:'Unauthorized decision withdrawal'
+ }});
+ assert.equal(denied.status,403);
+ const stillActive=await req('/api/personnel-dossier?user='+memberId,{token:leader});
+ assert.equal(stillActive.status,200);
+ assert.ok(stillActive.data.item.actions.some(x=>x.id===actionId&&x.status==='Чинне'));
+ const auditFinal=await req('/api/audit',{token:leader});
+ assert.equal(auditFinal.data.items.filter(x=>x.entity==='personnel_actions'&&x.entity_id===actionId).length,1,
+  'Rejected withdrawal must not create a review audit');
+});
+
+test('v14.1 promotion review rejects unauthorized or stale approval without changing rank',async()=>{
+ const request=await req('/api/records/promotions',{method:'POST',token:member,data:{
+  title:'Перевірка прав на підвищення v14.1',
+  details:'Не змінювати ранг до затвердження керівництвом',
+  extra:{requested_rank_id:'3',checklist_completed:[]},
+  evidence:['https://ibb.co/abcDEF1']
+ }});
+ assert.equal(request.status,201,JSON.stringify(request.data));
+ const id=request.data.item.id;
+ const originalRank=(await req('/api/auth/me',{token:member})).data.user.rank_id;
+ const deny=await req('/api/records/promotions/'+id+'/review',{method:'POST',token:member,data:{
+  status:'Погоджено',version:request.data.item.version,comment:'Самопогодження'
+ }});
+ assert.equal(deny.status,403);
+ const stale=await req('/api/records/promotions/'+id+'/review',{method:'POST',token:leader,data:{
+  status:'Погоджено',version:request.data.item.version+99,comment:'Застаріла версія'
+ }});
+ assert.equal(stale.status,409);
+ const unchanged=(await req('/api/records/promotions',{token:member})).data.items.find(x=>x.id===id);
+ assert.equal(unchanged.status,'На перевірці');
+ assert.equal((await req('/api/auth/me',{token:member})).data.user.rank_id,originalRank);
+});
+
 // Run destructive session-revocation coverage last: other integration tests use this member's active session.
 test('blocking user revokes sessions and stops access',async()=>{const u=(await req('/api/users',{token:leader})).data.items.find(x=>x.id===memberId);const r=await req(`/api/users/${memberId}`,{method:'PATCH',token:leader,data:{...u,status:'blocked'}});assert.equal(r.status,200,JSON.stringify(r.data));assert.equal((await req('/api/auth/me',{token:member})).status,401);});
 
