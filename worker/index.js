@@ -527,7 +527,7 @@ export function buildDiscordNotification(kind,info={},roleId=GRIZZLY_DISCORD_PIN
   }]
  };
 }
-async function sendDiscordWebhook(env,kind,info,targetKind=kind){
+export async function sendDiscordWebhook(env,kind,info,targetKind=kind){
   const destinations=Object.hasOwn(APPLICATION_WEBHOOK_ROUTES,targetKind)?
     applicationRouteDiagnostics(env):discordRouteDiagnostics(env);
   if(destinations[targetKind]?.reason==='duplicate')
@@ -535,16 +535,23 @@ async function sendDiscordWebhook(env,kind,info,targetKind=kind){
   const webhook=discordDestination(env,targetKind);
   if(!validDiscordWebhookUrl(webhook))
     throw new Error('Discord webhook для категорії '+String(targetKind)+' відсутній або має невірний формат');
+  // One retry is safe for an explicit 429: Discord rejected the request.
+  // Never retry ambiguous network failures, which could duplicate a delivered notification.
+  const payload=JSON.stringify(buildDiscordNotification(kind,info,discordMentionRole(env,targetKind)));
   let response;
-  try{
-    response=await fetch(webhook.trim(),{method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify(buildDiscordNotification(kind,info,discordMentionRole(env,targetKind)))
-    });
-  }catch{
-    // Transport errors can contain the full URL (including webhook token).
-    // Always replace them with a safe, generic message.
-    throw new Error('Немає з’єднання з Discord');
+  for(let attempt=0;attempt<2;attempt++){
+    try{
+      response=await fetch(webhook.trim(),{method:'POST',headers:{'Content-Type':'application/json'},body:payload});
+    }catch{
+      // Transport errors can include the full webhook URL and may occur AFTER delivery.
+      throw new Error('Немає з’єднання з Discord');
+    }
+    if(response.status!==429||attempt>0)break;
+    const retryAfter=response.headers.get('Retry-After');
+    const seconds=retryAfter===null?NaN:Number(retryAfter);
+    // Respect short retry windows only. Long delays require a durable outbox (future release).
+    if(!Number.isFinite(seconds)||seconds<0||seconds>2)break;
+    await new Promise(resolve=>setTimeout(resolve,Math.ceil(seconds*1000)));
   }
   if(!response.ok){
     const messages={400:'Discord відхилив повідомлення',401:'Discord відхилив токен webhook',403:'Немає доступу до Discord-каналу',404:'Webhook не існує або був видалений',429:'Discord обмежив частоту запитів'};
