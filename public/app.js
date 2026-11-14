@@ -305,6 +305,7 @@ function renderPublicCalendar(){
     '</div></div>';
 }
 function renderPublic(){
+  stopNotificationPolling();
   const page=publicPageFromHash(location.hash);
   const routeKey=String(location.pathname||'/')+String(location.hash||'');
   const publicRouteChanged=state.publicLastRoute!==undefined&&state.publicLastRoute!==routeKey;
@@ -436,7 +437,7 @@ function sidebar(){
   return `${group}<a href="#${n.id}" class="sideitem ${state.route===n.id?'active':''} ${collapsed(n.group)?'gr-nav-hidden':''}" data-route="${n.id}"><span class="ni">${n.icon}</span>${esc(n.text)}</a>`;
  }).join('')}</nav><div class="side-bottom"><div class="row"><div class="avatar">${esc((state.user.nickname||state.user.username).slice(0,1).toUpperCase())}</div><div style="min-width:0"><strong class="small">${esc(state.user.nickname||state.user.username)}</strong><div class="muted small">${esc(roles[state.user.role])}</div></div></div><button class="btn ghost tiny sidebar-logout" data-action="logout">Вийти ↗</button></div></aside>`;
 }
-function shell(content){const unread=state.notifications.filter(x=>!x.read_at).length;$('#app').innerHTML=`<div class="shell ${state.menu?'menu-open':''}">${sidebar()}<button type="button" class="gr-menu-scrim" data-action="close-menu" aria-label="Закрити меню"></button><div class="app-main"><header class="topbar"><div class="row"><button type="button" class="iconbtn mobile-menu" data-action="toggle-menu" aria-label="Відкрити меню" aria-expanded="false" aria-controls="gr-panel-navigation">☰</button><div><small>GRIZZLY / ${esc(roles[state.user.role])}</small><h2>${esc(nav.find(n=>n.id===state.route)?.text||'Огляд')}</h2></div></div><div class="row"><div class="notif-menu"><button type="button" class="iconbtn gr-notification-trigger" data-action="notifications" aria-label="Сповіщення, непрочитаних: ${unread}" aria-expanded="false" aria-controls="notif-pop">♧${unread?'<span class="gr-notif-count">'+esc(unread>99?'99+':unread)+'</span>':''}</button><div id="notif-pop" class="notif-pop hide" role="region" aria-label="Вхідні сповіщення"></div></div><button class="iconbtn" data-route="profile" title="Мій профіль">◌</button></div></header><div class="app-content">${content}</div></div></div>`;}
+function shell(content){const unread=state.notifications.filter(x=>!x.read_at).length;$('#app').innerHTML=`<div class="shell ${state.menu?'menu-open':''}">${sidebar()}<button type="button" class="gr-menu-scrim" data-action="close-menu" aria-label="Закрити меню"></button><div class="app-main"><header class="topbar"><div class="row"><button type="button" class="iconbtn mobile-menu" data-action="toggle-menu" aria-label="Відкрити меню" aria-expanded="false" aria-controls="gr-panel-navigation">☰</button><div><small>GRIZZLY / ${esc(roles[state.user.role])}</small><h2>${esc(nav.find(n=>n.id===state.route)?.text||'Огляд')}</h2></div></div><div class="row"><div class="notif-menu"><button type="button" class="iconbtn gr-notification-trigger" data-action="notifications" aria-label="Сповіщення, непрочитаних: ${unread}" aria-expanded="false" aria-controls="notif-pop">♧${unread?'<span class="gr-notif-count">'+esc(unread>99?'99+':unread)+'</span>':''}</button><div id="notif-pop" class="notif-pop hide" role="region" aria-label="Вхідні сповіщення"></div></div><button class="iconbtn" data-route="profile" title="Мій профіль">◌</button></div></header><div class="app-content">${content}</div></div></div>`;startNotificationPolling();}
 function notificationRoute(notification){
  const title=String(notification?.title||'').toLocaleLowerCase('uk');
  const direct=[
@@ -484,6 +485,118 @@ function notifyPopup(force){
   (route?'<button type="button" class="btn tiny secondary" data-action="notification-open" data-id="'+esc(n.id)+'" data-route-target="'+esc(route)+'">Перейти ↗</button>':'')+'</div></div>';
  }).join('')+'</div><p class="muted small gr-notification-result">Показано '+notices.length+' із '+total+'</p>':
  empty(filter==='unread'?'Усі повідомлення прочитані':'Немає сповіщень','Нові події з’являться тут.'));}
+// v15.6: refresh notification data only for an active, visible panel session.
+// Keep interval and in-flight GET independent from the page renderer: forms,
+// scrolling, navigation and notification filters must not be reset by polling.
+const NOTIFICATION_POLL_MS=60000;
+const NOTIFICATION_MIN_RECHECK_MS=15000;
+let notificationPollTimer=null;
+let notificationPollPending=null;
+let notificationPollGeneration=0;
+let notificationLastCheck=0;
+let notificationMutationVersion=0;
+function stopNotificationPolling(){
+ if(notificationPollTimer!==null)clearInterval(notificationPollTimer);
+ notificationPollTimer=null;
+ notificationPollGeneration++;
+ notificationLastCheck=0;
+}
+function startNotificationPolling(){
+ if(!state.user||notificationPollTimer!==null)return;
+ notificationPollGeneration++;
+ notificationPollTimer=setInterval(()=>{void pollNotifications();},NOTIFICATION_POLL_MS);
+}
+function refreshNotificationWidgets(){
+ const unread=notificationItems('unread');
+ const trigger=document.querySelector('[data-action="notifications"]');
+ if(trigger){
+  trigger.setAttribute('aria-label','Сповіщення, непрочитаних: '+unread.length);
+  let badge=trigger.querySelector('.gr-notif-count');
+  if(!unread.length)badge?.remove();
+  else{
+   if(!badge){
+    badge=document.createElement('span');
+    badge.className='gr-notif-count';
+    trigger.append(badge);
+   }
+   badge.textContent=unread.length>99?'99+':String(unread.length);
+  }
+ }
+ const popup=document.querySelector('#notif-pop');
+ if(popup&&!popup.classList.contains('hide')){
+  const before=popup.querySelector('.gr-notification-list')?.scrollTop||0;
+  notifyPopup(true);
+  const list=popup.querySelector('.gr-notification-list');
+  if(list)list.scrollTop=before;
+ }
+ // Update only the notification preview on "Огляд". Never re-render the
+ // full page, which would lose unsaved form content and keyboard focus.
+ const focus=document.querySelector('.gr-overview-notifications');
+ if(focus){
+  const count=focus.querySelector('.gr-focus-head .pill');
+  if(count)count.textContent=fmt(unread.length);
+  const preview=focus.querySelector('.gr-overview-notification-preview');
+  if(preview){
+   const nodes=unread.slice(0,2).map(n=>{
+    const item=document.createElement('div');
+    item.className='gr-focus-item';
+    const copy=document.createElement('div');
+    copy.className='gr-focus-copy';
+    const title=document.createElement('strong');
+    title.textContent=n.title||'Сповіщення';
+    const details=document.createElement('span');
+    details.className='muted small';
+    details.textContent=String(n.details||'').slice(0,90);
+    copy.append(title,details);
+    item.append(copy);
+    return item;
+   });
+   if(!nodes.length){
+    const empty=document.createElement('p');
+    empty.className='muted small gr-focus-empty';
+    empty.textContent='Непрочитаних повідомлень немає.';
+    nodes.push(empty);
+   }
+   preview.replaceChildren(...nodes);
+  }
+ }
+}
+async function pollNotifications(){
+ if(!state.user||document.hidden||notificationPollPending||
+  Date.now()-notificationLastCheck<NOTIFICATION_MIN_RECHECK_MS)return;
+ const generation=notificationPollGeneration;
+ const user=state.user;
+ const mutationVersion=notificationMutationVersion;
+ notificationLastCheck=Date.now();
+ const request=api('/notifications');
+ notificationPollPending=request;
+ try{
+  const result=await request;
+  if(generation!==notificationPollGeneration||state.user!==user||
+    mutationVersion!==notificationMutationVersion||document.hidden)return;
+  if(!Array.isArray(result.items))return;
+  if(JSON.stringify(result.items)!==JSON.stringify(state.notifications)){
+   state.notifications=result.items;
+   refreshNotificationWidgets();
+  }
+ }catch(err){
+  if(generation!==notificationPollGeneration||state.user!==user)return;
+  if(err.status===401){
+   stopNotificationPolling();
+   state.user=null;
+   state.notifications=[];
+   state.route='overview';
+   renderPublic();
+   toast('Сесію завершено. Увійдіть повторно.',true);
+  }
+  // Transient network errors are retried at the normal interval; no toast spam.
+ }finally{
+  if(notificationPollPending===request)notificationPollPending=null;
+ }
+}
+document.addEventListener('visibilitychange',()=>{
+ if(!document.hidden&&state.user&&notificationPollTimer!==null)void pollNotifications();
+});
 function table(headers,rows){return rows.length?`<div class="tablewrap"><table><thead><tr>${headers.map(s=>`<th>${esc(s)}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table></div>`:empty();}
 // Render large lists in bounded pages. The complete authorized dataset stays available
 // for filtering/export; only visible rows and mobile cards are converted into HTML.
@@ -565,8 +678,8 @@ async function overview(){
   '<div class="gr-overview-focus-column"><div class="gr-focus-head"><h4>Найближчі події</h4><span class="pill">'+fmt(upcoming.length)+'</span></div>'+
   (focusEventRows||'<p class="muted small gr-focus-empty">Майбутніх подій немає.</p>')+
   '<button type="button" class="btn tiny ghost gr-focus-all" data-route="events">Усі події ↗</button></div>'+
-  '<div class="gr-overview-focus-column"><div class="gr-focus-head"><h4>Сповіщення</h4><span class="pill">'+fmt(focus.unreadCount)+'</span></div>'+
-  (focusMessageRows||'<p class="muted small gr-focus-empty">Непрочитаних повідомлень немає.</p>')+
+  '<div class="gr-overview-focus-column gr-overview-notifications"><div class="gr-focus-head"><h4>Сповіщення</h4><span class="pill">'+fmt(focus.unreadCount)+'</span></div>'+
+  '<div class="gr-overview-notification-preview">'+(focusMessageRows||'<p class="muted small gr-focus-empty">Непрочитаних повідомлень немає.</p>')+'</div>'+
   '<button type="button" class="btn tiny ghost gr-focus-all" data-action="notifications">Відкрити сповіщення ↗</button></div>'+
   '</div></section>';
 
@@ -1983,7 +2096,7 @@ function memberContextTabs(active){
   (item.id===active?' is-active':'')+'"'+(item.id===active?' aria-current="page"':'')+'>'+
   esc(item.text)+'</a>').join('')+'</nav>';
 }
-async function render(){state.menu=false;let content='';try{if(!state.user||(location.pathname!=='/'&&Object.values(grPublicPaths).includes(location.pathname)&&!location.hash.startsWith('#overview'))){renderPublic();return;}if(ROUTES_WITH_RENDER_PRELOAD.has(state.route))await preload();switch(state.route){case'overview':content=await overview();break;case'members':content=await members();break;case'ranks':content=await ranks();break;case'departments':content=await departments();break;case'workspace':content=await departmentWorkspace();break;case'leadership':content=await leadershipDashboard();break;case'activity':content=await activityPage();break;case'absences':content=await absencesPage();break;case'dossier':content=await dossierPage();break;case'inactivity':content=await inactivityPage();break;case'tasks':content=await renderModule('tasks');break;case'events':content=await renderModule('events');break;case'gallery':content=await galleryManager();break;case'public_news':content=await newsManager();break;case'public_team':content=await teamManager();break;case'public_achievements':content=await achievementsManager();break;case'public_calendar':content=await calendarManager();break;case'contracts':content=await contracts();break;case'capt':content=await captPage();break;case'fleet':content=await fleetPage();break;case'discipline':case'announcements':case'reports':content=await groupPage(state.route);break;case'finance':content=await finance();break;case'applications':content=await applications();break;case'stats':content=await stats();break;case'audit':content=await auditPage();break;case'settings':content=await settingsPage();break;case'profile':content=await profile();break;default:state.route='overview';content=await overview();}if(MEMBER_CONTEXT_ROUTES.includes(state.route))content=memberContextTabs(state.route)+content;shell(content);}catch(e){if(e.status===401){state.user=null;state.route='overview';renderPublic();toast('Сесію завершено. Увійдіть повторно.',true);return;}shell(intro('Помилка завантаження',e.message)+`<button class="btn mt" data-action="refresh">Повторити</button>`);toast(e.message,true);}}
+async function render(){state.menu=false;let content='';try{if(!state.user||(location.pathname!=='/'&&Object.values(grPublicPaths).includes(location.pathname)&&!location.hash.startsWith('#overview'))){renderPublic();return;}if(ROUTES_WITH_RENDER_PRELOAD.has(state.route))await preload();switch(state.route){case'overview':content=await overview();break;case'members':content=await members();break;case'ranks':content=await ranks();break;case'departments':content=await departments();break;case'workspace':content=await departmentWorkspace();break;case'leadership':content=await leadershipDashboard();break;case'activity':content=await activityPage();break;case'absences':content=await absencesPage();break;case'dossier':content=await dossierPage();break;case'inactivity':content=await inactivityPage();break;case'tasks':content=await renderModule('tasks');break;case'events':content=await renderModule('events');break;case'gallery':content=await galleryManager();break;case'public_news':content=await newsManager();break;case'public_team':content=await teamManager();break;case'public_achievements':content=await achievementsManager();break;case'public_calendar':content=await calendarManager();break;case'contracts':content=await contracts();break;case'capt':content=await captPage();break;case'fleet':content=await fleetPage();break;case'discipline':case'announcements':case'reports':content=await groupPage(state.route);break;case'finance':content=await finance();break;case'applications':content=await applications();break;case'stats':content=await stats();break;case'audit':content=await auditPage();break;case'settings':content=await settingsPage();break;case'profile':content=await profile();break;default:state.route='overview';content=await overview();}if(MEMBER_CONTEXT_ROUTES.includes(state.route))content=memberContextTabs(state.route)+content;shell(content);}catch(e){if(e.status===401){stopNotificationPolling();state.user=null;state.route='overview';renderPublic();toast('Сесію завершено. Увійдіть повторно.',true);return;}shell(intro('Помилка завантаження',e.message)+`<button class="btn mt" data-action="refresh">Повторити</button>`);toast(e.message,true);}}
 async function navigate(route){clearTimeout(memberSearchTimer);const url=new URL(location.href);if(url.searchParams.has('view')||url.pathname!=='/'){url.searchParams.delete('view');history.replaceState(history.state,'','/'+url.search+url.hash);}state.route=route;state.search='';state.sort='new';state.filter='';state.menu=false;location.hash=route;await render();}
 // Initial public data and session lookup are independent network requests.
 // Render will load the roster for roster-dependent pages; avoid fetching it twice.
@@ -2009,7 +2122,7 @@ async function initial(){
 }
 const lines=s=>String(s||'').split(/\n/).map(x=>x.trim()).filter(Boolean);
 function formData(f){return Object.fromEntries(new FormData(f).entries());}
-async function afterSaved(msg='Збережено'){closeModal();toast(msg);if(state.user){state.notifications=(await api('/notifications')).items;await preload();}if(['gallery','public_news','public_team','public_achievements','public_calendar'].includes(state.route))state.public=await api('/public');await render();}
+async function afterSaved(msg='Збережено'){closeModal();toast(msg);if(state.user){notificationMutationVersion++;state.notifications=(await api('/notifications')).items;await preload();}if(['gallery','public_news','public_team','public_achievements','public_calendar'].includes(state.route))state.public=await api('/public');await render();}
 // Keep an in-flight form locked even when Enter or another submit event fires.
 // The form fields remain editable so a failed save never erases user input.
 function formSavingState(form,busy){
@@ -2148,7 +2261,7 @@ async function handleSubmit(e){
     await api('/discord/preferences','PATCH',{enabled,versions:state.discordVersions});
     await render();toast('Discord-сповіщення оновлено');return;}
   case 'settings-form':await api('/settings','PATCH',{...b,__versions:state.settingsVersions});state.public=await api('/public');await afterSaved('Налаштування оновлено');return;
-  case 'password-form':await api('/auth/password','POST',b);state.user=null;closeModal();renderPublic();toast('Пароль змінено. Увійдіть повторно.');return;
+  case 'password-form':await api('/auth/password','POST',b);stopNotificationPolling();state.user=null;closeModal();renderPublic();toast('Пароль змінено. Увійдіть повторно.');return;
   case 'reset-password-form':{const target=state.users.find(u=>u.id===f.dataset.id);await api(`/users/${f.dataset.id}/reset-password`,'POST',b);closeModal();await preload();await render();credentialReceipt(target?.username||'',b.password,target?.nickname||'',true);return;}
 } }catch(err){
  failed=saveErrorMessage(err);
@@ -2247,11 +2360,12 @@ document.addEventListener('click',async e=>{const back=e.target.closest('[data-b
   case 'discord-refresh':{if(state.user?.role!=='leader')throw new Error('Недостатньо прав');await render();toast('Статус Discord оновлено');break;}
   case 'discord-test-route':{if(state.user?.role!=='leader')throw new Error('Недостатньо прав');const kind=t.dataset.kind;const result=await api('/discord/test','POST',{kind});toast(result.message||'Тест надіслано');break;}
   case 'discord-test':{if(state.user?.role!=='leader')throw new Error('Недостатньо прав');const result=await api('/discord/test','POST',{});toast(result.message||'Тест надіслано');break;}
-  case 'logout':await api('/auth/logout','POST');state.user=null;state.notifications=[];state.route='overview';state.search='';location.hash='home';renderPublic();toast('Ви вийшли з панелі');break;
+  case 'logout':await api('/auth/logout','POST');stopNotificationPolling();state.user=null;state.notifications=[];state.route='overview';state.search='';location.hash='home';renderPublic();toast('Ви вийшли з панелі');break;
   case 'notifications':notifyPopup();break;
   case 'notification-filter':state.notificationFilter=t.dataset.filter==='unread'?'unread':'all';notifyPopup(true);break;
   case 'read-notification':{
     await api(`/notifications/${id}/read`,'POST');
+    notificationMutationVersion++;
     state.notifications=(await api('/notifications')).items;
     await render();
     notifyPopup(true);
@@ -2263,6 +2377,7 @@ document.addEventListener('click',async e=>{const back=e.target.closest('[data-b
     if(!route||route!==t.dataset.routeTarget)break;
     if(!notification.read_at){
       await api(`/notifications/${id}/read`,'POST');
+      notificationMutationVersion++;
       state.notifications=(await api('/notifications')).items;
     }
     await navigate(route);
