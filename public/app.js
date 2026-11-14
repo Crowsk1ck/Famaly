@@ -695,10 +695,12 @@ async function departmentWorkspace(){
  }
  const dept=data.department,sections=data.sections||[],members=data.members||[],contracts=data.contracts||[];
  const financeSummary=await api('/departments/'+encodeURIComponent(dept.id)+'/finance-summary');
+ const recruitmentItems=dept.id==='recruitment'&&can('recruitment:manage')?(await api('/applications')).items:[];
  const id=state.workspaceSection||'tasks';
  const allSections=[{id:'personnel',title:'Особовий склад',group:'Керування',count:members.length},
   {id:'contracts',title:'Контракти',group:'Керування',count:contracts.length},
-  {id:'finance',title:'Фінанси підрозділу',group:'Керування',count:financeSummary.contracts.count},...sections];
+  {id:'finance',title:'Фінанси підрозділу',group:'Керування',count:financeSummary.contracts.count},
+  ...(dept.id==='recruitment'&&can('recruitment:manage')?[{id:'applications',title:'Заявки на вступ',group:'Рекрутинг',count:recruitmentItems.length}]:[]),...sections];
  const active=allSections.find(x=>x.id===id)||allSections[0];
  const selector=user.role==='head'
   ?'<span class="badge blue">Мій підрозділ</span>'
@@ -714,6 +716,10 @@ async function departmentWorkspace(){
  if(active.id==='personnel')content=members.length?table(['Учасник','Ранг','Роль','Статус'],membersRows):empty('Учасників ще немає','Лідер може призначити учасників до цього напрямку.');
  else if(active.id==='contracts')content=(contracts.length?table(['Контракт','Сума','Статус','Дія'],contractRows):empty('Контрактів немає'))+
    '<p class="muted small mt">Фінансові нарахування й видача коштів виконуються тільки уповноваженим керівництвом.</p>';
+ else if(active.id==='applications'){
+  const rows=recruitmentItems.map(a=>'<tr><td class="table-title">'+esc(a.nickname)+'<div class="small muted">ID: '+esc(a.game_id)+'</div></td><td>'+badge(a.status)+'</td><td>'+date(a.created_at)+'</td><td><button class="btn tiny secondary" data-action="review-app" data-id="'+esc(a.id)+'">Розглянути ↗</button></td></tr>');
+  content=rows.length?table(['Кандидат','Статус','Дата','Дія'],rows):empty('Нових заявок немає');
+ }
  else if(active.id==='finance'){
   const figures=[
     ['Всі контракти · сума',financeSummary.contracts.total],
@@ -735,7 +741,8 @@ async function departmentWorkspace(){
    '<button class="btn tiny secondary" data-action="view-record" data-module="'+esc(active.id)+'" data-id="'+esc(r.id)+'">Відкрити ↗</button></td></tr>');
   content=rows.length?table(['Назва','Відповідальний','Статус','Дії'],rows):empty('Записів цього підрозділу немає');
  }
- const canAdd=!!active.can_create&&active.id!=='personnel'&&active.id!=='contracts'&&active.id!=='public_calendar';
+ const specializedForms=['vehicles','gallery','public_news','public_team','public_achievements','public_calendar'];
+ const canAdd=!!active.can_create&&!['personnel','contracts','finance','applications'].includes(active.id)&&!specializedForms.includes(active.id);
  const create=canAdd?'<button class="btn" data-action="workspace-new-record" data-module="'+esc(active.id)+'">＋ Додати запис</button>':'';
  return intro('Управління підрозділом','Окремий робочий простір керівника: особовий склад, контракти та всі доступні операційні розділи.')+
   '<div class="card gr-workspace-head"><div class="row space wrap"><div><div class="overline">GRIZZLY / ПІДРОЗДІЛ</div><h2>'+esc(dept.title)+'</h2><p class="muted small">Керівник: '+esc(userName(dept.head_id))+'</p></div>'+selector+'</div></div>'+
