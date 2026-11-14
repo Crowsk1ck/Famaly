@@ -432,7 +432,7 @@ async function overview(){
  const ownDepartment=state.departments.find(d=>d.id===user.department_id);
  const departmentFinance=user.role==='head'&&ownDepartment?await api('/departments/'+encodeURIComponent(ownDepartment.id)+'/finance-summary'):null;
  const summary=finance.contract_summary||{};
- const metric=(label,value,note='')=>'<div class="card stat"><div class="muted small">'+esc(label)+'</div><div class="number">'+value+'</div>'+(note?'<div class="muted small">'+esc(note)+'</div>':'')+'</div>';
+ const metric=(label,value,note='')=>'<div class="card stat"><div class="muted small">'+esc(label)+'</div><div class="number">'+value+'</div>'+(note?'<div class="muted small overview-stat-note">'+esc(note)+'</div>':'')+'</div>';
  const section=(title,route,label)=>'<div class="card-head"><h3>'+esc(title)+'</h3><button class="btn tiny secondary" data-route="'+route+'">'+esc(label)+' ↗</button></div>';
  const taskRows=myTasks.slice(0,5).map(x=>'<tr><td class="table-title">'+esc(x.title)+'</td><td>'+esc(departmentName(x.department_id))+'</td><td>'+badge(x.status)+'</td><td><button class="btn tiny secondary" data-action="view-record" data-module="tasks" data-id="'+esc(x.id)+'">Відкрити</button></td></tr>');
  const reviewRows=reviewReports.slice(0,5).map(x=>'<tr><td class="table-title">'+esc(x.title)+'</td><td>'+esc(userName(x.owner_id))+'</td><td>'+badge(x.status)+'</td><td><button class="btn tiny secondary" data-action="view-record" data-module="reports" data-id="'+esc(x.id)+'">Відкрити</button></td></tr>');
@@ -501,7 +501,7 @@ async function overview(){
  const notifySection=notices.length?'<div class="card mt"><div class="card-head"><h3>Нові сповіщення</h3></div><div class="stack">'+notices.map(n=>'<div class="row space"><div><strong>'+esc(n.title)+'</strong><div class="muted small">'+esc((n.details||'').slice(0,150))+'</div></div><span class="muted small">'+date(n.created_at)+'</span></div>').join('')+'</div></div>':'';
  return intro('Огляд GRIZZLY','Головна панель сім’ї · актуальні показники та швидкий доступ до роботи',
   '<button class="btn secondary" data-action="refresh">↻ Оновити</button>')+
- '<div class="stack gr-overview-v4"><div class="dashboard-welcome"><div><div class="overline">GRIZZLY / FAMILY OPERATIONS</div><h2>Вітаємо, '+esc(user.nickname||user.username||'учаснику')+'! 🐻</h2><p>'+(ownDepartment?'Твій підрозділ: '+esc(ownDepartment.title)+' · ':'')+'Слідкуй за завданнями, подіями та роботою сім’ї.</p></div><span class="bear">🐻</span></div>'+
+ '<div class="stack gr-overview-v4 gr-overview-design-v5"><div class="dashboard-welcome"><div><div class="overline">GRIZZLY / FAMILY OPERATIONS</div><h2>Вітаємо, '+esc(user.nickname||user.username||'учаснику')+'! 🐻</h2><p>'+(ownDepartment?'Твій підрозділ: '+esc(ownDepartment.title)+' · ':'')+'Слідкуй за завданнями, подіями та роботою сім’ї.</p></div><span class="bear">🐻</span></div>'+
  '<div class="cards">'+
  metric('Учасників сім’ї',fmt(state.roster.filter(u=>u.status==='active').length),'Активні акаунти')+
  metric('Мої активні завдання',fmt(myTasks.length),'Потребують виконання')+
