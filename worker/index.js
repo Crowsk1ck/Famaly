@@ -1203,6 +1203,29 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
     await audit(db,user,'discord_preferences','integrations','discord');
     return json({ok:true,...await discordPreferences(db,env)});
   }
+  if(path==='/api/discord/outbox'&&method==='GET'){
+    if(user.role!=='leader')fail(403,'Лише лідер переглядає чергу Discord');
+    if(env.DISCORD_OUTBOX_ENABLED!=='true')return json({enabled:false,counts:{pending:0,sending:0,sent:0,failed:0,uncertain:0},items:[],total:0});
+    const statuses=['pending','sending','sent','failed','uncertain'];
+    const status=str(url.searchParams.get('status')||'all',20);
+    const route=str(url.searchParams.get('route')||'all',40);
+    if(status!=='all'&&!statuses.includes(status))fail(400,'Недопустимий статус черги');
+    if(route!=='all'&&!DISCORD_LOG_ROUTE_KINDS.has(route))fail(400,'Недопустимий канал черги');
+    const summaries=await allRows(db,'SELECT status,COUNT(*) AS total FROM discord_outbox GROUP BY status');
+    const counts=Object.fromEntries(statuses.map(k=>[k,Number(summaries.find(x=>x.status===k)?.total||0)]));
+    const filters=[],args=[];
+    if(status!=='all'){filters.push('status=?');args.push(status);}
+    if(route!=='all'){filters.push('route=?');args.push(route);}
+    const where=filters.length?' WHERE '+filters.join(' AND '):'';
+    // Never SELECT payload: it contains private text, and the browser should see metadata only.
+    const rows=await allRows(db,'SELECT id,kind,route,status,attempts,available_at,lease_until,last_error,created_at,updated_at FROM discord_outbox'+where+' ORDER BY created_at DESC LIMIT 100',...args);
+    const total=await db.prepare('SELECT COUNT(*) AS total FROM discord_outbox'+where).bind(...args).first();
+    return json({enabled:true,counts,items:rows.map(x=>({
+      id:x.id,kind:x.kind,route:x.route,status:x.status,attempts:Number(x.attempts||0),
+      available_at:x.available_at,lease_until:x.lease_until,last_error:x.last_error,
+      created_at:x.created_at,updated_at:x.updated_at
+    })),total:Number(total?.total||0),has_more:Number(total?.total||0)>rows.length});
+  }
   if(path==='/api/discord/deliveries'&&method==='GET'){
     if(user.role!=='leader')fail(403,'Лише лідер переглядає журнал Discord');
     if((await discordPreferences(db,env)).migrationRequired)

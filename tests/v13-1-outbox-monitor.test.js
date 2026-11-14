@@ -1,0 +1,30 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+const worker=readFileSync(new URL('../worker/index.js',import.meta.url),'utf8');
+const ui=readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
+test('v13.1 outbox API requires leader, validates filters and hides payloads',()=>{
+ const start=worker.indexOf("if(path==='/api/discord/outbox'&&method==='GET')");
+ const end=worker.indexOf("if(path==='/api/discord/deliveries'",start);
+ const src=worker.slice(start,end);
+ assert.ok(start>0&&end>start);
+ assert.match(src,/user\.role!=='leader'/);
+ assert.match(src,/env\.DISCORD_OUTBOX_ENABLED!=='true'/);
+ assert.match(src,/status!=='all'&&!statuses\.includes\(status\)/);
+ assert.match(src,/route!=='all'&&!DISCORD_LOG_ROUTE_KINDS\.has\(route\)/);
+ assert.match(src,/LIMIT 100/);
+ assert.match(src,/SELECT id,kind,route,status,attempts,available_at,lease_until,last_error,created_at,updated_at/);
+ assert.doesNotMatch(src.replace(/\/\/[^\n]*/g,''),/SELECT[^\n]+payload/);
+});
+test('v13.1 queue monitor is leader-only, readable and has no replay button',()=>{
+ const start=ui.indexOf('async function settingsPage(){');
+ const end=ui.indexOf('async function profile(){',start);
+ const src=ui.slice(start,end);
+ assert.match(src,/discord\?\.outbox_enabled/);
+ assert.match(src,/\/discord\/outbox\?status=/);
+ assert.match(src,/Черга Discord · v13\.1/);
+ assert.match(src,/discord-outbox-status/);
+ assert.match(src,/discord-outbox-route/);
+ assert.match(src,/Невизначені доставки потребують ручної перевірки/);
+ assert.doesNotMatch(src,/data-action="discord-outbox-retry"/);
+});
