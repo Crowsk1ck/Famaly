@@ -818,7 +818,7 @@ test('Discord leader preferences persist and prevent disabled alerts; delivery l
     await Promise.all(pending.splice(0));
     assert.equal(sent.length,1);
     let entries=(await req('/api/discord/deliveries',{token:leader})).data.items;
-    assert.equal(entries[0].kind,'applications');
+    assert.equal(entries[0].kind,'application_waiting');
     assert.equal(entries[0].status,'sent');
     assert.equal(entries[0].http_status,null);
     assert.ok(!JSON.stringify(entries).includes('Discord switch ON'));
@@ -829,7 +829,7 @@ test('Discord leader preferences persist and prevent disabled alerts; delivery l
     assert.equal(failed.status,201);
     await Promise.all(pending.splice(0));
     entries=(await req('/api/discord/deliveries',{token:leader})).data.items;
-    assert.equal(entries[0].kind,'applications');
+    assert.equal(entries[0].kind,'application_waiting');
     assert.equal(entries[0].status,'failed');
     assert.equal(entries[0].http_status,404);
     assert.equal(entries[0].error_code,'http_error');
