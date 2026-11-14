@@ -982,3 +982,11 @@
 .gr-nav-group-toggle:hover{color:#F5C5C5}
 .gr-nav-group-toggle:focus-visible{outline:2px solid var(--red);outline-offset:2px;border-radius:7px}
 .sideitem.gr-nav-hidden{display:none}
+
+/* Member section context: preserves existing routes and permission checks. */
+.gr-member-context{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 18px}
+.gr-member-context-link{display:inline-flex;align-items:center;min-height:36px;padding:8px 13px;border:1px solid var(--border);border-radius:9px;background:var(--panel,#1A1D26);color:var(--muted,#9EA4B1);font-size:.86rem;font-weight:650}
+.gr-member-context-link:hover{color:#F5F5F5;border-color:#8C414D}
+.gr-member-context-link.is-active{color:#FFD9DB;background:#742B3940;border-color:var(--red)}
+.gr-member-context-link:focus-visible{outline:2px solid var(--red);outline-offset:2px}
+@media(max-width:520px){.gr-member-context{gap:6px}.gr-member-context-link{font-size:.79rem;padding:8px 10px}}
