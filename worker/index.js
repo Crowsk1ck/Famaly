@@ -773,7 +773,7 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
       (m.department_id===departmentId&&m.id!==user.id)).map(m=>notify(db,m.id,'Заявка на відсутність',user.nickname+' · '+ABSENCE_TYPES[type])));
     return json({item:absenceView(await db.prepare('SELECT * FROM records WHERE id=?').bind(id).first())},201);
   }
-  m=path.match(/^\/api\/absences\/([\\w-]+)$/);
+  m=path.match(/^\/api\/absences\/([\w-]+)$/);
   if(m&&method==='PATCH'){
     const old=await db.prepare("SELECT * FROM records WHERE id=? AND module=? AND deleted_at IS NULL")
       .bind(m[1],ABSENCE_MODULE).first();
