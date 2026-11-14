@@ -2183,6 +2183,61 @@ test('v14.4 audit, recruitment export and leadership weekly report reject member
  assert.equal((await req('/api/audit',{token:leader})).status,200);
 });
 
+test('v14.5 concurrent edits to the same operational record accept exactly one version',async()=>{
+ const created=await req('/api/records/tasks',{method:'POST',token:leader,data:{
+  title:'Concurrent update guard',details:'Original content',department_id:'farm'
+ }});
+ assert.equal(created.status,201,JSON.stringify(created.data));
+ const {id,version}=created.data.item;
+ const [first,second]=await Promise.all([
+  req('/api/records/tasks/'+id,{method:'PATCH',token:leader,data:{version,title:'Concurrent edit A'}}),
+  req('/api/records/tasks/'+id,{method:'PATCH',token:leader,data:{version,title:'Concurrent edit B'}})
+ ]);
+ assert.deepEqual([first.status,second.status].sort((a,b)=>a-b),[200,409],
+  'Exactly one writer may commit the same optimistic version');
+ const list=await req('/api/records/tasks',{token:leader});
+ const record=list.data.items.find(x=>x.id===id);
+ assert.ok(record);
+ assert.equal(record.version,version+1);
+ assert.ok(['Concurrent edit A','Concurrent edit B'].includes(record.title));
+ const auditLog=await req('/api/audit',{token:leader});
+ assert.equal(auditLog.status,200);
+ assert.equal(auditLog.data.items.filter(x=>x.entity==='tasks'&&x.entity_id===id&&x.action==='update').length,1,
+  'Only the committed writer should add an update audit entry');
+ const replay=await req('/api/records/tasks/'+id,{method:'PATCH',token:leader,data:{
+  version,title:'Replayed stale update'
+ }});
+ assert.equal(replay.status,409);
+ const after=(await req('/api/records/tasks',{token:leader})).data.items.find(x=>x.id===id);
+ assert.equal(after.title,record.title);
+ assert.equal(after.version,record.version);
+});
+
+test('v14.5 repeated disciplinary resolution cannot create duplicate review audit',async()=>{
+ const created=await req('/api/personnel-actions',{method:'POST',token:leader,data:{
+  user_id:memberId,kind:'warning',details:'Concurrent disciplinary action regression'
+ }});
+ assert.equal(created.status,201,JSON.stringify(created.data));
+ const {id,version}=created.data.item;
+ const payload={version,reason:'Resolved after leadership verification'};
+ const [one,two]=await Promise.all([
+  req('/api/personnel-actions/'+id,{method:'PATCH',token:leader,data:payload}),
+  req('/api/personnel-actions/'+id,{method:'PATCH',token:leader,data:payload})
+ ]);
+ assert.deepEqual([one.status,two.status].sort((a,b)=>a-b),[200,409]);
+ const dossier=await req('/api/personnel-dossier?user='+memberId,{token:leader});
+ assert.equal(dossier.status,200);
+ const record=dossier.data.item.actions.find(x=>x.id===id);
+ assert.ok(record);
+ assert.equal(record.status,'Знято');
+ assert.equal(record.version,version+1);
+ const log=await req('/api/audit',{token:leader});
+ assert.equal(log.status,200);
+ assert.equal(log.data.items.filter(x=>x.entity==='personnel_actions'&&x.entity_id===id&&x.action==='review').length,1);
+ const repeat=await req('/api/personnel-actions/'+id,{method:'PATCH',token:leader,data:payload});
+ assert.equal(repeat.status,409);
+});
+
 // Run destructive session-revocation coverage last: other integration tests use this member's active session.
 test('blocking user revokes sessions and stops access',async()=>{const u=(await req('/api/users',{token:leader})).data.items.find(x=>x.id===memberId);const r=await req(`/api/users/${memberId}`,{method:'PATCH',token:leader,data:{...u,status:'blocked'}});assert.equal(r.status,200,JSON.stringify(r.data));assert.equal((await req('/api/auth/me',{token:member})).status,401);});
 
