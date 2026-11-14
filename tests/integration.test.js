@@ -1678,5 +1678,101 @@ test('v9 activity 7/30 counts only actual operations and scopes to each role',as
  const inactive=(await req('/api/absences',{token:leader})).data.items.find(x=>x.id===other.data.item.id);
  assert.equal(inactive.type,'inactive');
 });
+test('v10 personal dossiers, disciplinary actions and inactivity enforce department boundaries',async()=>{
+ const departments=(await req('/api/departments',{token:leader})).data.items;
+ const dep=departments.find(d=>d.id==='farm')||departments[0];
+ const foreign=departments.find(d=>d.id!==dep.id);
+ const create=async(username,department_id,role='member')=>{
+  const r=await req('/api/users',{method:'POST',token:leader,data:{username,password:username+'-pass-12345',
+   nickname:username,role,department_id}});
+  assert.equal(r.status,201,JSON.stringify(r.data));
+  const login=await req('/api/auth/login',{method:'POST',data:{username,password:username+'-pass-12345'}});
+  assert.equal(login.status,200,JSON.stringify(login.data));
+  return {id:r.data.item.id,token:login.cookie.match(/grizzly_session=([a-f0-9]+)/)[1]};
+ };
+ const own=await create('v10ownmember',dep.id);
+ const other=await create('v10foreignmember',foreign.id);
+ const leaderFile=await req('/api/personnel-dossier?user='+own.id,{token:leader});
+ assert.equal(leaderFile.status,200,JSON.stringify(leaderFile.data));
+ assert.equal(leaderFile.data.item.person.id,own.id);
+ assert.ok(!Object.hasOwn(leaderFile.data.item.person,'password_hash'));
+ assert.ok(!Object.hasOwn(leaderFile.data.item.person,'username'));
+ assert.equal(leaderFile.data.item.can_manage,true);
+ assert.equal((await req('/api/personnel-dossier?user='+own.id,{token:own.token})).status,200);
+ assert.equal((await req('/api/personnel-dossier?user='+other.id,{token:own.token})).status,403);
+ assert.equal((await req('/api/personnel-actions',{method:'POST',token:own.token,data:{
+  user_id:own.id,kind:'warning',details:'Самостійно створена догана'
+ }})).status,403);
+ assert.equal((await req('/api/personnel-actions',{method:'POST',token:leader,data:{
+  user_id:own.id,kind:'bonus',details:'Незаконна виплата як нагорода'
+ }})).status,400);
+ const record=await req('/api/personnel-actions',{method:'POST',token:leader,data:{
+  user_id:own.id,kind:'reprimand',details:'Порушення внутрішньої дисципліни GRIZZLY'
+ }});
+ assert.equal(record.status,201,JSON.stringify(record.data));
+ assert.equal(record.data.item.status,'Чинне');
+ const found=(await req('/api/personnel-dossier?user='+own.id,{token:own.token})).data.item;
+ assert.equal(found.actions.length,1);
+ assert.equal(found.actions[0].kind,'reprimand');
+ assert.equal(found.actions[0].id,record.data.item.id);
+ assert.equal((await req('/api/personnel-dossier?user='+other.id,{token:own.token})).status,403);
+ const wrong=await req('/api/personnel-actions',{method:'POST',token:leader,data:{
+  user_id:own.id,kind:'award',details:'Нагорода без матеріального нарахування'
+ }});
+ assert.equal(wrong.status,201);
+ assert.equal(wrong.data.item.kind,'award');
+ assert.equal((await req('/api/personnel-actions/'+record.data.item.id,{method:'PATCH',token:own.token,
+  data:{version:record.data.item.version,reason:'Зняти власну догану'}})).status,403);
+
+ const head=await create('v10farmmanager',dep.id,'head');
+ const unassigned=await req('/api/personnel-dossier?user='+own.id,{token:head.token});
+ assert.equal(unassigned.status,403);
+ const current=(await req('/api/departments',{token:leader})).data.items.find(x=>x.id===dep.id);
+ const app=await req('/api/departments/'+dep.id,{method:'PATCH',token:leader,data:{
+  title:current.title,head_id:head.id,version:current.version
+ }});
+ assert.equal(app.status,200,JSON.stringify(app.data));
+ assert.equal((await req('/api/personnel-dossier?user='+own.id,{token:head.token})).status,200);
+ assert.equal((await req('/api/personnel-dossier?user='+other.id,{token:head.token})).status,403);
+ assert.equal((await req('/api/personnel-actions',{method:'POST',token:head.token,data:{
+  user_id:other.id,kind:'warning',details:'Спроба дисциплінувати інший підрозділ'
+ }})).status,403);
+ const headWarning=await req('/api/personnel-actions',{method:'POST',token:head.token,data:{
+  user_id:own.id,kind:'warning',details:'Зауваження за порушення графіку роботи'
+ }});
+ assert.equal(headWarning.status,201,JSON.stringify(headWarning.data));
+ const resolved=await req('/api/personnel-actions/'+headWarning.data.item.id,{method:'PATCH',token:head.token,
+  data:{version:headWarning.data.item.version,reason:'Виправлено порушення дисципліни'}});
+ assert.equal(resolved.status,200,JSON.stringify(resolved.data));
+ assert.equal((await req('/api/personnel-actions/'+headWarning.data.item.id,{method:'PATCH',token:head.token,
+  data:{version:headWarning.data.item.version,reason:'Повторне зняття догани'}})).status,409);
+
+ assert.equal((await req('/api/inactivity',{token:own.token})).status,403);
+ assert.equal((await req('/api/inactivity?days=8',{token:leader})).status,400);
+ for(const days of [7,14,30]){
+  const report=await req('/api/inactivity?days='+days,{token:head.token});
+  assert.equal(report.status,200,JSON.stringify(report.data));
+  assert.equal(report.data.days,days);
+  assert.ok(report.data.items.every(x=>x.department_id===dep.id));
+  assert.ok(!report.data.items.some(x=>x.id===other.id));
+  assert.ok(report.data.items.some(x=>x.id===own.id));
+ }
+ assert.equal((await req('/api/inactivity?department='+foreign.id,{token:head.token})).status,403);
+ const beforeLeave=await req('/api/inactivity?days=14',{token:leader});
+ assert.equal(beforeLeave.status,200);
+ const now=new Date().toISOString().slice(0,10);
+ const leave=await req('/api/absences',{method:'POST',token:own.token,data:{
+  type:'vacation',starts_at:now,ends_at:now,details:'Планова відпустка для перевірки'
+ }});
+ assert.equal(leave.status,201,JSON.stringify(leave.data));
+ const accepted=await req('/api/absences/'+leave.data.item.id,{method:'PATCH',token:head.token,data:{
+  status:'Погоджено',version:leave.data.item.version
+ }});
+ assert.equal(accepted.status,200,JSON.stringify(accepted.data));
+ const afterLeave=await req('/api/inactivity?days=14',{token:head.token});
+ const leaveRow=afterLeave.data.items.find(x=>x.id===own.id);
+ assert.equal(leaveRow.approved_absence,true);
+ assert.equal(leaveRow.overdue,false);
+});
 // Run destructive session-revocation coverage last: other integration tests use this member's active session.
 test('blocking user revokes sessions and stops access',async()=>{const u=(await req('/api/users',{token:leader})).data.items.find(x=>x.id===memberId);const r=await req(`/api/users/${memberId}`,{method:'PATCH',token:leader,data:{...u,status:'blocked'}});assert.equal(r.status,200,JSON.stringify(r.data));assert.equal((await req('/api/auth/me',{token:member})).status,401);});
