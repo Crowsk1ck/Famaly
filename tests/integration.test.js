@@ -2238,6 +2238,61 @@ test('v14.5 repeated disciplinary resolution cannot create duplicate review audi
  assert.equal(repeat.status,409);
 });
 
+test('v14.6 malformed task edits and missing records leave stored data and audit intact',async()=>{
+ const created=await req('/api/records/tasks',{method:'POST',token:leader,data:{
+  title:'Validation integrity original',details:'Original details',department_id:'farm'
+ }});
+ assert.equal(created.status,201,JSON.stringify(created.data));
+ const {id,version}=created.data.item;
+ const auditBefore=await req('/api/audit',{token:leader});
+ const count=items=>items.filter(x=>x.entity==='tasks'&&x.entity_id===id&&x.action==='update').length;
+ const initialCount=count(auditBefore.data.items);
+ const missingVersion=await req('/api/records/tasks/'+id,{method:'PATCH',token:leader,data:{
+  title:'Must not overwrite without version'
+ }});
+ assert.equal(missingVersion.status,428);
+ const staleVersion=await req('/api/records/tasks/'+id,{method:'PATCH',token:leader,data:{
+  version:version+50,title:'Must not overwrite with stale version'
+ }});
+ assert.equal(staleVersion.status,409);
+ const missingRecord=await req('/api/records/tasks/not-a-real-task-v146',{method:'PATCH',token:leader,data:{
+  version,title:'Missing task'
+ }});
+ assert.equal(missingRecord.status,404);
+ const missingDelete=await req('/api/records/tasks/not-a-real-task-v146',{method:'DELETE',token:leader,data:{version}});
+ assert.equal(missingDelete.status,404);
+ const result=await req('/api/records/tasks',{token:leader});
+ const unchanged=result.data.items.find(x=>x.id===id);
+ assert.ok(unchanged);
+ assert.equal(unchanged.title,'Validation integrity original');
+ assert.equal(unchanged.details,'Original details');
+ assert.equal(unchanged.version,version);
+ const auditAfter=await req('/api/audit',{token:leader});
+ assert.equal(count(auditAfter.data.items),initialCount,
+  'Denied updates must not emit success audit rows');
+});
+
+test('v14.6 stale delete, valid delete and repeated delete preserve soft-delete integrity',async()=>{
+ const created=await req('/api/records/tasks',{method:'POST',token:leader,data:{
+  title:'Soft deletion integrity v14.6',department_id:'farm'
+ }});
+ assert.equal(created.status,201,JSON.stringify(created.data));
+ const {id,version}=created.data.item;
+ assert.equal((await req('/api/records/tasks/'+id,{method:'DELETE',token:leader,
+  data:{version:version+1}})).status,409);
+ assert.ok((await req('/api/records/tasks',{token:leader})).data.items.some(x=>x.id===id));
+ const deleted=await req('/api/records/tasks/'+id,{method:'DELETE',token:leader,data:{version}});
+ assert.equal(deleted.status,200,JSON.stringify(deleted.data));
+ assert.equal((await req('/api/records/tasks/'+id,{method:'DELETE',token:leader,data:{version}})).status,404);
+ assert.equal((await req('/api/records/tasks/'+id,{method:'PATCH',token:leader,
+  data:{version,title:'Attempt to restore deleted task'}})).status,404);
+ assert.ok(!(await req('/api/records/tasks',{token:leader})).data.items.some(x=>x.id===id));
+ const auditLog=await req('/api/audit',{token:leader});
+ assert.equal(auditLog.status,200);
+ assert.equal(auditLog.data.items.filter(x=>x.entity==='tasks'&&x.entity_id===id&&x.action==='delete').length,1,
+  'A deleted record must not generate a second success audit');
+});
+
 // Run destructive session-revocation coverage last: other integration tests use this member's active session.
 test('blocking user revokes sessions and stops access',async()=>{const u=(await req('/api/users',{token:leader})).data.items.find(x=>x.id===memberId);const r=await req(`/api/users/${memberId}`,{method:'PATCH',token:leader,data:{...u,status:'blocked'}});assert.equal(r.status,200,JSON.stringify(r.data));assert.equal((await req('/api/auth/me',{token:member})).status,401);});
 
