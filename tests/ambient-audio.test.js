@@ -16,13 +16,15 @@ test('all public documents include exact bear favicon and optional ambient audio
  assert.match(favicon,/>🐻<\/text>/);
 });
 
-test('ambient soundtrack is original synthesized audio and opt-in only',()=>{
- assert.match(script,/window\.AudioContext\|\|window\.webkitAudioContext/);
+test('family MP3 soundtrack is opt-in and loops safely',()=>{
+ assert.match(script,/new Audio\(TRACK\)/);
+ assert.match(script,/grizzly-street-sirens\.mp3/);
+ assert.match(script,/audio\.loop=true/);
  assert.match(script,/button\.addEventListener\('click',/);
  assert.match(script,/async function start\(\)/);
- assert.match(script,/async function stop\(\)/);
+ assert.match(script,/function stop\(\)/);
  assert.match(script,/aria-pressed="false"/);
- assert.match(script,/setInterval\(playChord,8000\)/);
+ assert.doesNotMatch(script,/setInterval\(playChord,8000\)/);
  assert.doesNotMatch(script,/https?:\/\//);
  assert.doesNotMatch(script,/<audio.*autoplay/i);
 });
