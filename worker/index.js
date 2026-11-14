@@ -499,7 +499,13 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
   }
   if(path==='/api/departments'&&method==='GET')return json({items:await allRows(db,'SELECT * FROM departments ORDER BY rowid')});
   m=path.match(/^\/api\/departments\/([\w-]+)$/);if(m&&method==='PATCH'){
-    if(user.role!=='leader')fail(403,'Лише лідер редагує напрямки');const b=await body(req);if(!Number.isInteger(b.version))fail(428,'Потрібна версія');const r=await db.prepare('UPDATE departments SET title=?,head_id=?,version=version+1,updated_at=? WHERE id=? AND version=?').bind(str(b.title,100),str(b.head_id,80)||null,now(),m[1],b.version).run();if(r.meta.changes!==1)fail(409,'Напрямок змінився, оновіть список');await audit(db,user,'update','departments',m[1]);return json({ok:true});
+    if(user.role!=='leader')fail(403,'Лише лідер редагує напрямки');const b=await body(req);if(!Number.isInteger(b.version))fail(428,'Потрібна версія');const headId=str(b.head_id,80)||null;
+    if(headId){
+      const candidate=await db.prepare('SELECT id,role,status,department_id FROM users WHERE id=?').bind(headId).first();
+      if(!candidate||candidate.status!=='active'||candidate.role!=='head'||candidate.department_id!==m[1])
+        fail(400,'Керівник має бути активним користувачем із роллю «Голова відділу» саме цього підрозділу');
+    }
+    const r=await db.prepare('UPDATE departments SET title=?,head_id=?,version=version+1,updated_at=? WHERE id=? AND version=?').bind(str(b.title,100),headId,now(),m[1],b.version).run();if(r.meta.changes!==1)fail(409,'Напрямок змінився, оновіть список');await audit(db,user,'update','departments',m[1],JSON.stringify({head_id:headId}));return json({ok:true});
   }
   if(path==='/api/discord/status'&&method==='GET'){
     if(user.role!=='leader')fail(403,'Лише лідер переглядає інтеграцію Discord');
