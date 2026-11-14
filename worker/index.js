@@ -993,9 +993,8 @@ async function publicHtml(req,env){
  html=html.replace(/<title>[^<]*<\/title>/,'<title>'+seoSafe(page.title)+'</title>')
           .replace(/(<link rel="canonical" href=")[^"]*(" \/>)/,'$1'+canonical+'$2');
  swap('description',page.description);swap('og:title',page.title);swap('og:description',page.description);swap('og:url',canonical);
- html=html.replace(/<div id="app">[\s\S]*?<\/div><\/div>/,
-  '<div id="app"><main class="gr-prerender"><h1>'+seoSafe(page.heading)+'</h1><p>'+seoSafe(page.intro)+'</p><a href="/">GRIZZLY Family — Головна</a></main></div>');
- const headers=new Headers(res.headers);headers.delete('content-length');headers.set('Content-Type','text/html; charset=utf-8');
+ html=html.replace('<div id="app">','<div id="app"><main class="gr-prerender"><h1>'+seoSafe(page.heading)+'</h1><p>'+seoSafe(page.intro)+'</p><a href="/">GRIZZLY Family — Головна</a></main>');
+ const headers=new Headers(res.headers);headers.delete('content-length');headers.set('Content-Type','text/html; charset=utf-8');headers.set('Cache-Control','no-store');headers.set('X-Grizzly-Seo-Route',url.pathname);
  return new Response(html,{status:res.status,headers});
 }
 const SECURITY_HEADERS={'X-Content-Type-Options':'nosniff','Referrer-Policy':'strict-origin-when-cross-origin','X-Frame-Options':'DENY','Permissions-Policy':'camera=(), microphone=(), geolocation=()'};
