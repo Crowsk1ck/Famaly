@@ -856,6 +856,27 @@ function filterDossierRows(rows,options={}){
    (!from||!!day&&day>=from)&&(!to||!!day&&day<=to);
  });
 }
+// Combine only records returned by the server-authorized dossier endpoint.
+// The timeline is a snapshot of the existing bounded dossier histories, not a
+// new full-history API and not a financial ledger.
+function dossierTimeline(dossier){
+ const events=[
+  ...(dossier.actions||[]).map(x=>({id:'action:'+x.id,category:'personnel',date:x.created_at,
+   title:x.title,detail:x.details||'',status:x.status})),
+  ...(dossier.latest_records||[]).map(x=>({id:'record:'+x.id,category:x.module==='promotions'?'promotion':x.module==='tasks'?'task':x.module==='reports'?'report':'capt',
+   date:x.created_at,title:x.title,detail:'',status:x.status})),
+  ...(dossier.absences||[]).map(x=>({id:'absence:'+x.id,category:'absence',date:x.created_at,
+   title:x.title||'Заявка на відсутність',detail:'',status:x.status})),
+  ...(dossier.history||[]).map((x,i)=>({id:'change:'+i,category:'change',date:x.created_at,
+   title:x.action,detail:x.detail||'',status:''}))
+ ];
+ return events.filter(x=>x.date).sort((a,b)=>String(b.date).localeCompare(String(a.date))||a.id.localeCompare(b.id));
+}
+function filterDossierTimeline(events,options={}){
+ const type=options.type||'all',from=options.from||'',to=options.to||'';
+ return events.filter(x=>(type==='all'||x.category===type)&&
+  (!from||String(x.date).slice(0,10)>=from)&&(!to||String(x.date).slice(0,10)<=to));
+}
 async function dossierPage(){
  const id=state.dossierUser||state.user.id;
  const {item:x}=await api('/personnel-dossier?user='+encodeURIComponent(id));
@@ -867,6 +888,21 @@ async function dossierPage(){
  people.map(p=>'<option value="'+esc(p.id)+'" data-lookup="'+esc((p.nickname||'')+' '+(p.game_id||''))+'"'+(p.id===id?' selected':'')+'>'+esc(p.nickname)+'</option>').join('')+
  '</select><span id="dossier-person-count" class="muted small">'+people.length+' доступних учасників</span></div>':'';
  const badges=[['Завдання',x.stats.tasks],['Звіти',x.stats.reports],['Підвищення',x.stats.promotions],['CAPT',x.stats.capt],['Дії · 7 днів',x.activity?.actions_7||0],['Дії · 30 днів',x.activity?.actions_30||0]];
+ const timelineType=state.dossierTimelineType||'all';
+ const timelineAll=dossierTimeline(x);
+ const timelineFiltered=filterDossierTimeline(timelineAll,{type:timelineType,from:state.dossierTimelineFrom||'',to:state.dossierTimelineTo||''});
+ const timelinePage=pageSlice(timelineFiltered,state.dossierTimelinePage||1,20);
+ state.dossierTimelinePage=timelinePage.page;
+ const timelineLabels={personnel:'Кадрове рішення',promotion:'Підвищення',task:'Завдання',report:'Звіт',capt:'CAPT',absence:'Відпустка / неактив',change:'Кадрова зміна'};
+ const timelineFilters='<div class="gr-dossier-filters"><label>Подія<select class="select" id="dossier-timeline-type">'+
+ [['all','Усі події'],...Object.entries(timelineLabels)].map(([key,label])=>'<option value="'+key+'"'+(timelineType===key?' selected':'')+'>'+label+'</option>').join('')+
+ '</select></label><label>Від<input class="input" type="date" id="dossier-timeline-from" value="'+esc(state.dossierTimelineFrom||'')+'"></label>'+
+ '<label>До<input class="input" type="date" id="dossier-timeline-to" value="'+esc(state.dossierTimelineTo||'')+'"></label>'+
+ '<button type="button" class="btn tiny secondary" data-action="dossier-timeline-reset">Скинути</button></div>';
+ const timelineRows=timelinePage.items.map(event=>
+ '<tr><td>'+esc(date(event.date))+'</td><td>'+esc(timelineLabels[event.category]||event.category)+'</td>'+
+ '<td><strong>'+esc(event.title)+'</strong>'+(event.detail?'<div class="muted small">'+esc(event.detail)+'</div>':'')+'</td>'+
+ '<td>'+(event.status?badge(event.status):'—')+'</td></tr>');
  const actionKinds=[['all','Усі рішення'],['warning','Попередження'],['reprimand','Догани'],['recognition','Подяки'],['award','Нагороди']];
  const actionKind=state.dossierKind||'all',actionStatus=state.dossierStatus||'all';
  const from=state.dossierFrom||'',to=state.dossierTo||'';
@@ -889,6 +925,11 @@ async function dossierPage(){
   ' · '+esc(departmentName(x.person.department_id))+'</p><p class="muted small">Вступ: '+esc(x.person.joined_at||'—')+
   ' · Статус: '+esc(x.person.status)+' · Ігровий ID: '+esc(x.person.game_id||'—')+'</p></div>'+
   '<div class="gr-activity-stats">'+badges.map(([t,v])=>'<div class="card"><span class="muted small">'+esc(t)+'</span><strong>'+fmt(v)+'</strong></div>').join('')+'</div>'+
+  '<div class="card gr-activity-table gr-dossier-timeline"><h3>Єдина хронологія учасника</h3>'+
+  '<p class="muted small">Події з доступної особової справи: рішення, підвищення, завдання, звіти, CAPT, відпустки та кадрові зміни. Історія обмежена даними, наданими сервером.</p>'+
+  timelineFilters+'<p class="muted small">Знайдено: '+timelinePage.total+' із '+timelineAll.length+'</p>'+
+  (timelineRows.length?table(['Дата','Тип','Подія','Статус'],timelineRows)+pageControls(timelinePage,'dossier-timeline-page'):
+    empty('За вибраними фільтрами подій немає'))+'</div>'+
   '<div class="card gr-activity-table"><h3>Догани та заохочення</h3>'+actionFilters+
  '<p class="muted small">Знайдено рішень: '+filteredActions.length+' із '+x.actions.length+'</p>'+
  (actionRows.length?table(['Рішення','Причина','Статус','Дата',''],actionRows):empty('Немає рішень за обраними фільтрами'))+'</div>'+
@@ -1955,7 +1996,10 @@ document.addEventListener('input',e=>{
 document.addEventListener('change',e=>{if(['dossier-kind-filter','dossier-status-filter','dossier-from-filter','dossier-to-filter'].includes(e.target.id)){
  const field={'dossier-kind-filter':'dossierKind','dossier-status-filter':'dossierStatus','dossier-from-filter':'dossierFrom','dossier-to-filter':'dossierTo'}[e.target.id];
  state[field]=e.target.value;void render();return;
-}if(e.target.id==='dossier-user-select'){state.dossierUser=e.target.value;void render();return;}if(e.target.id==='inactivity-days-select'){state.inactivityDays=Number(e.target.value);void render();return;}if(e.target.id==='inactivity-department-select'){state.inactivityDepartment=e.target.value;void render();return;}if(e.target.id==='activity-department-filter'){state.activityDepartment=e.target.value;void render();return;}if(e.target.id==='workspace-department-select'){state.workspaceDepartment=e.target.value;state.workspaceSection='personnel';void render();return;}if(e.target.id==='gr-gallery-sort'){state.gallerySort=e.target.value;const node=$('#gr-gallery-content');if(node)node.innerHTML=renderPublicGallery();return;}if(e.target.id==='gr-achievement-sort'){state.achievementSort=e.target.value;const node=$('#gr-achievements-content');if(node)node.innerHTML=renderPublicAchievements();return;}if(e.target.matches('#record-form[data-module="promotions"] [name="extra_requested_rank_id"]')){const form=e.target.form,box=form.querySelector('#promotion-requirement-box');if(box){box.innerHTML=promotionChecklistView(e.target.value,[]);syncPromotionChecklist();}return;}if(e.target.matches('.promotion-requirement')){syncPromotionChecklist();return;}if(state.route==='members'&&['members-role-filter','members-status-filter','members-department-filter','members-sort-filter'].includes(e.target.id)){const key={'members-role-filter':'membersRole','members-status-filter':'membersStatus','members-department-filter':'membersDepartment','members-sort-filter':'membersSort'}[e.target.id];state[key]=e.target.value;render();return;}if(e.target.id==='contract-department-filter'){state.contractDepartment=e.target.value;render();return;}if(e.target.id==='status-filter'){state.filter=e.target.value;render();}if(e.target.id==='sort-select'){state.sort=e.target.value;render();}if(e.target.id==='period-filter'){state.period=e.target.value;render();}});
+}if(['dossier-timeline-type','dossier-timeline-from','dossier-timeline-to'].includes(e.target.id)){
+ const key={'dossier-timeline-type':'dossierTimelineType','dossier-timeline-from':'dossierTimelineFrom','dossier-timeline-to':'dossierTimelineTo'}[e.target.id];
+ state[key]=e.target.value;state.dossierTimelinePage=1;void render();return;
+}if(e.target.id==='dossier-user-select'){state.dossierUser=e.target.value;state.dossierTimelinePage=1;void render();return;}if(e.target.id==='inactivity-days-select'){state.inactivityDays=Number(e.target.value);void render();return;}if(e.target.id==='inactivity-department-select'){state.inactivityDepartment=e.target.value;void render();return;}if(e.target.id==='activity-department-filter'){state.activityDepartment=e.target.value;void render();return;}if(e.target.id==='workspace-department-select'){state.workspaceDepartment=e.target.value;state.workspaceSection='personnel';void render();return;}if(e.target.id==='gr-gallery-sort'){state.gallerySort=e.target.value;const node=$('#gr-gallery-content');if(node)node.innerHTML=renderPublicGallery();return;}if(e.target.id==='gr-achievement-sort'){state.achievementSort=e.target.value;const node=$('#gr-achievements-content');if(node)node.innerHTML=renderPublicAchievements();return;}if(e.target.matches('#record-form[data-module="promotions"] [name="extra_requested_rank_id"]')){const form=e.target.form,box=form.querySelector('#promotion-requirement-box');if(box){box.innerHTML=promotionChecklistView(e.target.value,[]);syncPromotionChecklist();}return;}if(e.target.matches('.promotion-requirement')){syncPromotionChecklist();return;}if(state.route==='members'&&['members-role-filter','members-status-filter','members-department-filter','members-sort-filter'].includes(e.target.id)){const key={'members-role-filter':'membersRole','members-status-filter':'membersStatus','members-department-filter':'membersDepartment','members-sort-filter':'membersSort'}[e.target.id];state[key]=e.target.value;render();return;}if(e.target.id==='contract-department-filter'){state.contractDepartment=e.target.value;render();return;}if(e.target.id==='status-filter'){state.filter=e.target.value;render();}if(e.target.id==='sort-select'){state.sort=e.target.value;render();}if(e.target.id==='period-filter'){state.period=e.target.value;render();}});
 document.addEventListener('click',async e=>{const back=e.target.closest('[data-backdrop]');if(back&&e.target===back){closeModal();return;}const t=e.target.closest('[data-action],[data-route]');if(!t)return;e.preventDefault();try{if(t.dataset.route){await navigate(t.dataset.route);return;}const act=t.dataset.action,id=t.dataset.id,mod=t.dataset.module;switch(act){
   case 'show-login':loginModal();break;
   case 'close-modal':closeModal();break;
@@ -2037,9 +2081,12 @@ document.addEventListener('click',async e=>{const back=e.target.closest('[data-b
       '<div class="full form-actions"><button class="btn ghost" type="button" data-action="close-modal">Скасувати</button><button class="btn" type="submit">Подати на перевірку</button></div></form>');
     break;
   }
+  case 'dossier-timeline-page':state.dossierTimelinePage=Number(t.dataset.page)||1;await render();break;
+  case 'dossier-timeline-reset':
+    state.dossierTimelineType='all';state.dossierTimelineFrom='';state.dossierTimelineTo='';state.dossierTimelinePage=1;await render();break;
   case 'dossier-reset-filters':
     state.dossierKind='all';state.dossierStatus='all';state.dossierFrom='';state.dossierTo='';await render();break;
-  case 'open-dossier':state.dossierUser=t.dataset.id;await navigate('dossier');break;
+  case 'open-dossier':state.dossierUser=t.dataset.id;state.dossierTimelinePage=1;await navigate('dossier');break;
   case 'new-personnel-action':{
     if(!['leader','deputy','head'].includes(state.user.role))throw new Error('Тільки керівництво може додавати рішення');
     modal('Нове рішення в особовій справі','<form id="personnel-action-form" data-user="'+esc(t.dataset.id)+'" class="formgrid">'+
