@@ -47,13 +47,20 @@ jobs:
           umask 077
           mkdir -p "$RUNNER_TEMP/grizzly-backup"
           BACKUP="$RUNNER_TEMP/grizzly-backup/grizzly-$(date -u +%Y%m%dT%H%M%SZ).sql"
-          trap 'rm -f "$BACKUP" "$BACKUP.enc"' EXIT
+          VERIFY="$RUNNER_TEMP/grizzly-backup/decrypted-verify.sql"
+          trap 'rm -f "$BACKUP" "$BACKUP.enc" "$VERIFY"' EXIT
           npx wrangler d1 export grizzly-db --remote --output "$BACKUP"
           test -s "$BACKUP"
           openssl enc -aes-256-cbc -salt -pbkdf2 -iter 310000 \
             -in "$BACKUP" -out "$BACKUP.enc" -pass env:BACKUP_PASSPHRASE
-          rm -f "$BACKUP"
+          # v16.4: prove the encrypted archive decrypts and restores to a
+          # disposable SQLite DB before uploading it as a private object.
+          openssl enc -d -aes-256-cbc -pbkdf2 -iter 310000 \
+            -in "$BACKUP.enc" -out "$VERIFY" -pass env:BACKUP_PASSPHRASE
+          cmp -s "$BACKUP" "$VERIFY"
+          python3 scripts/verify-d1-restore.py "$VERIFY"
+          rm -f "$VERIFY" "$BACKUP"
           aws --endpoint-url "https://${CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com" \
             s3 cp "$BACKUP.enc" "s3://${BACKUP_BUCKET}/d1/$(basename "$BACKUP").enc" \
             --no-progress
-          echo 'Encrypted private D1 export uploaded to configured R2 bucket. Verify restore procedure separately.'
+          echo 'Encrypted private D1 export passed offline restore validation and was uploaded to private R2 storage.'

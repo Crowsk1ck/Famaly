@@ -1,6 +1,6 @@
 {
   "name": "grizzly-family-panel",
-  "version": "1.0.0",
+  "version": "17.0.0",
   "private": true,
   "type": "module",
   "description": "Grizzly GTA 5 RP — public website and secure Cloudflare D1 management panel",
@@ -11,7 +11,9 @@
     "migrate:remote": "wrangler d1 migrations apply grizzly-db --remote",
     "test": "node --test tests/*.test.js",
     "build:social": "node scripts/build-social-preview.mjs",
-    "predeploy": "npm run build:social"
+    "predeploy": "npm run build:social",
+    "check:perf": "node scripts/check-performance-budget.mjs",
+    "check:backup": "bash scripts/check-backup-roundtrip.sh"
   },
   "devDependencies": {
     "wrangler": "^4.47.0",

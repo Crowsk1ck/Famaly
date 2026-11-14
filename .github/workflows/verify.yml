@@ -29,4 +29,28 @@ jobs:
           node --check public/credential-generator.js
       - name: Integration and generator tests
         run: npm test
+      - name: Static frontend performance budgets
+        run: node scripts/check-performance-budget.mjs
+      - name: Synthetic offline encrypted D1 restore drill
+        run: bash scripts/check-backup-roundtrip.sh
 
+
+  panel_browser_acceptance:
+    name: Authenticated panel browser QA (mock API, no production writes)
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install temporary Chromium driver
+        run: npm install --no-save --no-audit --no-fund puppeteer-core
+      - name: Run real desktop/mobile Chromium tests for four roles
+        env:
+          CHROME_PATH: /usr/bin/google-chrome
+        run: node tests/panel-browser-acceptance.mjs

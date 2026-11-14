@@ -1649,6 +1649,12 @@ async function publicHtml(req,env){
  return new Response(html,{status:res.status,headers});
 }
 const SECURITY_HEADERS={'X-Content-Type-Options':'nosniff','Referrer-Policy':'strict-origin-when-cross-origin','X-Frame-Options':'DENY','Permissions-Policy':'camera=(), microphone=(), geolocation=()'};
+// v16.3: protect public HTML/static assets as well as JSON APIs.
+function securityResponse(res){
+ const h=new Headers(res.headers);
+ Object.entries(SECURITY_HEADERS).forEach(([key,value])=>h.set(key,value));
+ return new Response(res.body,{status:res.status,statusText:res.statusText,headers:h});
+}
 export default {
  async scheduled(_event,env,ctx){
   if(env.DISCORD_OUTBOX_ENABLED!=='true')return;
@@ -1656,4 +1662,14 @@ export default {
   if(ctx?.waitUntil)ctx.waitUntil(task);
   else await task;
  },
- async fetch(req,env,ctx){try{if(!new URL(req.url).pathname.startsWith('/api/'))return publicHtml(req,env);const res=await handleApi(req,env,ctx);const h=new Headers(res.headers);Object.entries(SECURITY_HEADERS).forEach(([k,v])=>h.set(k,v));return new Response(res.body,{status:res.status,headers:h});}catch(err){const code=err instanceof HttpError?err.status:500;if(code===500)console.error('Grizzly API error',err);return json({error:code===500?'Внутрішня помилка сервера':err.message},code,SECURITY_HEADERS);}}};
+ async fetch(req,env,ctx){try{
+  const res=new URL(req.url).pathname.startsWith('/api/')?
+   await handleApi(req,env,ctx):await publicHtml(req,env);
+  return securityResponse(res);
+ }catch(err){
+  const code=err instanceof HttpError?err.status:500;
+  if(code===500)console.error('Grizzly API error',err);
+  return json({error:code===500?'Внутрішня помилка сервера':err.message},code,SECURITY_HEADERS);
+ }
+ }
+};
