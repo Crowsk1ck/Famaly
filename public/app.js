@@ -251,11 +251,40 @@ function renderPublicNewsPreview(){
 }
 const grCalendarCategories=[['all','Усі'],['meeting','Збори'],['capt','CAPT'],['training','Тренування'],['event','Івенти']];
 function grCalendarLabel(value){return grCalendarCategories.find(([id])=>id===value)?.[1]||'Івент';}
+// v15.9: Kyiv calendar-day arithmetic avoids client timezone/DST surprises.
+function grCalendarDayOffset(value,nowLocal){
+ const start=kyivWallDate(value).slice(0,10);
+ const today=kyivWallDate(nowLocal).slice(0,10);
+ const utcDay=day=>{
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(day))return null;
+  const [year,month,date]=day.split('-').map(Number);
+  const ms=Date.UTC(year,month-1,date);
+  return new Date(ms).toISOString().slice(0,10)===day?ms:null;
+ };
+ const a=utcDay(start),b=utcDay(today);
+ return a===null||b===null?null:Math.round((a-b)/86400000);
+}
+function grUpcomingEventWindow(events,nowLocal,days=7){
+ const now=kyivWallDate(nowLocal);
+ return (Array.isArray(events)?events:[]).filter(event=>{
+  const start=kyivWallDate(event?.starts_at);
+  const diff=grCalendarDayOffset(start,now);
+  return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(start)&&
+   diff!==null&&diff>=0&&diff<days&&start>=now&&
+   !['Відхилено','Скасовано','Завершено'].includes(event.status);
+ }).sort((a,b)=>kyivWallDate(a.starts_at).localeCompare(kyivWallDate(b.starts_at))||
+  String(a.title||'').localeCompare(String(b.title||''),'uk'));
+}
+function grCalendarReminderLabel(value,nowLocal){
+ const day=grCalendarDayOffset(value,nowLocal);
+ if(day===0)return 'Сьогодні';
+ if(day===1)return 'Завтра';
+ return day!==null&&day>1?'Через '+day+' дн.':'Дата уточнюється';
+}
 function grCalendarMonthValue(){
   const v=String(state.calendarMonth||'');
   if(/^\d{4}-(0[1-9]|1[0-2])$/.test(v))return v;
-  const now=new Date();
-  return String(now.getFullYear()).padStart(4,'0')+'-'+String(now.getMonth()+1).padStart(2,'0');
+  return kyivNowLocal().slice(0,7);
 }
 function grCalendarEvents(){
   const all=Array.isArray(state.public?.calendar)?state.public.calendar:[];
@@ -283,6 +312,22 @@ function renderPublicCalendar(){
   const days=new Date(Date.UTC(year,mon,0)).getUTCDate();
   const calendar=grCalendarEvents();
   const monthEvents=calendar.filter(e=>String(e.starts_at||'').startsWith(month));
+  const weekEvents=grUpcomingEventWindow(calendar,kyivNowLocal(),7).slice(0,5);
+  const weekPreview='<section class="gr-cal-week-preview" aria-label="Найближчі заходи протягом 7 днів">'+
+   '<div class="gr-cal-week-head"><div><span class="gr-kicker">НЕ ПРОПУСТИ</span><h3>Найближчі 7 днів</h3></div>'+
+   '<span class="muted small">Час за Києвом (Europe/Kyiv)</span></div>'+
+   (weekEvents.length?'<div class="gr-cal-week-list">'+weekEvents.map(event=>{
+    const start=kyivWallDate(event.starts_at),calendarMonth=start.slice(0,7);
+    return '<article class="gr-cal-week-event"><div class="gr-cal-week-badge">'+
+      esc(grCalendarReminderLabel(start,kyivNowLocal()))+'</div>'+
+      '<div class="gr-cal-week-copy"><strong>'+esc(event.title)+'</strong><span>'+
+      esc(grCalendarDay(start.slice(0,10))+' · '+start.slice(11,16))+
+      (event.location?' · '+esc(event.location):'')+'</span></div>'+
+      '<button type="button" class="gr-cal-week-go" data-action="public-calendar-jump" data-month="'+
+      esc(calendarMonth)+'" aria-label="Показати '+esc(event.title)+' у календарі">Показати ↗</button></article>';
+   }).join('')+'</div>':
+   '<p class="muted small gr-cal-week-empty">На найближчі 7 днів підтверджених заходів немає.</p>')+
+   '</section>';
   const counts=new Map();
   for(const ev of monthEvents){const day=String(ev.starts_at||'').slice(0,10);counts.set(day,(counts.get(day)||0)+1);}
   const today=kyivNowLocal().slice(0,10);
@@ -295,7 +340,7 @@ function renderPublicCalendar(){
       '<span>'+day+'</span>'+(count?'<a class="gr-cal-count" href="#cal-events" title="Переглянути заходи: '+esc(grCalendarDay(date))+'">'+count+' '+(count===1?'подія':'події')+'</a>':'')+'</div>';
   }
   const filters=grCalendarCategories.map(([key,title])=>'<button type="button" data-action="public-calendar-filter" data-category="'+key+'" class="gr-cal-filter'+((state.calendarCategory||'all')===key?' active':'')+'" aria-pressed="'+((state.calendarCategory||'all')===key)+'">'+esc(title)+'</button>').join('');
-  return '<div class="gr-cal-filterbar">'+filters+'</div>'+
+  return weekPreview+'<div class="gr-cal-filterbar">'+filters+'</div>'+
     '<div class="gr-cal-layout"><div class="gr-cal-month">'+
     '<div class="gr-cal-controls"><button type="button" data-action="public-calendar-prev" aria-label="Попередній місяць">←</button>'+
     '<h3>'+esc(monthName)+'</h3><button type="button" data-action="public-calendar-next" aria-label="Наступний місяць">→</button></div>'+
@@ -655,6 +700,7 @@ async function overview(){
  const nextEvents=upcoming.slice(0,4);
  const focus=overviewFocusItems({tasks,events,notifications:state.notifications,
   userId:user.id,nowLocal:kyivNowLocal()});
+ const imminentEvents=grUpcomingEventWindow(events,kyivNowLocal(),2);
  const pendingContracts=contracts.filter(x=>x.status==='Погоджено'&&!x.settled_at);
  const ownDepartment=state.departments.find(d=>d.id===user.department_id);
  const departmentFinance=user.role==='head'&&ownDepartment?await api('/departments/'+encodeURIComponent(ownDepartment.id)+'/finance-summary'):null;
@@ -763,6 +809,7 @@ async function overview(){
  const activityOverview=activityData?'<div class="card overview-activity"><div class="card-head"><h3>Активність учасників · 7 днів</h3><button class="btn tiny secondary" data-route="stats">Уся статистика ↗</button></div>'+
  (activityLeaders.length?'<div class="overview-activity-list">'+activityLeaders.map((r,i)=>'<div class="row space"><span><strong>'+esc(String(i+1)+'. '+userName(r.user_id))+'</strong><span class="muted small"> · '+fmt(r.completed)+' дій</span></span><strong class="mono">'+fmt(r.points)+' балів</strong></div>').join('')+'</div>':empty('Немає завершених активностей','Рейтинг формується на підставі погоджених і завершених записів.'))+'</div>':'';
  const needsAttention=[
+   ...(imminentEvents.length?[{route:'events',title:'Нагадування: заходи сьогодні або завтра',count:imminentEvents.length}]:[]),
    ...(overdueTasks.length?[{route:'tasks',title:'Прострочені завдання',count:overdueTasks.length}]:[]),
    ...(reviewReports.length?[{route:'reports',title:manager?'Звіти очікують перевірки':'Мої звіти очікують рішення',count:reviewReports.length}]:[]),
    ...(leader&&unassignedMembers?[{route:'members',title:'Учасники без підрозділу',count:unassignedMembers}]:[])
@@ -2677,6 +2724,15 @@ document.addEventListener('click',async e=>{const back=e.target.closest('[data-b
   case 'public-calendar-filter':{
     state.calendarCategory=t.dataset.category||'all';
     const node=$('#gr-calendar-content');if(node)node.innerHTML=renderPublicCalendar();break;}
+  case 'public-calendar-jump':{
+    const month=t.dataset.month||'';
+    if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(month))break;
+    state.calendarMonth=month;
+    const node=$('#gr-calendar-content');
+    if(node)node.innerHTML=renderPublicCalendar();
+    document.getElementById('cal-events')?.scrollIntoView({block:'start'});
+    break;
+  }
   case 'public-calendar-prev':
   case 'public-calendar-next':{
     const [year,month]=grCalendarMonthValue().split('-').map(Number);
