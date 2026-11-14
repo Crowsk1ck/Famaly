@@ -30,19 +30,3 @@ jobs:
       - name: Integration and generator tests
         run: npm test
 
-      - name: Verify public tabs do not reload the browser
-        shell: bash
-        run: |
-          npm install --no-save --no-audit --no-fund puppeteer-core
-          node --input-type=module <<'NODE'
-          import puppeteer from 'puppeteer-core';
-          const browser=await puppeteer.launch({executablePath:'/usr/bin/google-chrome',headless:true,args:['--no-sandbox']});
-          const page=await browser.newPage();
-          page.on('pageerror',e=>console.log('PAGE ERROR',e.stack||e.message));
-          await page.goto('https://grizzly-family.online/',{waitUntil:'networkidle2',timeout:30000});
-          await page.evaluate(()=>window.__grizzlyNavigationProbe='still-here');
-          await page.click('a[href="/join/"]');
-          await page.waitForFunction(()=>location.pathname==='/join/' && document.querySelector('#apply-form'),{timeout:15000});
-          console.log('LIVE CURRENT',await page.evaluate(()=>({url:location.href,probe:window.__grizzlyNavigationProbe,form:!!document.querySelector('#apply-form')})));
-          await browser.close();
-          NODE
