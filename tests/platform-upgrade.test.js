@@ -8,6 +8,7 @@ const html=readFileSync(new URL('../public/index.html',import.meta.url),'utf8');
 const backend=readFileSync(new URL('../worker/index.js',import.meta.url),'utf8');
 const deploy=readFileSync(new URL('../.github/workflows/deploy-production.yml',import.meta.url),'utf8');
 const backup=readFileSync(new URL('../.github/workflows/d1-private-backup.yml',import.meta.url),'utf8');
+const wrangler=readFileSync(new URL('../wrangler.toml',import.meta.url),'utf8');
 
 test('public SEO pages have stable canonical metadata without authenticated data',async()=>{
  const env={ASSETS:{fetch:async()=>new Response(html,{headers:{'Content-Type':'text/html'}})}};
@@ -59,4 +60,9 @@ test('backups are encrypted and never uploaded as public actions artifacts',()=>
  assert.match(backup,/GRIZZLY_BACKUP_PASSPHRASE/);
  assert.match(backup,/r2\.cloudflarestorage\.com/);
  assert.doesNotMatch(backup,/actions\/upload-artifact/);
+});
+
+test('dedicated SEO routes are intercepted before SPA fallback',()=>{
+ for(const route of ['about','news','gallery','achievements','calendar','join'])assert.ok(wrangler.includes('/'+route+'/*'));
+ assert.match(app,/history\.replaceState\(history\.state,'','\/'\+url\.search\+url\.hash\)/);
 });
