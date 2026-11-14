@@ -1395,7 +1395,7 @@ test('GRIZZLY overview v2 uses authenticated role-scoped sources and shows key p
   assert.match(section,/Стан підрозділів/);
   assert.match(section,/Нові сповіщення/);
   assert.match(section,/departmentFinance/);
-  assert.match(app,/\['overview','members','ranks','departments','contracts','settings','profile'\]/);
+  assert.match(app,/ROUTES_WITH_RENDER_PRELOAD=new Set\(\['overview','members','ranks','departments','contracts','profile','workspace'\]\)/);
   const finance=await req('/api/finance',{token:member});
   const contracts=await req('/api/contracts',{token:member});
   const tasks=await req('/api/records/tasks',{token:member});
