@@ -820,6 +820,44 @@ async function overview(){
  (leader?'<div class="card"><div class="card-head"><h3>Стан підрозділів</h3><button class="btn tiny secondary" data-route="departments">Керувати ↗</button></div><div class="grid3 mt">'+departmentCards+'</div></div>':'')+
  notifySection+'</div>';
 }
+// v15.8: selection is limited to the roster already returned to this session.
+// Bulk actions are read-only; they cannot mutate roles, membership or finance.
+function selectedMemberRows(roster,selectedIds){
+ const selected=new Set((selectedIds||[]).map(String));
+ return (roster||[]).filter(member=>selected.has(String(member.id)));
+}
+function selectedMembersCsv(rows,roleNames,rankLookup,departmentLookup){
+ const clean=v=>{
+  const s=String(v??'').replace(/\r\n?/g,'\n');
+  // Prevent spreadsheet formula injection, including whitespace-prefixed payloads.
+  return /^[\s]*[=+@-]/.test(s)?"'"+s:s;
+ };
+ const quote=v=>'"'+clean(v).replace(/"/g,'""')+'"';
+ const data=[['Нікнейм','Ігровий ID','Роль','Ігровий ранг','Підрозділ','Статус','Дата вступу'],
+  ...rows.map(u=>[
+   u.nickname||'Учасник',u.game_id||'',roleNames[u.role]||u.role||'',
+   rankLookup(u.rank_id),departmentLookup(u.department_id),
+   memberStatusLabel(u.status),u.joined_at||''
+  ])];
+ return '\uFEFF'+data.map(row=>row.map(quote).join(';')).join('\r\n');
+}
+function syncMembersBulkUi(){
+ if(state.route!=='members')return;
+ const selected=new Set(state.membersSelectedIds||[]);
+ document.querySelectorAll('[data-member-select]').forEach(input=>{
+  input.checked=selected.has(input.value);
+ });
+ const page=document.getElementById('members-select-page');
+ if(page){
+  const available=[...new Set(Array.from(document.querySelectorAll('[data-member-select]')).map(x=>x.value))];
+  const chosen=available.filter(id=>selected.has(id)).length;
+  page.checked=available.length>0&&chosen===available.length;
+  page.indeterminate=chosen>0&&chosen<available.length;
+ }
+ const count=document.getElementById('members-selected-count');
+ if(count)count.textContent=selected.size+' вибрано';
+ document.querySelectorAll('[data-members-bulk]').forEach(button=>button.disabled===undefined?button.disabled=selected.size===0:button.disabled=selected.size===0);
+}
 function memberStatusLabel(status){return status==='active'?'Активний':status==='blocked'?'Заблокований':status||'—';}
 async function members(){
  const all=state.roster;
@@ -830,6 +868,12 @@ async function members(){
  list.sort((a,b)=>sort==='name'?byName(a,b):sort==='joined'?String(b.joined_at||'').localeCompare(String(a.joined_at||''))||byName(a,b):Number(b.rank_id||0)-Number(a.rank_id||0)||byName(a,b));
  const memberPage=pageSlice(list,state.membersPage||1);
  state.membersPage=memberPage.page;
+ const availableIds=new Set(all.map(u=>String(u.id)));
+ state.membersSelectedIds=(state.membersSelectedIds||[]).filter(id=>availableIds.has(id));
+ const selectedIds=new Set(state.membersSelectedIds);
+ const selectCell=u=>'<label class="gr-member-select" title="Вибрати учасника">'+
+  '<input type="checkbox" data-member-select value="'+esc(u.id)+'" aria-label="Вибрати '+esc(u.nickname||'Учасник')+'"'+
+  (selectedIds.has(String(u.id))?' checked':'')+'><span class="muted small">Вибрати</span></label>';
  const summary=[['Усього учасників',all.length],['Активні',all.filter(u=>u.status==='active').length],['Заблоковані',all.filter(u=>u.status==='blocked').length],['Напрямки',new Set(all.map(u=>u.department_id).filter(Boolean)).size]];
  const select=(id,label,options,current)=>'<div class="field" style="min-width:145px;flex:1"><label for="'+id+'">'+label+'</label><select id="'+id+'" class="select" style="width:100%">'+options.map(([v,t])=>'<option value="'+esc(v)+'" '+(v===current?'selected':'')+'>'+esc(t)+'</option>').join('')+'</select></div>';
  const roleOptions=[['all','Усі ролі'],...Object.entries(roles)];
@@ -839,13 +883,22 @@ async function members(){
  const isFiltered=role!=='all'||status!=='all'||department!=='all'||sort!=='rank'||Boolean(state.search);
  const editButton=u=>(state.users.some(account=>account.id===u.id)?'<button class="btn tiny secondary" data-action="edit-user" data-id="'+esc(u.id)+'">Редагувати</button> ': '')+'<button class="btn tiny secondary" data-action="open-dossier" data-id="'+esc(u.id)+'">Особова справа ↗</button>';
  const statusBadge=u=>'<span class="badge '+(u.status==='active'?'green':u.status==='blocked'?'red':'blue')+'">'+esc(memberStatusLabel(u.status))+'</span>';
- const tableRows=memberPage.items.map(u=>'<tr><td><strong>'+esc(nameOf(u))+'</strong><div class="muted">Ігровий профіль</div></td><td>'+esc(roles[u.role]||u.role)+'<div class="muted">'+esc(rankName(u.rank_id))+'</div></td><td>'+esc(departmentName(u.department_id))+'</td><td>'+esc(u.game_id||'—')+'</td><td>'+statusBadge(u)+'<div class="muted">'+esc(u.joined_at?('Вступ: '+date(u.joined_at)):'У сім’ї')+'</div></td><td>'+editButton(u)+'</td></tr>');
- const mobileCards=memberPage.items.map(u=>'<article class="card member-mobile-card"><div class="row space" style="align-items:start"><div><strong>'+esc(nameOf(u))+'</strong><div class="muted small">Учасник GRIZZLY</div></div>'+statusBadge(u)+'</div><div class="small mt">'+esc(roles[u.role]||u.role)+' · '+esc(rankName(u.rank_id))+'</div><div class="small muted mt">Напрямок: '+esc(departmentName(u.department_id))+'</div><div class="small muted">Ігровий ID: '+esc(u.game_id||'—')+'</div><div class="small muted">Активність: '+esc(u.joined_at?('Вступ: '+date(u.joined_at)):'У сім’ї')+'</div><div class="mt">'+editButton(u)+'</div></article>').join('');
+ const tableRows=memberPage.items.map(u=>'<tr><td>'+selectCell(u)+'</td><td><strong>'+esc(nameOf(u))+'</strong><div class="muted">Ігровий профіль</div></td><td>'+esc(roles[u.role]||u.role)+'<div class="muted">'+esc(rankName(u.rank_id))+'</div></td><td>'+esc(departmentName(u.department_id))+'</td><td>'+esc(u.game_id||'—')+'</td><td>'+statusBadge(u)+'<div class="muted">'+esc(u.joined_at?('Вступ: '+date(u.joined_at)):'У сім’ї')+'</div></td><td>'+editButton(u)+'</td></tr>');
+ const mobileCards=memberPage.items.map(u=>'<article class="card member-mobile-card"><div class="row space" style="align-items:start"><div>'+selectCell(u)+'<strong>'+esc(nameOf(u))+'</strong><div class="muted small">Учасник GRIZZLY</div></div>'+statusBadge(u)+'</div><div class="small mt">'+esc(roles[u.role]||u.role)+' · '+esc(rankName(u.rank_id))+'</div><div class="small muted mt">Напрямок: '+esc(departmentName(u.department_id))+'</div><div class="small muted">Ігровий ID: '+esc(u.game_id||'—')+'</div><div class="small muted">Активність: '+esc(u.joined_at?('Вступ: '+date(u.joined_at)):'У сім’ї')+'</div><div class="mt">'+editButton(u)+'</div></article>').join('');
  return intro('Склад сім’ї','Особовий склад, ігрові ранги, напрямки та доступи.',can('members:write')?'<button class="btn" data-action="new-user">＋ Додати учасника</button>':'')+
  '<div class="cards">'+summary.map(([title,value])=>'<div class="card stat"><div class="muted small">'+esc(title)+'</div><div class="number">'+value+'</div></div>').join('')+'</div>'+
  '<div class="toolbar mt gr-member-searchbar">'+searchBar()+'<button type="button" class="btn tiny secondary" data-action="members-clear-search"'+(!state.search?' disabled':'')+'>Очистити пошук</button><span class="muted small">Знайдено: '+list.length+'</span>'+(can('members:read')?exportButton('users'):'')+'</div>'+
+ '<div class="card gr-member-bulk-bar" aria-label="Масові дії з учасниками">'+
+ '<label class="gr-member-bulk-check"><input type="checkbox" id="members-select-page"'+
+ (memberPage.items.length&&memberPage.items.every(u=>selectedIds.has(String(u.id)))?' checked':'')+
+ '> Вибрати поточну сторінку</label>'+
+ '<span id="members-selected-count" class="muted small">'+selectedIds.size+' вибрано</span>'+
+ '<button type="button" class="btn tiny secondary" data-members-bulk data-action="members-bulk-copy"'+(!selectedIds.size?' disabled':'')+'>Копіювати ніки</button>'+
+ (can('members:read')?'<button type="button" class="btn tiny secondary" data-members-bulk data-action="members-bulk-csv"'+(!selectedIds.size?' disabled':'')+'>CSV вибраних</button>':'')+
+ '<button type="button" class="btn tiny ghost" data-action="members-bulk-clear"'+(!selectedIds.size?' disabled':'')+'>Зняти вибір</button>'+
+ '<p class="muted small gr-member-bulk-hint">Вибір зберігається між сторінками списку. Групові дії не змінюють облікові записи.</p></div>'+
  '<div class="card mb"><div class="row wrap member-filters" style="gap:10px;align-items:end">'+select('members-role-filter','Роль',roleOptions,role)+select('members-status-filter','Статус',statusOptions,status)+select('members-department-filter','Напрямок',departmentOptions,department)+select('members-sort-filter','Сортування',sortOptions,sort)+'<button class="btn tiny secondary" data-action="members-reset" '+(!isFiltered?'disabled':'')+'>Скинути фільтри</button></div></div>'+
- (list.length?'<div class="member-desktop-table">'+table(['Учасник','Роль / ранг','Напрямок','Ігровий ID','Активність','Дії'],tableRows)+'</div><div class="member-mobile-list">'+mobileCards+'</div>'+pageControls(memberPage,'members-page'):empty('Учасників не знайдено','Спробуйте інші параметри пошуку або скиньте фільтри.'));
+ (list.length?'<div class="member-desktop-table">'+table(['Вибір','Учасник','Роль / ранг','Напрямок','Ігровий ID','Активність','Дії'],tableRows)+'</div><div class="member-mobile-list">'+mobileCards+'</div>'+pageControls(memberPage,'members-page'):empty('Учасників не знайдено','Спробуйте інші параметри пошуку або скиньте фільтри.'));
 }
 function viewMember(id){
   const u=state.roster.find(item=>item.id===id);
@@ -2361,7 +2414,7 @@ document.addEventListener('input',e=>{
   return;
  }
  if(e.target.closest('#contract-correction-form')){const f=e.target.closest('form');f.dataset.previewAmount='';f.dataset.previewReason='';const btn=f.querySelector('[data-action="contract-correction-save"]');if(btn)btn.disabled=true;const box=f.querySelector('#contract-correction-preview');if(box)box.textContent='Дані змінено. Повторіть попередній розрахунок.';}if(e.target.name==='photo_url'&&e.target.closest('#gallery-form'))updateGalleryFormPreview();if(e.target.name==='photo_url'&&e.target.closest('#team-form'))updateTeamFormPreview();if(e.target.name==='photo_url'&&e.target.closest('#achievement-form'))updateAchievementPreview();if(e.target.id==='search-input'){
-  state.membersPage=1;state.auditPage=1;state.search=e.target.value;
+  state.membersPage=1;state.auditPage=1;if(state.route==='members')state.membersSelectedIds=[];state.search=e.target.value;
   const route=state.route,start=e.target.selectionStart;
   clearTimeout(memberSearchTimer);
   memberSearchTimer=setTimeout(()=>{
@@ -2372,13 +2425,29 @@ document.addEventListener('input',e=>{
    }).catch(err=>toast(err.message,true));
   },220);
  }});
-document.addEventListener('change',e=>{if(['dossier-kind-filter','dossier-status-filter','dossier-from-filter','dossier-to-filter'].includes(e.target.id)){
+document.addEventListener('change',e=>{
+ if(state.route==='members'&&e.target.matches('[data-member-select]')){
+  const selected=new Set(state.membersSelectedIds||[]);
+  if(e.target.checked)selected.add(e.target.value);else selected.delete(e.target.value);
+  state.membersSelectedIds=[...selected];
+  syncMembersBulkUi();
+  return;
+ }
+ if(state.route==='members'&&e.target.id==='members-select-page'){
+  const selected=new Set(state.membersSelectedIds||[]);
+  const ids=[...new Set(Array.from(document.querySelectorAll('[data-member-select]')).map(x=>x.value))];
+  for(const id of ids){if(e.target.checked)selected.add(id);else selected.delete(id);}
+  state.membersSelectedIds=[...selected];
+  syncMembersBulkUi();
+  return;
+ }
+ if(['dossier-kind-filter','dossier-status-filter','dossier-from-filter','dossier-to-filter'].includes(e.target.id)){
  const field={'dossier-kind-filter':'dossierKind','dossier-status-filter':'dossierStatus','dossier-from-filter':'dossierFrom','dossier-to-filter':'dossierTo'}[e.target.id];
  state[field]=e.target.value;void render();return;
 }if(['dossier-timeline-type','dossier-timeline-from','dossier-timeline-to'].includes(e.target.id)){
  const key={'dossier-timeline-type':'dossierTimelineType','dossier-timeline-from':'dossierTimelineFrom','dossier-timeline-to':'dossierTimelineTo'}[e.target.id];
  state[key]=e.target.value;state.dossierTimelinePage=1;void render();return;
-}if(e.target.id==='dossier-user-select'){state.dossierUser=e.target.value;state.dossierTimelinePage=1;void render();return;}if(e.target.id==='inactivity-days-select'){state.inactivityDays=Number(e.target.value);void render();return;}if(e.target.id==='inactivity-department-select'){state.inactivityDepartment=e.target.value;void render();return;}if(e.target.id==='activity-department-filter'){state.activityDepartment=e.target.value;void render();return;}if(e.target.id==='workspace-department-select'){state.workspaceDepartment=e.target.value;state.workspaceSection='personnel';void render();return;}if(e.target.id==='gr-gallery-sort'){state.gallerySort=e.target.value;const node=$('#gr-gallery-content');if(node)node.innerHTML=renderPublicGallery();return;}if(e.target.id==='gr-achievement-sort'){state.achievementSort=e.target.value;const node=$('#gr-achievements-content');if(node)node.innerHTML=renderPublicAchievements();return;}if(e.target.matches('#record-form[data-module="promotions"] [name="extra_requested_rank_id"]')){const form=e.target.form,box=form.querySelector('#promotion-requirement-box');if(box){box.innerHTML=promotionChecklistView(e.target.value,[]);syncPromotionChecklist();}return;}if(e.target.matches('.promotion-requirement')){syncPromotionChecklist();return;}if(state.route==='members'&&['members-role-filter','members-status-filter','members-department-filter','members-sort-filter'].includes(e.target.id)){const key={'members-role-filter':'membersRole','members-status-filter':'membersStatus','members-department-filter':'membersDepartment','members-sort-filter':'membersSort'}[e.target.id];state[key]=e.target.value;render();return;}if(e.target.id==='contract-department-filter'){state.contractDepartment=e.target.value;render();return;}if(e.target.id==='status-filter'){state.filter=e.target.value;render();}if(e.target.id==='sort-select'){state.sort=e.target.value;render();}if(e.target.id==='period-filter'){state.period=e.target.value;render();}});
+}if(e.target.id==='dossier-user-select'){state.dossierUser=e.target.value;state.dossierTimelinePage=1;void render();return;}if(e.target.id==='inactivity-days-select'){state.inactivityDays=Number(e.target.value);void render();return;}if(e.target.id==='inactivity-department-select'){state.inactivityDepartment=e.target.value;void render();return;}if(e.target.id==='activity-department-filter'){state.activityDepartment=e.target.value;void render();return;}if(e.target.id==='workspace-department-select'){state.workspaceDepartment=e.target.value;state.workspaceSection='personnel';void render();return;}if(e.target.id==='gr-gallery-sort'){state.gallerySort=e.target.value;const node=$('#gr-gallery-content');if(node)node.innerHTML=renderPublicGallery();return;}if(e.target.id==='gr-achievement-sort'){state.achievementSort=e.target.value;const node=$('#gr-achievements-content');if(node)node.innerHTML=renderPublicAchievements();return;}if(e.target.matches('#record-form[data-module="promotions"] [name="extra_requested_rank_id"]')){const form=e.target.form,box=form.querySelector('#promotion-requirement-box');if(box){box.innerHTML=promotionChecklistView(e.target.value,[]);syncPromotionChecklist();}return;}if(e.target.matches('.promotion-requirement')){syncPromotionChecklist();return;}if(state.route==='members'&&['members-role-filter','members-status-filter','members-department-filter','members-sort-filter'].includes(e.target.id)){const key={'members-role-filter':'membersRole','members-status-filter':'membersStatus','members-department-filter':'membersDepartment','members-sort-filter':'membersSort'}[e.target.id];state[key]=e.target.value;state.membersPage=1;state.membersSelectedIds=[];render();return;}if(e.target.id==='contract-department-filter'){state.contractDepartment=e.target.value;render();return;}if(e.target.id==='status-filter'){state.filter=e.target.value;render();}if(e.target.id==='sort-select'){state.sort=e.target.value;render();}if(e.target.id==='period-filter'){state.period=e.target.value;render();}});
 document.addEventListener('click',async e=>{const back=e.target.closest('[data-backdrop]');if(back&&e.target===back){closeModal();return;}const t=e.target.closest('[data-action],[data-route]');if(!t)return;e.preventDefault();try{if(t.dataset.route){await navigate(t.dataset.route);return;}const act=t.dataset.action,id=t.dataset.id,mod=t.dataset.module;switch(act){
   case 'show-login':loginModal();break;
   case 'close-modal':closeModal();break;
@@ -2399,7 +2468,7 @@ document.addEventListener('click',async e=>{const back=e.target.closest('[data-b
   }
   case 'members-clear-search':{
     clearTimeout(memberSearchTimer);
-    state.search='';state.membersPage=1;
+    state.search='';state.membersPage=1;state.membersSelectedIds=[];
     await render();$('#search-input')?.focus();break;
   }
   case 'nav-group-toggle':{
@@ -2700,9 +2769,36 @@ document.addEventListener('click',async e=>{const back=e.target.closest('[data-b
   case 'fleet-condition':state.fleetCondition=t.dataset.value||'all';await render();break;
   case 'contract-filter':state.contractStatus=t.dataset.value||'all';await render();break;
   case 'view-member':viewMember(id);break;
+  case 'members-bulk-clear':state.membersSelectedIds=[];syncMembersBulkUi();break;
+  case 'members-bulk-copy':{
+    const rows=selectedMemberRows(state.roster,state.membersSelectedIds);
+    if(!rows.length)throw new Error('Спочатку оберіть учасників');
+    const selected=rows.map(u=>String(u.nickname||'Учасник')).join('\n');
+    await navigator.clipboard.writeText(selected);
+    toast('Скопійовано нікнеймів: '+rows.length);
+    break;
+  }
+  case 'members-bulk-csv':{
+    if(!can('members:read'))throw new Error('Недостатньо прав для експорту складу');
+    const rows=selectedMemberRows(state.roster,state.membersSelectedIds);
+    if(!rows.length)throw new Error('Спочатку оберіть учасників');
+    const csv=selectedMembersCsv(rows,roles,rankName,departmentName);
+    const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
+    const url=URL.createObjectURL(blob);
+    try{
+     const a=document.createElement('a');
+     a.href=url;
+     a.download='grizzly-members-selected.csv';
+     a.click();
+    }finally{
+     setTimeout(()=>URL.revokeObjectURL(url),1500);
+    }
+    toast('Експортовано учасників: '+rows.length);
+    break;
+  }
   case 'members-page':state.membersPage=Number(t.dataset.page)||1;await render();break;
   case 'audit-page':state.auditPage=Number(t.dataset.page)||1;await render();break;
-  case 'members-reset':state.membersPage=1;state.membersRole='all';state.membersStatus='all';state.membersDepartment='all';state.membersSort='rank';state.search='';await render();break;
+  case 'members-reset':state.membersPage=1;state.membersRole='all';state.membersStatus='all';state.membersDepartment='all';state.membersSort='rank';state.membersSelectedIds=[];state.search='';await render();break;
   case 'members-role':state.membersRole=t.dataset.value||'all';await render();break;
   case 'members-status':state.membersStatus=t.dataset.value||'all';await render();break;
   case 'members-department':state.membersDepartment=document.getElementById('members-department-filter')?.value||'all';await render();break;
