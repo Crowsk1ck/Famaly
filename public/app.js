@@ -510,6 +510,18 @@ function field(label,name,value='',type='text',full=false,other=''){return `<div
 function selectField(label,name,items,value='',full=false){return `<div class="field ${full?'full':''}"><label>${esc(label)}</label><select name="${name}" class="select">${selectOptions(items,value)}</select></div>`;}
 function statusField(value){return `<div class="field"><label>Статус</label><select class="select" name="status">${statuses.map(s=>`<option ${s===value?'selected':''}>${s}</option>`).join('')}</select></div>`;}
 function formatDateField(v){return (v||'').slice(0,16);}
+// Personal priorities are a read-only projection of already authorized API results.
+function overviewFocusItems({tasks=[],events=[],notifications=[],userId,nowLocal}){
+ const activeTasks=tasks.filter(x=>x.assignee_id===userId&&!['Завершено','Відхилено','Скасовано'].includes(x.status))
+  .sort((a,b)=>String(a.ends_at||'9999').localeCompare(String(b.ends_at||'9999'))||
+   String(a.title||'').localeCompare(String(b.title||''),'uk')).slice(0,3);
+ const upcomingEvents=events.filter(x=>x.starts_at&&kyivWallDate(x.starts_at)>=nowLocal&&
+  !['Відхилено','Скасовано'].includes(x.status))
+  .sort((a,b)=>String(a.starts_at).localeCompare(String(b.starts_at))).slice(0,2);
+ const unread=notifications.filter(x=>!x.read_at)
+  .sort((a,b)=>String(b.created_at||'').localeCompare(String(a.created_at||'')));
+ return {tasks:activeTasks,events:upcomingEvents,notifications:unread.slice(0,2),unreadCount:unread.length};
+}
 async function overview(){
  const mayViewFinance=can('finance:read')||can('finance:manage');
  const trendPeriod=state.overviewTrendPeriod==='30'?'30':'7';
@@ -528,12 +540,36 @@ async function overview(){
  const reviewReports=manager?reports.filter(x=>x.status==='На перевірці'):reports.filter(x=>x.owner_id===user.id&&x.status==='На перевірці');
  const upcoming=events.filter(x=>x.starts_at&&kyivWallDate(x.starts_at)>=kyivNowLocal()&&x.status!=='Відхилено').sort((a,b)=>String(a.starts_at).localeCompare(String(b.starts_at)));
  const nextEvents=upcoming.slice(0,4);
+ const focus=overviewFocusItems({tasks,events,notifications:state.notifications,
+  userId:user.id,nowLocal:kyivNowLocal()});
  const pendingContracts=contracts.filter(x=>x.status==='Погоджено'&&!x.settled_at);
  const ownDepartment=state.departments.find(d=>d.id===user.department_id);
  const departmentFinance=user.role==='head'&&ownDepartment?await api('/departments/'+encodeURIComponent(ownDepartment.id)+'/finance-summary'):null;
  const summary=finance.contract_summary||{};
  const metric=(label,value,note='')=>'<div class="card stat"><div class="muted small">'+esc(label)+'</div><div class="number">'+value+'</div>'+(note?'<div class="muted small overview-stat-note">'+esc(note)+'</div>':'')+'</div>';
  const section=(title,route,label)=>'<div class="card-head"><h3>'+esc(title)+'</h3><button class="btn tiny secondary" data-route="'+route+'">'+esc(label)+' ↗</button></div>';
+ const focusTaskRows=focus.tasks.map(x=>'<div class="gr-focus-item"><div class="gr-focus-copy"><strong>'+esc(x.title)+'</strong>'+
+  '<span class="muted small">'+esc(x.ends_at?kyivDueStatus(x.ends_at,x.status):'Без дедлайну')+'</span></div>'+
+  '<button type="button" class="btn tiny secondary" data-action="view-record" data-module="tasks" data-id="'+esc(x.id)+'">Відкрити ↗</button></div>').join('');
+ const focusEventRows=focus.events.map(x=>'<div class="gr-focus-item"><div class="gr-focus-copy"><strong>'+esc(x.title)+'</strong>'+
+  '<span class="muted small">'+esc(String(x.starts_at).replace('T',' ').slice(0,16))+' · Київ</span></div>'+
+  '<button type="button" class="btn tiny secondary" data-action="view-record" data-module="events" data-id="'+esc(x.id)+'">Відкрити ↗</button></div>').join('');
+ const focusMessageRows=focus.notifications.map(x=>'<div class="gr-focus-item"><div class="gr-focus-copy"><strong>'+esc(x.title)+'</strong>'+
+  '<span class="muted small">'+esc(String(x.details||'').slice(0,90))+'</span></div></div>').join('');
+ const focusPanel='<section class="card gr-overview-focus" aria-label="Мій пріоритет зараз">'+
+  '<div class="card-head"><div><h3>Мій пріоритет зараз</h3><p class="muted small">Особисті завдання, доступні події та нові повідомлення</p></div></div>'+
+  '<div class="gr-overview-focus-grid">'+
+  '<div class="gr-overview-focus-column"><div class="gr-focus-head"><h4>Мої завдання</h4><span class="pill">'+fmt(myTasks.length)+'</span></div>'+
+  (focusTaskRows||'<p class="muted small gr-focus-empty">Активних завдань немає.</p>')+
+  '<button type="button" class="btn tiny ghost gr-focus-all" data-route="tasks">Усі завдання ↗</button></div>'+
+  '<div class="gr-overview-focus-column"><div class="gr-focus-head"><h4>Найближчі події</h4><span class="pill">'+fmt(upcoming.length)+'</span></div>'+
+  (focusEventRows||'<p class="muted small gr-focus-empty">Майбутніх подій немає.</p>')+
+  '<button type="button" class="btn tiny ghost gr-focus-all" data-route="events">Усі події ↗</button></div>'+
+  '<div class="gr-overview-focus-column"><div class="gr-focus-head"><h4>Сповіщення</h4><span class="pill">'+fmt(focus.unreadCount)+'</span></div>'+
+  (focusMessageRows||'<p class="muted small gr-focus-empty">Непрочитаних повідомлень немає.</p>')+
+  '<button type="button" class="btn tiny ghost gr-focus-all" data-action="notifications">Відкрити сповіщення ↗</button></div>'+
+  '</div></section>';
+
  const taskRows=[...myTasks].sort((a,b)=>String(a.ends_at||'9999').localeCompare(String(b.ends_at||'9999'))).slice(0,5).map(x=>'<tr><td class="table-title">'+esc(x.title)+'</td><td>'+esc(departmentName(x.department_id))+'</td><td>'+badge(x.status)+(x.ends_at?'<div class="muted small">'+esc(kyivDueStatus(x.ends_at,x.status))+'</div>':'')+'</td><td><button class="btn tiny secondary" data-action="view-record" data-module="tasks" data-id="'+esc(x.id)+'">Відкрити</button></td></tr>');
  const reviewRows=reviewReports.slice(0,5).map(x=>'<tr><td class="table-title">'+esc(x.title)+'</td><td>'+esc(userName(x.owner_id))+'</td><td>'+badge(x.status)+'</td><td><button class="btn tiny secondary" data-action="view-record" data-module="reports" data-id="'+esc(x.id)+'">Відкрити</button></td></tr>');
  const departmentCards=state.departments.map(d=>{
@@ -628,6 +664,7 @@ async function overview(){
  return intro('Огляд GRIZZLY','Головна панель сім’ї · актуальні показники та швидкий доступ до роботи',
   '<button class="btn secondary" data-action="refresh">↻ Оновити</button>')+
  '<div class="stack gr-overview-v4 gr-overview-design-v5"><div class="dashboard-welcome"><div><div class="overline">GRIZZLY / FAMILY OPERATIONS</div><h2>Вітаємо, '+esc(user.nickname||user.username||'учаснику')+'! 🐻</h2><p>'+(ownDepartment?'Твій підрозділ: '+esc(ownDepartment.title)+' · ':'')+'Слідкуй за завданнями, подіями та роботою сім’ї.</p></div><span class="bear">🐻</span></div>'+
+ focusPanel+
  (manager?'<div class="card gr-workspace-entry"><div><div class="overline">GRIZZLY / УПРАВЛІННЯ</div><h3>'+(user.role==='head'?'Мій робочий простір керівника':'Робочі простори керівників')+'</h3><p class="small muted">Особовий склад, завдання, звіти, контракти й інші розділи за підрозділами.</p></div><button class="btn" data-route="workspace">Відкрити підрозділ ↗</button></div>':'')+
  attentionPanel+
  '<div class="cards">'+
