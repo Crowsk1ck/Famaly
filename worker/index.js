@@ -415,9 +415,55 @@ const GRIZZLY_DISCORD_DESCRIPTIONS=Object.freeze({
  events:'У сімейному календарі опубліковано новий захід.',
  capt:'Опубліковано нове CAPT-оголошення.',
  news:'На сайті опубліковано новину сім’ї.',
- announcements:'Офіційне повідомлення для учасників сім’ї.',
+ announcements:'',
  test:'З’єднання із сайтом працює. Повідомлення надходитимуть після відповідних дій.'
 });
+// Format structured announcements without changing the author's wording or ping permissions.
+function discordAnnouncementSections(raw){
+ const message=discordSafe(raw,3800).trim();
+ if(!message)return [];
+ const header=/📋\s*Доступні підрозділи\s*:/iu;
+ const match=header.exec(message);
+ if(!match)return [{name:'📣 Повідомлення',value:message}];
+ const intro=message.slice(0,match.index).trim();
+ const remaining=message.slice(match.index+match[0].length).trim();
+ const action=/\s*(?=(?:❗\s*)?(?:Напишіть у чаті|Підрозділ, до якого|Прошу всіх|Нам важливо|Ваше завдання|Що потрібно зробити))/iu;
+ // Find the first call-to-action after the list; retain all original content.
+ const call=action.exec(remaining);
+ const listText=(call?remaining.slice(0,call.index):remaining).trim();
+ const ending=(call?remaining.slice(call.index):'').trim();
+ const sections=[];
+ if(intro)sections.push({name:'📣 Звернення',value:intro});
+ const entries=listText.split(/\s*(?=[🔫💰🚗⚖️👥🎉])/u).map(x=>x.trim()).filter(Boolean);
+ const list=entries.map(x=>{
+  const m=/^(.{1,70}?)\s*[—–-]\s*(.+)$/u.exec(x);
+  return m?'**'+m[1].trim()+'** — '+m[2].trim():x;
+ }).join('\n\n');
+ if(list)sections.push({name:'📋 Доступні підрозділи',value:list});
+ if(ending)sections.push({name:'❗ Що потрібно зробити',value:ending});
+ return sections.length?sections:[{name:'📣 Повідомлення',value:message}];
+}
+function appendDiscordAnnouncementFields(fields,raw){
+ const sections=discordAnnouncementSections(raw);
+ for(const section of sections){
+  let rest=section.value;
+  let part=0;
+  // Discord field value limit: 1024. Prefer paragraph/word boundaries.
+  while(rest&&fields.length<24){
+   let cut=Math.min(950,rest.length);
+   if(cut<rest.length){
+    const paragraph=rest.lastIndexOf('\n\n',cut);
+    const space=rest.lastIndexOf(' ',cut);
+    if(paragraph>cut/2)cut=paragraph;
+    else if(space>cut/2)cut=space;
+   }
+   const value=rest.slice(0,cut).trim();
+   if(value)fields.push({name:part?section.name+' · '+(part+1):section.name,value,inline:false});
+   rest=rest.slice(cut).trim();
+   part++;
+  }
+ }
+}
 export function buildDiscordNotification(kind,info={}){
  const title=GRIZZLY_DISCORD_TITLES[kind];
  if(!title)throw new Error('Невідомий тип Discord-сповіщення');
@@ -432,14 +478,7 @@ export function buildDiscordNotification(kind,info={}){
  add(kind==='capt'?'🎯 CAPT-оголошення':kind==='news'?'📰 Заголовок новини':kind==='announcements'?'📌 Тема оголошення':'📌 Подія',info.event,150);
  // Discord allows at most 1024 characters per field. Keep paragraphs readable
  // without cutting off the entire announcement at the former 950-char limit.
- if(kind==='announcements'&&info.message){
-  const message=discordSafe(info.message,3800);
-  const sections=message.match(/[\s\S]{1,950}/g)||[];
-  sections.forEach((section,i)=>fields.push({
-   name:i===0?'📣 Повідомлення':'📣 Продовження '+(i+1),
-   value:section,inline:false
-  }));
- }
+ if(kind==='announcements'&&info.message)appendDiscordAnnouncementFields(fields,info.message);
  if(info.startsAt)add('🕒 Час за Києвом',String(info.startsAt).replace('T',' · '),28,true);
  add('📍 Місце',info.location,120,true);
  return {
