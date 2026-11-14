@@ -302,6 +302,12 @@ const DISCORD_WEBHOOK_ROUTES={
   announcements:'DISCORD_WEBHOOK_ANNOUNCEMENTS'
 };
 const DISCORD_LEGACY_KINDS=['applications','decisions','events'];
+// Dedicated v11 destinations. These do not fall back to public announcements.
+const PERSONNEL_DISCORD_ROUTES=Object.freeze({
+ promotions:'DISCORD_WEBHOOK_PROMOTIONS',
+ personnel:'DISCORD_WEBHOOK_PERSONNEL',
+ absences:'DISCORD_WEBHOOK_ABSENCES'
+});
 const APPLICATION_WEBHOOK_ROUTES={
   application_waiting:'DISCORD_WEBHOOK_APPLICATIONS_WAITING',
   application_accepted:'DISCORD_WEBHOOK_APPLICATIONS_ACCEPTED',
@@ -318,6 +324,7 @@ function discordDestination(env,kind){
     // Preserve existing recruitment notifications until all dedicated secrets are configured.
     return discordDestination(env,kind==='application_waiting'?'applications':'decisions');
   }
+  if(Object.hasOwn(PERSONNEL_DISCORD_ROUTES,kind))return env[PERSONNEL_DISCORD_ROUTES[kind]];
   if(!DISCORD_NOTIFY_KINDS.includes(kind))return undefined;
   const specific=env[DISCORD_WEBHOOK_ROUTES[kind]];
   if(typeof specific==='string'&&specific.trim())return specific;
@@ -354,10 +361,11 @@ export function applicationRouteDiagnostics(env){
 // Matching webhook URLs would collapse them into the same destination.
 export function discordRouteDiagnostics(env){
   const result={};
-  const sources=Object.fromEntries(DISCORD_NOTIFY_KINDS.map(kind=>[kind,discordDestination(env,kind)]));
-  for(const kind of DISCORD_NOTIFY_KINDS){
+  const allKinds=[...DISCORD_NOTIFY_KINDS,...Object.keys(PERSONNEL_DISCORD_ROUTES)];
+  const sources=Object.fromEntries(allKinds.map(kind=>[kind,discordDestination(env,kind)]));
+  for(const kind of allKinds){
     const status=discordWebhookDiagnostic(sources[kind]);
-    if(status.configured&&['capt','news','announcements'].includes(kind)){
+    if(status.configured&&['capt','news','announcements',...Object.keys(PERSONNEL_DISCORD_ROUTES)].includes(kind)){
       const raw=String(sources[kind]).trim();
       if(Object.entries(sources).some(([other,value])=>other!==kind&&validDiscordWebhookUrl(value)&&String(value).trim()===raw)){
         result[kind]={configured:false,reason:'duplicate'};
@@ -500,7 +508,7 @@ export function buildDiscordNotification(kind,info={}){
 async function sendDiscordWebhook(env,kind,info,targetKind=kind){
   const destinations=Object.hasOwn(APPLICATION_WEBHOOK_ROUTES,targetKind)?
     applicationRouteDiagnostics(env):discordRouteDiagnostics(env);
-  if(targetKind!=='test'&&destinations[targetKind]?.reason==='duplicate')
+  if(destinations[targetKind]?.reason==='duplicate')
     throw new Error('Webhook категорії повторює інший Discord webhook');
   const webhook=discordDestination(env,targetKind);
   if(!validDiscordWebhookUrl(webhook))
@@ -881,7 +889,7 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
     queueDiscord(ctx,db,env,'announcements',{
       event:'🛡️ Кадрове рішення · '+PERSONNEL_ACTION_KINDS[kind],
       message:'Учасник: '+person.nickname+'\nРішення: '+PERSONNEL_ACTION_KINDS[kind]+'\nОформлено керівництвом GRIZZLY.'
-    });
+    },'personnel');
     return json({item:personnelRecord(await db.prepare('SELECT * FROM records WHERE id=?').bind(id).first())},201);
   }
   m=path.match(/^\/api\/personnel-actions\/([\w-]+)$/);
@@ -903,7 +911,7 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
     queueDiscord(ctx,db,env,'announcements',{
       event:'🛡️ Кадрове рішення · знято',
       message:'Раніше оформлене кадрове рішення знято керівництвом GRIZZLY.'
-    });
+    },'personnel');
     return json({ok:true});
   }
   if(path==='/api/inactivity'&&method==='GET'){
@@ -975,7 +983,7 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
       queueDiscord(ctx,db,env,'announcements',{
         event:'🏖️ Погоджена відсутність · '+absenceType,
         message:'Учасник: '+(person?.nickname||'Учасник сім’ї')+'\nПеріод: '+old.starts_at+' — '+old.ends_at+'\nПогоджено керівництвом GRIZZLY.'
-      });
+      },'absences');
     }
     return json({ok:true});
   }
@@ -1098,7 +1106,7 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
     if(user.role!=='leader')fail(403,'Лише лідер може перевіряти Discord');
     const b=await body(req);
     const kind=b.kind||'test';
-    if(kind!=='test'&&!DISCORD_NOTIFY_KINDS.includes(kind)&&!Object.hasOwn(APPLICATION_WEBHOOK_ROUTES,kind))fail(400,'Невідома категорія Discord');
+    if(kind!=='test'&&!DISCORD_NOTIFY_KINDS.includes(kind)&&!Object.hasOwn(APPLICATION_WEBHOOK_ROUTES,kind)&&!Object.hasOwn(PERSONNEL_DISCORD_ROUTES,kind))fail(400,'Невідома категорія Discord');
     const diagnostic=kind==='test'?discordWebhookDiagnostic(env.DISCORD_WEBHOOK_URL):
       Object.hasOwn(APPLICATION_WEBHOOK_ROUTES,kind)?applicationRouteDiagnostics(env)[kind]:discordRouteDiagnostics(env)[kind];
     if(!diagnostic?.configured){
@@ -1218,7 +1226,7 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
           queueDiscord(ctx,db,env,'announcements',{
             event:'🎖️ Підвищення учасника',
             message:'Учасник: '+(promoted?.nickname||'Учасник сім’ї')+'\nНовий ранг: '+(rank?.title||String(extra.requested_rank_id))+'\nПідвищення погоджено керівництвом GRIZZLY.'
-          });
+          },'promotions');
         }
         return json({ok:true});
       }
