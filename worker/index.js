@@ -414,7 +414,7 @@ const GRIZZLY_DISCORD_COLOR=0xDC2626;
 const GRIZZLY_DISCORD_PING_ROLE='1563285390989987962';
 // Personnel channels are private by default. They never ping the general family role.
 // A leader can set an explicit role ID per destination in Cloudflare secrets.
-function discordMentionRole(env,targetKind){
+export function discordMentionRole(env,targetKind){
  const personnel=Object.hasOwn(PERSONNEL_DISCORD_ROUTES,targetKind);
  const key='DISCORD_ROLE_'+String(targetKind).toUpperCase();
  const configured=env?.[key];
