@@ -3,6 +3,12 @@ main = "worker/index.js"
 compatibility_date = "2026-11-12"
 workers_dev = true
 
+# Publish this Worker on the real GRIZZLY domain, not only workers.dev.
+# Cloudflare must own an active zone for this hostname.
+[[routes]]
+pattern = "grizzly-family.online"
+custom_domain = true
+
 [assets]
 directory = "./public"
 binding = "ASSETS"
