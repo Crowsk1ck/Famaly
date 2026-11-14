@@ -990,3 +990,8 @@
 .gr-member-context-link.is-active{color:#FFD9DB;background:#742B3940;border-color:var(--red)}
 .gr-member-context-link:focus-visible{outline:2px solid var(--red);outline-offset:2px}
 @media(max-width:520px){.gr-member-context{gap:6px}.gr-member-context-link{font-size:.79rem;padding:8px 10px}}
+
+/* Bounded member and audit lists: accessible paging controls on all viewports. */
+.gr-list-pages{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:10px;margin:14px 0 8px}
+.gr-list-pages .muted{margin-right:auto}
+@media(max-width:560px){.gr-list-pages{justify-content:space-between}.gr-list-pages .muted{width:100%;margin-right:0}}
