@@ -1774,6 +1774,51 @@ test('v10 personal dossiers, disciplinary actions and inactivity enforce departm
  assert.equal(leaveRow.approved_absence,true);
  assert.equal(leaveRow.overdue,false);
 });
+test('v13 matrix: guest/member/head/deputy/leader respect dossier and Discord boundaries',async()=>{
+ const departments=(await req('/api/departments',{token:leader})).data.items;
+ const ownDepartment=departments.find(x=>x.id==='fleet');
+ const foreignDepartment=departments.find(x=>x.id==='events');
+ assert.ok(ownDepartment&&foreignDepartment);
+
+ const create=async(username,role,department_id)=>{
+  const password=username+'-unique-pass-123456';
+  const created=await req('/api/users',{method:'POST',token:leader,data:{
+   username,password,nickname:username,role,department_id
+  }});
+  assert.equal(created.status,201,JSON.stringify(created.data));
+  const auth=await req('/api/auth/login',{method:'POST',data:{username,password}});
+  assert.equal(auth.status,200);
+  return {id:created.data.item.id,token:auth.cookie.match(/grizzly_session=([a-f0-9]+)/)[1]};
+ };
+ const local=await create('matrixlocalv13','member',ownDepartment.id);
+ const foreign=await create('matrixforeignv13','member',foreignDepartment.id);
+ const head=await create('matrixheadv13','head',ownDepartment.id);
+ const deputy=await create('matrixdeputyv13','deputy',null);
+
+ assert.equal((await req('/api/personnel-dossier?user='+local.id)).status,401);
+ assert.equal((await req('/api/discord/status',{token:local.token})).status,403);
+ assert.equal((await req('/api/personnel-dossier?user='+local.id,{token:local.token})).status,200);
+ assert.equal((await req('/api/personnel-dossier?user='+foreign.id,{token:local.token})).status,403);
+ assert.equal((await req('/api/personnel-dossier?user='+local.id,{token:head.token})).status,403);
+ assert.equal((await req('/api/inactivity?days=14',{token:head.token})).status,403);
+
+ const dept=(await req('/api/departments',{token:leader})).data.items.find(x=>x.id===ownDepartment.id);
+ const appointed=await req('/api/departments/'+ownDepartment.id,{method:'PATCH',token:leader,data:{
+  title:dept.title,head_id:head.id,version:dept.version
+ }});
+ assert.equal(appointed.status,200,JSON.stringify(appointed.data));
+ assert.equal((await req('/api/personnel-dossier?user='+local.id,{token:head.token})).status,200);
+ assert.equal((await req('/api/personnel-dossier?user='+foreign.id,{token:head.token})).status,403);
+ assert.equal((await req('/api/inactivity?department='+foreignDepartment.id,{token:head.token})).status,403);
+ assert.equal((await req('/api/discord/status',{token:head.token})).status,403);
+
+ for(const token of [deputy.token,leader]){
+  assert.equal((await req('/api/personnel-dossier?user='+local.id,{token})).status,200);
+  assert.equal((await req('/api/personnel-dossier?user='+foreign.id,{token})).status,200);
+ }
+ assert.equal((await req('/api/discord/status',{token:deputy.token})).status,403);
+ assert.equal((await req('/api/discord/status',{token:leader})).status,200);
+});
 // Run destructive session-revocation coverage last: other integration tests use this member's active session.
 test('blocking user revokes sessions and stops access',async()=>{const u=(await req('/api/users',{token:leader})).data.items.find(x=>x.id===memberId);const r=await req(`/api/users/${memberId}`,{method:'PATCH',token:leader,data:{...u,status:'blocked'}});assert.equal(r.status,200,JSON.stringify(r.data));assert.equal((await req('/api/auth/me',{token:member})).status,401);});
 
