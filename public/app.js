@@ -47,7 +47,35 @@ const nav=[
 const state={user:null,route:'overview',sub:{},search:'',sort:'new',period:'week',settingsVersions:{},public:null,users:[],roster:[],departments:[],ranks:[],notifications:[],filter:'',menu:false};
 function can(p){return state.user?.role==='leader'||state.user?.permissions?.includes('*')||state.user?.permissions?.includes(p);}
 function toast(msg,error=false){const div=document.createElement('div');div.className='toast'+(error?' error':'');div.textContent=msg;$('#toast-root').append(div);setTimeout(()=>div.remove(),4500);}
-async function api(path,method='GET',payload){const h={'X-Grizzly-Client':'1'};if(payload!==undefined)h['Content-Type']='application/json';const r=await fetch('/api'+path,{method,credentials:'same-origin',headers:h,body:payload===undefined?undefined:JSON.stringify(payload),cache:'no-store'});let o;try{o=await r.json();}catch{o={error:'Невірна відповідь сервера'};}if(!r.ok){const err=new Error(o.error||`Помилка ${r.status}`);err.status=r.status;throw err;}return o;}
+// Deduplicate only *simultaneous* reads: never cache completed or failed responses.
+// Mutating requests always bypass the pool so authorization and write ordering are unchanged.
+const pendingApiReads=new Map();
+async function api(path,method='GET',payload){
+ const isRead=method==='GET'&&payload===undefined;
+ const key=isRead?path:null;
+ if(isRead&&pendingApiReads.has(key))return pendingApiReads.get(key);
+ const perform=async()=>{
+  const h={'X-Grizzly-Client':'1'};
+  if(payload!==undefined)h['Content-Type']='application/json';
+  const r=await fetch('/api'+path,{
+   method,credentials:'same-origin',headers:h,
+   body:payload===undefined?undefined:JSON.stringify(payload),cache:'no-store'
+  });
+  let o;
+  try{o=await r.json();}catch{o={error:'Невірна відповідь сервера'};}
+  if(!r.ok){
+   const err=new Error(o.error||`Помилка ${r.status}`);
+   err.status=r.status;
+   throw err;
+  }
+  return o;
+ };
+ if(!isRead)return perform();
+ const request=perform();
+ pendingApiReads.set(key,request);
+ try{return await request;}
+ finally{if(pendingApiReads.get(key)===request)pendingApiReads.delete(key);}
+}
 async function preload(){const [users,deps,ranks,roster]=await Promise.all([api('/users'),api('/departments'),api('/ranks'),api('/members')]);state.users=users.items;state.roster=roster.items;state.departments=deps.items;state.ranks=ranks.items;state.rankTemplates=ranks.templates||[];}
 function userName(id){const x=state.users.find(y=>y.id===id)||state.roster.find(y=>y.id===id);return x?(x.nickname||x.username||'Учасник'):id?'Учасник':'—';}
 function departmentName(id){return state.departments.find(x=>x.id===id)?.title||'—';}

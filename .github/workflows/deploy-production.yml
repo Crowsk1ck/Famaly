@@ -94,5 +94,21 @@ jobs:
             await page.goBack({waitUntil:'domcontentloaded'});
             await page.waitForFunction(()=>location.pathname==='/'&&!!document.querySelector('#gr-main'),{timeout:15000});
             console.log('Public tab navigation and browser Back passed without document reload');
+            // Exercise the responsive public navigation on a real mobile viewport.
+            await page.setViewport({width:390,height:844,deviceScaleFactor:1,isMobile:true,hasTouch:true});
+            await page.goto('https://grizzly-family.online/',{waitUntil:'networkidle2',timeout:30000});
+            await page.waitForSelector('#gr-main',{timeout:20000});
+            await page.click('.gr-mobile-menu summary');
+            await page.waitForFunction(()=>document.querySelector('.gr-mobile-menu')?.open===true,{timeout:5000});
+            await page.evaluate(()=>document.querySelector('.gr-mobile-menu a[href="/join/"]').click());
+            await page.waitForFunction(()=>location.pathname==='/join/'&&!!document.querySelector('#apply-form'),{timeout:20000});
+            const mobile=await page.evaluate(()=>({
+              width:innerWidth,
+              documentWidth:document.documentElement.scrollWidth,
+              visibleApplication:!!document.querySelector('#apply-form')
+            }));
+            console.log('GRIZZLY mobile navigation:',JSON.stringify(mobile));
+            if(!mobile.visibleApplication)throw new Error('Mobile application form not reachable');
+            if(mobile.documentWidth>mobile.width+4)throw new Error('Mobile horizontal overflow: '+JSON.stringify(mobile));
           } finally { await browser.close(); }
           NODE
