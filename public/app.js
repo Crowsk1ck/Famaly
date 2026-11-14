@@ -326,7 +326,7 @@ function renderPublic(){
   '<div class="gr-public">'+
   '<div class="gr-topline"><div class="gr-container"><span><i></i> GTA 5 ROLEPLAY · LOS SANTOS</span><span>GRIZZLY FAMILY / COMMUNITY</span></div></div>'+
   '<header class="gr-header"><div class="gr-container gr-header-inner">'+
-    '<a href="#home" class="gr-logo" aria-label="GRIZZLY — на головну"><span class="gr-logo-mark" aria-hidden="true">G<span>.</span></span><span class="gr-logo-copy"><strong>GRIZZLY</strong><small>FAMILY / GTA V RP</small></span></a>'+
+    '<a href="#home" class="gr-logo" aria-label="GRIZZLY — на головну"><img class="gr-logo-image" src="/grizzly-header-logo.svg" alt="" width="48" height="48" decoding="async"><span class="gr-logo-copy"><strong>GRIZZLY</strong><small>FAMILY / GTA V RP</small></span></a>'+
     '<nav class="gr-nav" aria-label="Основна навігація">'+navLinks+'</nav>'+
     '<div class="gr-header-actions">'+(state.user?'<a class="gr-login-btn" href="/#overview">Відкрити панель <span>↗</span></a>':'<button class="gr-login-btn" data-action="show-login" type="button">Особистий кабінет <span>↗</span></button>')+
     '<details class="gr-mobile-menu"><summary aria-label="Відкрити навігацію">☰</summary><nav aria-label="Мобільна навігація">'+navLinks+
