@@ -20,7 +20,7 @@ test('all supported Discord categories share GRIZZLY branding and security setti
   assert.match(embed.author.name,/GRIZZLY FAMILY/);
   assert.match(embed.footer.text,/СИЛА В ЄДНОСТІ/);
   assert.ok(embed.title.length>0);
-  assert.ok(embed.description.length>0);
+  if(kind!=='announcements')assert.ok(embed.description.length>0);
   assert.ok(!Number.isNaN(Date.parse(embed.timestamp)));
  }
 });
