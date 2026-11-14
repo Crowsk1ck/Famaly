@@ -63,7 +63,7 @@ test('backups are encrypted and never uploaded as public actions artifacts',()=>
 });
 
 test('dedicated SEO routes are intercepted before SPA fallback',()=>{
- for(const route of ['about','news','gallery','achievements','calendar','join'])assert.ok(wrangler.includes('/'+route+'/*'));
+ assert.match(wrangler,/run_worker_first\s*=\s*true/);
  assert.match(app,/history\.replaceState\(history\.state,'','\/'\+url\.search\+url\.hash\)/);
 });
 
