@@ -1818,6 +1818,40 @@ test('v13 matrix: guest/member/head/deputy/leader respect dossier and Discord bo
  }
  assert.equal((await req('/api/discord/status',{token:deputy.token})).status,403);
  assert.equal((await req('/api/discord/status',{token:leader})).status,200);
+
+ // v14: Verify actual response privacy and mutation boundaries, not only HTTP GET status.
+ const selfDossier=await req('/api/personnel-dossier?user='+local.id,{token:local.token});
+ assert.equal(selfDossier.data.item.can_manage,false);
+ const headDossier=await req('/api/personnel-dossier?user='+local.id,{token:head.token});
+ assert.equal(headDossier.data.item.can_manage,true);
+ for(const dossier of [selfDossier.data.item,headDossier.data.item]){
+  for(const field of ['password_hash','username','session_token','token_hash']){
+   assert.equal(Object.hasOwn(dossier.person,field),false,'Private identity/session field: '+field);
+  }
+ }
+ const crossWrite=await req('/api/personnel-actions',{method:'POST',token:head.token,data:{
+  user_id:foreign.id,kind:'warning',details:'Unauthorized foreign department sanction'
+ }});
+ assert.equal(crossWrite.status,403,'An appointed head cannot discipline another department');
+ const selfWrite=await req('/api/personnel-actions',{method:'POST',token:local.token,data:{
+  user_id:local.id,kind:'warning',details:'Unauthorized self sanction'
+ }});
+ assert.equal(selfWrite.status,403,'Members cannot discipline themselves');
+ const legitimate=await req('/api/personnel-actions',{method:'POST',token:head.token,data:{
+  user_id:local.id,kind:'warning',details:'Authorized departmental warning'
+ }});
+ assert.equal(legitimate.status,201,JSON.stringify(legitimate.data));
+ const actionId=legitimate.data.item.id, actionVersion=legitimate.data.item.version;
+ const foreignMutation=await req('/api/personnel-actions/'+actionId,{method:'PATCH',token:foreign.token,
+  data:{version:actionVersion,reason:'Unauthorized reversal'}});
+ assert.equal(foreignMutation.status,403);
+ const selfMutation=await req('/api/personnel-actions/'+actionId,{method:'PATCH',token:local.token,
+  data:{version:actionVersion,reason:'Unauthorized self reversal'}});
+ assert.equal(selfMutation.status,403);
+ const refreshed=await req('/api/personnel-dossier?user='+local.id,{token:head.token});
+ assert.equal(refreshed.status,200);
+ assert.ok(refreshed.data.item.actions.some(x=>x.id===actionId&&x.status==='Чинне'),
+  'Denied mutations must leave the sanction unchanged');
 });
 test('v13.1 leader sees only outbox metadata, with route/status filters',async()=>{
  const previous=env.DISCORD_OUTBOX_ENABLED;
