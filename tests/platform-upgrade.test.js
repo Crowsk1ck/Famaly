@@ -93,3 +93,19 @@ test('all six canonical public paths have real static HTML entries for Cloudflar
   assert.doesNotMatch(page,/grizzly_session|password_hash|CLOUDFLARE_API_TOKEN/);
  }
 });
+
+test('SEO HTML source avoids Cloudflare /index.html canonical redirect',async()=>{
+ const requests=[];
+ const env={ASSETS:{fetch:async req=>{
+  const path=new URL(req.url).pathname;
+  requests.push(path);
+  if(path==='/index.html')return Response.redirect('https://grizzly-family.online/',307);
+  if(path==='/')return new Response(html,{headers:{'Content-Type':'text/html'}});
+  return new Response('Not found',{status:404});
+ }}};
+ const response=await worker.fetch(new Request('https://grizzly-family.online/about/'),env,{});
+ assert.equal(response.status,200,'SEO route must not forward asset canonical redirect');
+ assert.equal(response.headers.get('Location'),null);
+ assert.deepEqual(requests,['/']);
+ assert.match(await response.text(),/ІСТОРІЯ GRIZZLY/);
+});
