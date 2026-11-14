@@ -1310,6 +1310,17 @@ test('department leaders must be active heads assigned to the same department',a
   assert.equal(appointed.status,200,JSON.stringify(appointed.data));
   const after=(await req('/api/departments',{token:member})).data.items.find(d=>d.id==='capt');
   assert.equal(after.head_id,headId);
+  const assigned=(await req('/api/users',{token:leader})).data.items.find(u=>u.id===headId);
+  const move=await req('/api/users/'+headId,{method:'PATCH',token:leader,data:{...assigned,department_id:'fleet'}});
+  assert.equal(move.status,409,'Head cannot move until unassigned');
+  const demote=await req('/api/users/'+headId,{method:'PATCH',token:leader,data:{...assigned,role:'member'}});
+  assert.equal(demote.status,409,'Head cannot be demoted until unassigned');
+  const block=await req('/api/users/'+headId,{method:'PATCH',token:leader,data:{...assigned,status:'blocked'}});
+  assert.equal(block.status,409,'Head cannot be blocked until unassigned');
+  const clear=await req('/api/departments/capt',{method:'PATCH',token:leader,data:{title:capt.title,head_id:'',version:after.version}});
+  assert.equal(clear.status,200,JSON.stringify(clear.data));
+  const nowAllowed=await req('/api/users/'+headId,{method:'PATCH',token:leader,data:{...assigned,department_id:'fleet',role:'member'}});
+  assert.equal(nowAllowed.status,200,JSON.stringify(nowAllowed.data));
   const app=readFileSync(resolve('public/app.js'),'utf8');
   assert.match(app,/async function departments\(\)/);
   assert.match(app,/state\.departmentFocus/);
