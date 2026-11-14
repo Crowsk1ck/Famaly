@@ -419,10 +419,11 @@ function formatDateField(v){return (v||'').slice(0,16);}
 async function overview(){
  const mayViewFinance=can('finance:read')||can('finance:manage');
  const trendPeriod=state.overviewTrendPeriod==='30'?'30':'7';
- const [finance,taskData,reportData,eventData,contractData,trendData,auditData]=await Promise.all([
+ const [finance,taskData,reportData,eventData,contractData,trendData,auditData,activityData]=await Promise.all([
   api('/finance'),api('/records/tasks'),api('/records/reports'),api('/records/events'),api('/contracts'),
   mayViewFinance?api('/finance/trends?period='+trendPeriod):Promise.resolve(null),
-  state.user?.role==='leader'?api('/audit'):Promise.resolve(null)
+  state.user?.role==='leader'?api('/audit'):Promise.resolve(null),
+  can('stats:read')?api('/stats'):Promise.resolve(null)
  ]);
  const user=state.user||{},leader=user.role==='leader',manager=leader||user.role==='deputy'||user.role==='head';
  const tasks=taskData.items||[],reports=reportData.items||[],events=eventData.items||[],contracts=contractData.items||[];
@@ -502,6 +503,9 @@ async function overview(){
   esc(x.action||'Дія')+'<div class="muted small">'+esc(x.entity||'')+' · '+esc(String(x.detail||'').slice(0,110))+'</div></div>'+
   '<span class="muted small">'+esc(String(x.created_at||'').replace('T',' ').slice(0,16))+'</span></div>').join(''):
   '<p class="muted small">У журналі ще немає подій.</p>')+'</div>':'';
+ const activityLeaders=(activityData?.leaderboard_week||[]).slice(0,5);
+ const activityOverview=activityData?'<div class="card overview-activity"><div class="card-head"><h3>Активність учасників · 7 днів</h3><button class="btn tiny secondary" data-route="stats">Уся статистика ↗</button></div>'+
+ (activityLeaders.length?'<div class="overview-activity-list">'+activityLeaders.map((r,i)=>'<div class="row space"><span><strong>'+esc(String(i+1)+'. '+userName(r.user_id))+'</strong><span class="muted small"> · '+fmt(r.completed)+' дій</span></span><strong class="mono">'+fmt(r.points)+' балів</strong></div>').join('')+'</div>':empty('Немає завершених активностей','Рейтинг формується на підставі погоджених і завершених записів.'))+'</div>':'';
  const notices=(state.notifications||[]).filter(x=>!x.read_at).slice(0,4);
  const notifySection=notices.length?'<div class="card mt"><div class="card-head"><h3>Нові сповіщення</h3></div><div class="stack">'+notices.map(n=>'<div class="row space"><div><strong>'+esc(n.title)+'</strong><div class="muted small">'+esc((n.details||'').slice(0,150))+'</div></div><span class="muted small">'+date(n.created_at)+'</span></div>').join('')+'</div></div>':'';
  return intro('Огляд GRIZZLY','Головна панель сім’ї · актуальні показники та швидкий доступ до роботи',
@@ -540,6 +544,7 @@ async function overview(){
  '</div></div></div>'+
  overviewDetails+
  financeOverview+
+ activityOverview+
  auditOverview+
  (leader?'<div class="card"><div class="card-head"><h3>Контракти за підрозділами</h3></div><div class="grid3 mt">'+departmentSummary+'</div></div>':'')+
  (leader?'<div class="card"><div class="card-head"><h3>Стан підрозділів</h3><button class="btn tiny secondary" data-route="departments">Керувати ↗</button></div><div class="grid3 mt">'+departmentCards+'</div></div>':'')+
