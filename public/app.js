@@ -877,6 +877,24 @@ function filterDossierTimeline(events,options={}){
  return events.filter(x=>(type==='all'||x.category===type)&&
   (!from||String(x.date).slice(0,10)>=from)&&(!to||String(x.date).slice(0,10)<=to));
 }
+// Career guidance is informational: a checklist is not automatic approval.
+// Discipline age never silently expires or modifies the source record.
+function dossierCareerReview(dossier,ranks,today=Date.now()){
+ const currentId=Number(dossier.person?.rank_id)||0;
+ const current=ranks.find(r=>Number(r.id)===currentId);
+ const next=ranks.find(r=>Number(r.id)===currentId+1);
+ const checklist=current?rankChecklist(current):[];
+ const sanctions=(dossier.actions||[]).filter(a=>
+  ['warning','reprimand'].includes(a.kind)&&a.status==='Чинне');
+ const aged= sanctions.map(a=>{
+  const stamp=Date.parse(a.created_at||'');
+  const days=Number.isFinite(stamp)?Math.max(0,Math.floor((today-stamp)/86400000)):null;
+  return {...a,days_active:days,review_suggested:days!==null&&days>=14};
+ }).sort((a,b)=>String(a.created_at).localeCompare(String(b.created_at)));
+ const requests=(dossier.latest_records||[]).filter(r=>r.module==='promotions');
+ return {current,next,checklist,sanctions:aged,review_count:aged.filter(a=>a.review_suggested).length,
+  requests,highest:currentId>=15};
+}
 async function dossierPage(){
  const id=state.dossierUser||state.user.id;
  const {item:x}=await api('/personnel-dossier?user='+encodeURIComponent(id));
@@ -887,6 +905,30 @@ async function dossierPage(){
  '<select id="dossier-user-select" class="select" aria-label="Оберіть учасника">'+
  people.map(p=>'<option value="'+esc(p.id)+'" data-lookup="'+esc((p.nickname||'')+' '+(p.game_id||''))+'"'+(p.id===id?' selected':'')+'>'+esc(p.nickname)+'</option>').join('')+
  '</select><span id="dossier-person-count" class="muted small">'+people.length+' доступних учасників</span></div>':'';
+ const career=dossierCareerReview(x,state.ranks);
+ const careerHtml='<div class="card gr-dossier-career"><h3>Кар’єра та кадровий контроль</h3>'+
+  '<div class="gr-dossier-career-grid"><div><span class="muted small">Поточний ранг</span><strong>'+
+  esc(career.current?.title||rankName(x.person.rank_id))+'</strong></div>'+
+  '<div><span class="muted small">Наступний ранг</span><strong>'+
+  esc(career.next?.title||(career.highest?'Найвищий ранг':'Не налаштовано'))+'</strong></div>'+
+  '<div><span class="muted small">Чинні дисциплінарні стягнення</span><strong>'+fmt(career.sanctions.length)+'</strong></div>'+
+  '<div><span class="muted small">Потребують перегляду (14+ днів)</span><strong>'+fmt(career.review_count)+'</strong></div></div>'+
+  (career.next?'<details class="mt"><summary>Вимоги до наступного рангу · '+career.checklist.length+'</summary>'+
+    (career.checklist.length?'<ul>'+career.checklist.map(item=>'<li>'+esc(item)+'</li>').join('')+'</ul>':
+    '<p class="muted small">Чекліст поки не заповнено керівництвом.</p>')+
+    (career.current?.requirements?'<p class="muted small">'+esc(career.current.requirements)+'</p>':'')+
+    '<p class="muted small">Виконання вимог підтверджує керівництво. Ранг автоматично не змінюється.</p></details>':'')+
+  '<h4 class="mt">Історія заявок на підвищення</h4>'+
+  (career.requests.length?table(['Заявка','Статус','Дата'],career.requests.map(r=>
+    '<tr><td>'+esc(r.title)+'</td><td>'+badge(r.status)+'</td><td>'+esc(date(r.created_at))+'</td></tr>')):
+    '<p class="muted small">У доступній історії заявок на підвищення немає.</p>')+
+  '<h4 class="mt">Чинні дисциплінарні рішення</h4>'+
+  (career.sanctions.length?table(['Рішення','Дата','Термін','Контроль'],career.sanctions.map(a=>
+    '<tr><td>'+esc(a.title)+'</td><td>'+esc(date(a.created_at))+'</td>'+
+    '<td>'+esc(a.days_active===null?'Дата невідома':a.days_active+' дн.')+'</td>'+
+    '<td>'+(a.review_suggested?'Переглянути вручну':'Чинне')+'</td></tr>')):
+    '<p class="muted small">Чинних дисциплінарних стягнень немає.</p>')+
+  '<p class="muted small">Поріг 14 днів — лише нагадування для перегляду, не строк автоматичного зняття догани. Зміни рішень виконуються лише уповноваженим керівництвом.</p></div>';
  const badges=[['Завдання',x.stats.tasks],['Звіти',x.stats.reports],['Підвищення',x.stats.promotions],['CAPT',x.stats.capt],['Дії · 7 днів',x.activity?.actions_7||0],['Дії · 30 днів',x.activity?.actions_30||0]];
  const timelineType=state.dossierTimelineType||'all';
  const timelineAll=dossierTimeline(x);
@@ -925,6 +967,7 @@ async function dossierPage(){
   ' · '+esc(departmentName(x.person.department_id))+'</p><p class="muted small">Вступ: '+esc(x.person.joined_at||'—')+
   ' · Статус: '+esc(x.person.status)+' · Ігровий ID: '+esc(x.person.game_id||'—')+'</p></div>'+
   '<div class="gr-activity-stats">'+badges.map(([t,v])=>'<div class="card"><span class="muted small">'+esc(t)+'</span><strong>'+fmt(v)+'</strong></div>').join('')+'</div>'+
+  careerHtml+
   '<div class="card gr-activity-table gr-dossier-timeline"><h3>Єдина хронологія учасника</h3>'+
   '<p class="muted small">Події з доступної особової справи: рішення, підвищення, завдання, звіти, CAPT, відпустки та кадрові зміни. Історія обмежена даними, наданими сервером.</p>'+
   timelineFilters+'<p class="muted small">Знайдено: '+timelinePage.total+' із '+timelineAll.length+'</p>'+
