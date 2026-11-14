@@ -129,6 +129,46 @@ async function activitySnapshot(db,viewer,departmentId){
  return {items,periods:[7,30],basis:'Дії у панелі GRIZZLY (не час у GTA 5)'};
 }
 
+const PERSONNEL_ACTION_KINDS={warning:'Попередження',reprimand:'Догана',recognition:'Подяка',award:'Нагорода'};
+function personnelAllowed(viewer,subject){return viewer.id===subject.id||['leader','deputy'].includes(viewer.role)||
+ (viewer.role==='head'&&viewer.head_appointed&&!!viewer.department_id&&viewer.department_id===subject.department_id);}
+function personnelManage(viewer,subject){return viewer.id!==subject.id&&(['leader','deputy'].includes(viewer.role)||
+ (viewer.role==='head'&&viewer.head_appointed&&!!viewer.department_id&&viewer.department_id===subject.department_id));}
+function personnelRecord(row){const x=mapRecord(row);return {id:x.id,user_id:x.assignee_id,department_id:x.department_id,
+ kind:x.extra.kind,title:x.title,details:x.details,status:x.status,created_at:x.created_at,
+ resolved_by:x.extra.resolved_by||null,reason:x.extra.reason||'',version:x.version};}
+async function dossier(db,viewer,subject){
+ if(!personnelAllowed(viewer,subject))fail(403,'Немає доступу до цієї особової справи');
+ const [records,actions,absences,history]=await Promise.all([
+  allRows(db,`SELECT id,module,title,status,owner_id,assignee_id,created_at FROM records
+    WHERE deleted_at IS NULL AND (owner_id=? OR assignee_id=?) AND module IN
+    ('tasks','reports','promotions','capt_matches','capt_training','capt_attendance')
+    ORDER BY created_at DESC LIMIT 500`,subject.id,subject.id),
+  allRows(db,"SELECT * FROM records WHERE module='personnel_actions' AND assignee_id=? AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 200",subject.id),
+  allRows(db,'SELECT * FROM records WHERE module=? AND owner_id=? AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 100',ABSENCE_MODULE,subject.id),
+  allRows(db,"SELECT action,detail,created_at FROM audit WHERE entity='users' AND entity_id=? ORDER BY created_at DESC LIMIT 100",subject.id)
+ ]);
+ const activity=await activitySnapshot(db,{id:subject.id,role:'member'},'');
+ return {person:{id:subject.id,nickname:subject.nickname,role:subject.role,rank_id:subject.rank_id,
+  department_id:subject.department_id,joined_at:subject.joined_at,status:subject.status,game_id:subject.game_id},
+  activity:activity.items[0]||null,
+  stats:{tasks:records.filter(r=>r.module==='tasks').length,
+   reports:records.filter(r=>r.module==='reports').length,
+   promotions:records.filter(r=>r.module==='promotions').length,
+   capt:records.filter(r=>r.module.startsWith('capt_')).length},
+  actions:actions.map(personnelRecord),absences:absences.map(absenceView),
+  history,latest_records:records.slice(0,30).map(r=>({id:r.id,title:r.title,module:r.module,status:r.status,created_at:r.created_at})),
+  can_manage:personnelManage(viewer,subject)};
+}
+function inactivityRows(activity,days){
+ const nowMs=Date.now();
+ return activity.items.map(r=>{
+  const stamp=r.last_action?Date.parse(r.last_action):NaN;
+  const elapsed=Number.isFinite(stamp)?Math.max(0,Math.floor((nowMs-stamp)/86400000)):null;
+  return {...r,days_since_action:elapsed,approved_absence:!!r.absence,
+   overdue:!r.absence&&(elapsed===null||elapsed>=days)};
+ });
+}
 function weeklyMetrics(departmentId,visibleRecords,contracts,applications,goals,from=Date.now()-7*86400000,to=Date.now()){
  const rows=DEPARTMENT_WEEKLY_METRICS[departmentId]||[['tasks_done','Виконані завдання','tasks'],['reports_approved','Погоджені звіти','reports']];
  const isRecent=(date)=>!!date&&Number.isFinite(Date.parse(date))&&Date.parse(date)>=from&&Date.parse(date)<to;
@@ -738,6 +778,57 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
     const leaders=await allRows(db,"SELECT id FROM users WHERE role='leader' AND status='active'");
     await Promise.all(leaders.map(x=>notify(db,x.id,'Новий тижневий звіт',dept.title+' · '+week.start)));
     return json({id,status:'На перевірці',week_start:week.start},201);
+  }
+  if(path==='/api/personnel-dossier'&&method==='GET'){
+    const userId=str(url.searchParams.get('user'),80)||user.id;
+    const person=await db.prepare('SELECT id,nickname,role,rank_id,department_id,status,joined_at,game_id FROM users WHERE id=?').bind(userId).first();
+    if(!person)fail(404,'Учасника не знайдено');
+    return json({item:await dossier(db,user,person)});
+  }
+  if(path==='/api/personnel-actions'&&method==='POST'){
+    const input=await body(req),userId=str(input.user_id,80),kind=str(input.kind,40),details=str(input.details,900);
+    const person=await db.prepare('SELECT id,nickname,department_id,status FROM users WHERE id=?').bind(userId).first();
+    if(!person)fail(404,'Учасника не знайдено');
+    if(!personnelManage(user,person))fail(403,'Керівник може оформляти рішення тільки щодо свого підрозділу');
+    if(person.status!=='active')fail(409,'Учасника заблоковано');
+    if(!PERSONNEL_ACTION_KINDS[kind])fail(400,'Невірний вид рішення');
+    if(details.length<8)fail(400,'Опис має містити щонайменше 8 символів');
+    const id=uuid(),t=now();
+    await db.prepare(`INSERT INTO records
+     (id,module,title,details,status,owner_id,assignee_id,department_id,amount,starts_at,ends_at,evidence,extra,created_at,updated_at)
+     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
+      id,'personnel_actions',PERSONNEL_ACTION_KINDS[kind]+' · '+person.nickname,details,
+      'Чинне',user.id,person.id,person.department_id||null,0,'','','[]',JSON.stringify({kind}),t,t).run();
+    await audit(db,user,'create','personnel_actions',id,kind+' · '+person.id);
+    await notify(db,person.id,'Запис в особовій справі',PERSONNEL_ACTION_KINDS[kind]);
+    return json({item:personnelRecord(await db.prepare('SELECT * FROM records WHERE id=?').bind(id).first())},201);
+  }
+  m=path.match(/^\/api\/personnel-actions\/([\w-]+)$/);
+  if(m&&method==='PATCH'){
+    const record=await db.prepare("SELECT * FROM records WHERE id=? AND module='personnel_actions' AND deleted_at IS NULL").bind(m[1]).first();
+    if(!record)fail(404,'Рішення не знайдено');
+    const person=await db.prepare('SELECT id,department_id FROM users WHERE id=?').bind(record.assignee_id).first();
+    if(!person||!personnelManage(user,person))fail(403,'Доступ заборонено');
+    const input=await body(req),reason=str(input.reason,500);
+    if(!Number.isInteger(input.version)||input.version<1)fail(428,'Потрібна версія запису');
+    if(record.status!=='Чинне')fail(409,'Рішення вже знято');
+    if(reason.length<8)fail(400,'Вкажіть причину зняття рішення');
+    const extra={...parseJson(record.extra,{}),resolved_by:user.id,reason};
+    const changed=await db.prepare('UPDATE records SET status=?,extra=?,updated_at=?,version=version+1 WHERE id=? AND version=?')
+     .bind('Знято',JSON.stringify(extra),now(),record.id,input.version).run();
+    if(changed.meta.changes!==1)fail(409,'Запис змінено, оновіть дані');
+    await audit(db,user,'review','personnel_actions',record.id,'Знято');
+    await notify(db,person.id,'Рішення знято',record.title);
+    return json({ok:true});
+  }
+  if(path==='/api/inactivity'&&method==='GET'){
+    if(!['leader','deputy','head'].includes(user.role))fail(403,'Контроль неактиву доступний керівництву');
+    if(user.role==='head'&&!user.head_appointed)fail(403,'Призначення керівника не підтверджено');
+    const days=Number(url.searchParams.get('days')||14);
+    if(![7,14,30].includes(days))fail(400,'Період повинен бути 7, 14 або 30 днів');
+    const dep=str(url.searchParams.get('department'),80);
+    const activity=await activitySnapshot(db,user,dep);
+    return json({days,basis:activity.basis,items:inactivityRows(activity,days)});
   }
   if(path==='/api/activity'&&method==='GET'){
     const departmentId=str(url.searchParams.get('department'),80);
