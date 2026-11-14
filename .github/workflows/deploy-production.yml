@@ -45,6 +45,8 @@ jobs:
           node --check worker/index.js
           node --check public/app.js
           npm test
+      - name: Build GRIZZLY social preview PNG
+        run: npm run build:social
       - name: Deploy production Worker (no D1 migration)
         run: npx wrangler deploy
       - name: Verify Worker and GRIZZLY production domain
@@ -69,7 +71,7 @@ jobs:
           check "Worker health" "https://famaly.crowskick4133.workers.dev/api/health" '"ok":true'
           check "Domain health" "https://grizzly-family.online/api/health" '"ok":true'
           check "Domain v8 page" "https://grizzly-family.online/about/" 'ІСТОРІЯ GRIZZLY'
-          preview_code=$(curl --silent --show-error --location --output /tmp/grizzly-preview --write-out '%{http_code}' https://grizzly-family.online/grizzly-social.png)
+          preview_code=$(curl --silent --show-error --location --output /tmp/grizzly-preview --write-out '%{http_code}' https://grizzly-family.online/grizzly-social-v2.png)
           [[ "$preview_code" == "200" ]] && [[ "$(od -An -tx1 -N8 /tmp/grizzly-preview | tr -d ' \\n')" == "89504e470d0a1a0a" ]] || { echo "::error::GRIZZLY PNG preview missing or invalid (HTTP $preview_code)"; exit 1; }
       - name: Browser smoke test for public navigation
         shell: bash
