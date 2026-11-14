@@ -1168,9 +1168,9 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
     await rateFail(db,rateKey,6,10);
     try{
       await sendDiscordWebhook(env,'test',{event:kind==='test'?undefined:'Тест маршруту '+kind},kind);
-      await recordDiscordDelivery(db,Object.hasOwn(APPLICATION_WEBHOOK_ROUTES,kind)?(kind==='application_waiting'?'applications':'decisions'):(kind==='test'?'test':kind));
+      await recordDiscordDelivery(db,Object.hasOwn(APPLICATION_WEBHOOK_ROUTES,kind)?(kind==='application_waiting'?'applications':'decisions'):(kind==='test'?'test':kind),null,kind);
     }catch(e){
-      await recordDiscordDelivery(db,Object.hasOwn(APPLICATION_WEBHOOK_ROUTES,kind)?(kind==='application_waiting'?'applications':'decisions'):(kind==='test'?'test':kind),e);
+      await recordDiscordDelivery(db,Object.hasOwn(APPLICATION_WEBHOOK_ROUTES,kind)?(kind==='application_waiting'?'applications':'decisions'):(kind==='test'?'test':kind),e,kind);
       fail(502,'Не вдалося надіслати тест до Discord. '+String(e.message).slice(0,110));
     }
     await audit(db,user,'discord_test','integrations','discord');
