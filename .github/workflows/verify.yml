@@ -29,3 +29,14 @@ jobs:
           node --check public/credential-generator.js
       - name: Integration and generator tests
         run: npm test
+
+      - name: Inspect live public page assets (read-only)
+        shell: bash
+        run: |
+          for path in /join/ /app.js /credential-generator.js /style.css /api/public /api/auth/me; do
+            echo "::group::GET $path"
+            curl --silent --show-error --max-time 20 --dump-header /tmp/gr-headers --output /tmp/gr-body --write-out 'HTTP %{http_code}, content-type=%{content_type}, bytes=%{size_download}\n' "https://grizzly-family.online$path" || true
+            grep -iE '^(HTTP/|content-type:|location:|cache-control:|content-security-policy:|x-grizzly-seo-route:)' /tmp/gr-headers || true
+            printf 'First bytes: '; head -c 115 /tmp/gr-body | tr '\n' ' '; echo
+            echo "::endgroup::"
+          done
