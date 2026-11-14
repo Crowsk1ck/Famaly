@@ -895,9 +895,26 @@ function dossierCareerReview(dossier,ranks,today=Date.now()){
  return {current,next,checklist,sanctions:aged,review_count:aged.filter(a=>a.review_suggested).length,
   requests,highest:currentId>=15};
 }
+// A former department head may keep a stale selected dossier after a transfer
+// or role change. Recover to their own dossier without bypassing server access.
+async function loadAuthorizedDossier(requestedId){
+ const path=id=>'/personnel-dossier?user='+encodeURIComponent(id);
+ try{
+  const {item}=await api(path(requestedId));
+  return {id:requestedId,item,recovered:false};
+ }catch(error){
+  if(![403,404].includes(error.status)||requestedId===state.user.id)throw error;
+  const [me,roster]=await Promise.all([api('/auth/me'),api('/members')]);
+  const {item}=await api(path(me.user.id));
+  state.user=me.user;
+  state.roster=roster.items;
+  state.dossierUser=me.user.id;
+  return {id:me.user.id,item,recovered:true};
+ }
+}
 async function dossierPage(){
- const id=state.dossierUser||state.user.id;
- const {item:x}=await api('/personnel-dossier?user='+encodeURIComponent(id));
+ const {id,item:x,recovered}=await loadAuthorizedDossier(state.dossierUser||state.user.id);
+ if(recovered)toast('Доступ до попередньої справи змінився. Відкрито вашу особову справу.');
  const people=state.roster.filter(p=>['leader','deputy'].includes(state.user.role)||
   state.user.role==='head'&&state.user.head_appointed&&p.department_id===state.user.department_id||p.id===state.user.id);
  const picker=people.length>1?'<div class="gr-dossier-picker"><label for="dossier-person-search" class="muted small">Пошук учасника</label>'+
