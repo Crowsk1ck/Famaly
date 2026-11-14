@@ -792,11 +792,12 @@ async function dossierPage(){
   state.user.role==='head'&&state.user.head_appointed&&p.department_id===state.user.department_id||p.id===state.user.id);
  const picker=people.length>1?'<select id="dossier-user-select" class="select" aria-label="Оберіть учасника">'+
  people.map(p=>'<option value="'+esc(p.id)+'"'+(p.id===id?' selected':'')+'>'+esc(p.nickname)+'</option>').join('')+'</select>':'';
- const badges=[['Завдання',x.stats.tasks],['Звіти',x.stats.reports],['Підвищення',x.stats.promotions],['CAPT',x.stats.capt]];
+ const badges=[['Завдання',x.stats.tasks],['Звіти',x.stats.reports],['Підвищення',x.stats.promotions],['CAPT',x.stats.capt],['Дії · 7 днів',x.activity?.actions_7||0],['Дії · 30 днів',x.activity?.actions_30||0]];
  const actionRows=x.actions.map(a=>'<tr><td>'+esc(a.title)+'</td><td>'+esc(a.details)+'</td><td>'+badge(a.status)+'</td><td>'+esc(date(a.created_at))+'</td><td>'+
   (x.can_manage&&a.status==='Чинне'?'<button class="btn tiny secondary" data-action="resolve-personnel-action" data-id="'+esc(a.id)+'" data-version="'+a.version+'">Зняти</button>':'')+'</td></tr>');
  const history=x.latest_records.map(r=>'<tr><td>'+esc(r.title)+'</td><td>'+esc(r.module)+'</td><td>'+badge(r.status)+'</td><td>'+esc(date(r.created_at))+'</td></tr>');
  const abs=x.absences.map(a=>'<tr><td>'+esc(absenceType(a.type))+'</td><td>'+esc(a.starts_at)+' — '+esc(a.ends_at)+'</td><td>'+badge(a.status)+'</td></tr>');
+ const auditRows=x.history.map(h=>'<tr><td>'+esc(date(h.created_at))+'</td><td>'+esc(h.action)+'</td><td>'+esc(h.detail||'—')+'</td></tr>');
  return intro('Особова справа · '+x.person.nickname,'Дані учасника, рішення керівництва й історія активності. Фінансові операції недоступні.')+
   '<div class="row space wrap mt">'+picker+(x.can_manage?'<button class="btn" data-action="new-personnel-action" data-id="'+esc(id)+'">＋ Догана / нагорода</button>':'')+'</div>'+
   '<div class="card gr-v10-profile"><h3>'+esc(x.person.nickname)+'</h3><p>'+esc(roles[x.person.role]||x.person.role)+' · '+esc(rankName(x.person.rank_id))+
@@ -805,7 +806,8 @@ async function dossierPage(){
   '<div class="gr-activity-stats">'+badges.map(([t,v])=>'<div class="card"><span class="muted small">'+esc(t)+'</span><strong>'+fmt(v)+'</strong></div>').join('')+'</div>'+
   '<div class="card gr-activity-table"><h3>Догани та заохочення</h3>'+(actionRows.length?table(['Рішення','Причина','Статус','Дата',''],actionRows):empty('Рішень поки немає'))+'</div>'+
   '<div class="card gr-activity-table"><h3>Звіти, завдання й CAPT</h3>'+(history.length?table(['Назва','Розділ','Статус','Дата'],history):empty('Записів поки немає'))+'</div>'+
-  '<div class="card gr-activity-table"><h3>Відпустки та неактив</h3>'+(abs.length?table(['Тип','Період','Статус'],abs):empty('Заявок поки немає'))+'</div>';
+  '<div class="card gr-activity-table"><h3>Відпустки та неактив</h3>'+(abs.length?table(['Тип','Період','Статус'],abs):empty('Заявок поки немає'))+'</div>'+ 
+  '<div class="card gr-activity-table"><h3>Історія змін особової справи</h3>'+(auditRows.length?table(['Дата','Операція','Деталі'],auditRows):empty('Немає кадрових змін'))+'</div>';
 }
 async function activityPage(){
  const user=state.user;
