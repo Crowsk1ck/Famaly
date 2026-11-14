@@ -437,6 +437,24 @@ async function overview(){
   return '<div class="card flat"><div class="row space"><strong>'+esc(d.title)+'</strong><span class="muted small">'+members+' уч.</span></div>'+
    '<div class="muted small mt">Керівник: '+esc(d.head_id?userName(d.head_id):'Не призначено')+'</div></div>';
  }).join('');
+ const recentContracts=[...contracts].sort((a,b)=>String(b.created_at||b.updated_at||'').localeCompare(String(a.created_at||a.updated_at||''))).slice(0,5);
+ const contractRows=recentContracts.map(x=>'<tr><td class="table-title"><strong>'+esc(x.title)+'</strong><div class="muted small">'+esc(departmentName(x.department_id))+'</div></td><td class="mono">'+fmt(x.amount||0)+'</td><td>'+badge(x.settled_at?'Нараховано':x.status)+'</td><td><button class="btn tiny secondary" data-action="view-contract" data-id="'+esc(x.id)+'">Відкрити</button></td></tr>');
+ const recentMembers=[...state.roster].filter(x=>x.status==='active').sort((a,b)=>String(b.joined_at||'').localeCompare(String(a.joined_at||''))).slice(0,5);
+ const memberRows=recentMembers.map(x=>'<tr><td class="table-title">'+esc(x.nickname||'Учасник')+'</td><td>'+esc(departmentName(x.department_id))+'</td><td>'+esc(x.joined_at?date(x.joined_at):'—')+'</td><td><button class="btn tiny secondary" data-action="view-member" data-id="'+esc(x.id)+'">Профіль</button></td></tr>');
+ const activeMembers=state.roster.filter(x=>x.status==='active');
+ const unassignedMembers=activeMembers.filter(x=>!x.department_id||!state.departments.some(d=>d.id===x.department_id)).length;
+ const completedContracts=contracts.filter(x=>!!x.settled_at).length;
+ const overviewDetails='<div class="cards">'+
+  metric('Усього контрактів',fmt(contracts.length),'З реєстру сім’ї')+
+  metric('Нараховані контракти',fmt(completedContracts),'Проведені через фінанси')+
+  metric('Підрозділів',fmt(state.departments.length),'У системі сім’ї')+
+  metric('Без підрозділу',fmt(unassignedMembers),'Активні учасники')+
+ '</div>'+
+ '<div class="grid2"><div class="card">'+section('Останні контракти','contracts','Усі контракти')+
+ (contractRows.length?table(['Контракт','Сума','Статус','Дія'],contractRows):empty('Контрактів поки немає'))+
+ '</div><div class="card">'+section('Нещодавно додані учасники','members','Склад сім’ї')+
+ (memberRows.length?table(['Учасник','Підрозділ','Дата вступу','Дія'],memberRows):empty('Учасників поки немає'))+
+ '</div></div>';
  const notices=(state.notifications||[]).filter(x=>!x.read_at).slice(0,4);
  const notifySection=notices.length?'<div class="card mt"><div class="card-head"><h3>Нові сповіщення</h3></div><div class="stack">'+notices.map(n=>'<div class="row space"><div><strong>'+esc(n.title)+'</strong><div class="muted small">'+esc((n.details||'').slice(0,150))+'</div></div><span class="muted small">'+date(n.created_at)+'</span></div>').join('')+'</div></div>':'';
  return intro('Огляд GRIZZLY','Головна панель сім’ї · актуальні показники та швидкий доступ до роботи',
@@ -473,6 +491,7 @@ async function overview(){
  '<button class="btn secondary" data-route="finance">₴ Фінанси та виплати</button>'+
  (can('members:write')?'<button class="btn secondary" data-action="new-user">♟ Додати учасника</button>':'')+
  '</div></div></div>'+
+ overviewDetails+
  (leader?'<div class="card"><div class="card-head"><h3>Стан підрозділів</h3><button class="btn tiny secondary" data-route="departments">Керувати ↗</button></div><div class="grid3 mt">'+departmentCards+'</div></div>':'')+
  notifySection+'</div>';
 }
