@@ -1217,6 +1217,33 @@ async function absencesPage(){
   '<button class="btn" data-action="absence-new">＋ Подати заявку</button>')+
   '<div class="card gr-activity-table">'+absenceTable(items)+'</div>';
 }
+// v15.7: operational summary from the already authorized department workspace.
+// Never join in a global roster: assigned tasks must match this department's
+// active members and come from the server-scoped "tasks" section.
+function departmentHeadFocus({departmentId,members=[],sections=[],weekly={},report={}}){
+ const active=members.filter(m=>m.status==='active');
+ const activeIds=new Set(active.map(m=>String(m.id)));
+ const taskSection=sections.find(s=>s.id==='tasks');
+ const pending=(taskSection?.items||[]).filter(task=>
+  task.department_id===departmentId&&activeIds.has(String(task.assignee_id||''))&&
+  !['Завершено','Відхилено','Погоджено','Скасовано'].includes(task.status));
+ const tasks=pending.slice().sort((a,b)=>
+  String(a.ends_at||'9999').localeCompare(String(b.ends_at||'9999'))||
+  String(a.title||'').localeCompare(String(b.title||''),'uk')).slice(0,4);
+ const targets=(weekly.metrics||[]).filter(m=>Number(m.target)>0);
+ const goalsMet=targets.filter(m=>Number(m.actual)>=Number(m.target)).length;
+ return {
+  members:active,
+  memberCount:active.length,
+  pendingTasks:pending.length,
+  tasks,
+  goalsMet,
+  goalsSet:targets.length,
+  goalsPercent:targets.length?Math.round(goalsMet*100/targets.length):0,
+  reportStatus:report.report?.id?report.report.status||'На перевірці':'Не подано',
+  reportSubmitted:Boolean(report.report?.id)
+ };
+}
 async function departmentWorkspace(){
  const user=state.user;
  if(!['leader','deputy','head'].includes(user.role))return intro('Доступ до підрозділу','Тільки призначені керівники та вище керівництво.');
@@ -1236,6 +1263,7 @@ async function departmentWorkspace(){
  const weekly=data.weekly||{metrics:[],version:0,can_edit:false,period_days:7};
  const reportResponse=await api('/department-weekly-report?department='+encodeURIComponent(dept.id));
  const report=reportResponse.item;
+ const focus=departmentHeadFocus({departmentId:dept.id,members,sections,weekly,report});
  state.workspaceGoals={department:dept.id,weekly};
  const id=state.workspaceSection||'weekly';
  const allSections=[{id:'weekly',title:'План на тиждень',group:'Керування',count:weekly.metrics?.length||0},
@@ -1254,6 +1282,33 @@ async function departmentWorkspace(){
   ?'<span class="badge blue">Мій підрозділ</span>'
   :'<label class="gr-workspace-select-label">Підрозділ <select class="select" id="workspace-department-select" aria-label="Оберіть підрозділ">'+
    available.map(d=>'<option value="'+esc(d.id)+'"'+(d.id===dept.id?' selected':'')+'>'+esc(d.title)+'</option>').join('')+'</select></label>';
+ const headTasks=focus.tasks.map(task=>'<div class="gr-head-focus-task"><div class="gr-head-focus-copy"><strong>'+esc(task.title)+'</strong>'+
+  '<span class="muted small">'+esc(userName(task.assignee_id))+(task.ends_at?' · '+esc(kyivDueStatus(task.ends_at,task.status)):' · без дедлайну')+'</span></div>'+
+  '<button type="button" class="btn tiny secondary" data-action="view-record" data-module="tasks" data-id="'+esc(task.id)+'">Відкрити ↗</button></div>').join('');
+ const headMembers=focus.members.slice(0,4).map(person=>'<div class="gr-head-focus-person"><div><strong>'+esc(person.nickname)+'</strong>'+
+  '<span class="muted small">'+esc(rankName(person.rank_id))+'</span></div>'+
+  '<button type="button" class="btn tiny secondary" data-action="open-dossier" data-id="'+esc(person.id)+'">Досьє ↗</button></div>').join('');
+ const focusSummary='<section class="card gr-head-focus" aria-label="Оперативний контроль підрозділу">'+
+  '<div class="card-head"><div><div class="overline">GRIZZLY / КОНТРОЛЬ</div><h3>Оперативний контроль підрозділу</h3>'+
+  '<p class="small muted">Фактичні показники доступного підрозділу. Дані оновлюються при відкритті кабінету.</p></div></div>'+
+  '<div class="gr-head-focus-grid">'+
+  '<div class="gr-head-focus-panel"><div class="row space wrap"><h4>Цілі на 7 днів</h4><span class="pill">'+fmt(focus.goalsMet)+' / '+fmt(focus.goalsSet)+'</span></div>'+
+  (focus.goalsSet?'<div class="gr-weekly-progress" role="progressbar" aria-label="Виконання тижневих цілей" aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+focus.goalsPercent+'"><span style="width:'+focus.goalsPercent+'%"></span></div>'+
+  '<p class="small muted">'+fmt(focus.goalsPercent)+'% налаштованих цілей виконано</p>':
+  '<p class="small muted">Лідер ще не встановив числові цілі.</p>')+
+  '<button type="button" class="btn tiny secondary" data-action="workspace-section" data-value="weekly">План на тиждень ↗</button></div>'+
+  '<div class="gr-head-focus-panel"><div class="row space wrap"><h4>Звіт за завершений тиждень</h4></div>'+
+  '<div>Статус: '+badge(focus.reportStatus)+'</div>'+
+  '<p class="small muted">'+esc(report.week_start||'')+' — '+esc(report.week_end||'')+' (UTC)</p>'+
+  '<button type="button" class="btn tiny secondary" data-action="workspace-section" data-value="report">Відкрити звіт ↗</button></div>'+
+  '<div class="gr-head-focus-panel"><div class="row space wrap"><h4>Завдання команди</h4><span class="pill">'+fmt(focus.pendingTasks)+'</span></div>'+
+  (headTasks||'<p class="small muted">Немає активних завдань, призначених учасникам підрозділу.</p>')+
+  '<button type="button" class="btn tiny secondary" data-action="workspace-section" data-value="tasks">Усі завдання ↗</button></div>'+
+  '</div>'+
+  '<div class="gr-head-focus-team"><div class="gr-head-focus-team-header"><h4>Активні учасники · '+fmt(focus.memberCount)+'</h4>'+
+  '<button type="button" class="btn tiny ghost" data-action="workspace-section" data-value="personnel">Весь склад ↗</button></div>'+
+  (headMembers||'<p class="small muted">Активних учасників поки немає.</p>')+'</div>'+
+  '</section>';
  const stats=[['Активні учасники',data.summary.members],['Активні завдання',data.summary.tasks_open],
   ['Звіти на перевірці',data.summary.reports_review],
   dept.id==='capt'?['CAPT — бої',sections.find(x=>x.id==='capt_matches')?.count||0]:
@@ -1338,6 +1393,7 @@ async function departmentWorkspace(){
  return intro('Управління підрозділом','Окремий робочий простір керівника: особовий склад, контракти та всі доступні операційні розділи.')+
   '<div class="card gr-workspace-head"><div class="row space wrap"><div><div class="overline">GRIZZLY / ПІДРОЗДІЛ</div><h2>'+esc(dept.title)+'</h2><p class="muted small">Керівник: '+esc(userName(dept.head_id))+'</p></div>'+selector+'</div></div>'+
   '<div class="cards gr-workspace-stats">'+stats.map(([label,value])=>'<div class="card stat"><span class="muted small">'+esc(label)+'</span><div class="number">'+fmt(value)+'</div></div>').join('')+'</div>'+
+  focusSummary+
   '<div class="gr-workspace-layout"><nav class="card gr-workspace-nav" aria-label="Розділи підрозділу"><h3>Розділи '+esc(dept.title)+'</h3><p class="small muted">Тільки потрібні вкладки цього підрозділу.</p>'+buttons+'</nav>'+
   '<section class="card gr-workspace-content"><div class="card-head"><div><h3>'+esc(active.title)+'</h3>'+
   '<p class="small muted">У підрозділі: '+fmt(active.count||0)+' записів'+(active.attention?' · На перевірці: '+fmt(active.attention):'')+'</p></div>'+create+'</div>'+
