@@ -1,11 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
-  <title>GRIZZLY FAMILY</title>
-  <defs><linearGradient id="red" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#b93c50"/><stop offset="1" stop-color="#602734"/></linearGradient></defs>
-  <rect width="64" height="64" rx="15" fill="#171a23"/>
-  <circle cx="15" cy="17" r="10" fill="url(#red)"/><circle cx="49" cy="17" r="10" fill="url(#red)"/>
-  <path d="M11 28C11 12 22 11 32 11S53 12 53 28v9c0 12-9 20-21 20S11 49 11 37z" fill="#bc5367" stroke="#f594a6" stroke-width="1.4"/>
-  <path d="M19 34c5-3 9-3 13 0 4-3 8-3 13 0" fill="none" stroke="#2a1b25" stroke-width="3" stroke-linecap="round"/>
-  <ellipse cx="32" cy="43" rx="12" ry="10" fill="#efd6d6"/>
-  <path d="M27 40q5-5 10 0l-5 6z" fill="#2c1d27"/>
-  <path d="M28 49q4 4 8 0" fill="none" stroke="#5a3342" stroke-width="2" stroke-linecap="round"/>
+<title>🐻 GRIZZLY FAMILY</title>
+<rect width="64" height="64" rx="14" fill="#181b25"/>
+<rect x="1.5" y="1.5" width="61" height="61" rx="13" fill="none" stroke="#ac4a60" stroke-width="3"/>
+<text x="32" y="45" font-size="43" text-anchor="middle" font-family="Apple Color Emoji, Segoe UI Emoji, Noto Color Emoji, sans-serif">🐻</text>
 </svg>
