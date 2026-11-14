@@ -434,9 +434,9 @@ function discordAnnouncementSections(raw){
  const ending=(call?remaining.slice(call.index):'').trim();
  const sections=[];
  if(intro)sections.push({name:'📣 Звернення',value:intro});
- const entries=listText.split(/\s*(?=[🔫💰🚗⚖️👥🎉])/u).map(x=>x.trim()).filter(Boolean);
+ const entries=listText.split(/\s*(?=(?:🔫|💰|🚗|⚖️|👥|🎉))/u).map(x=>x.trim()).filter(Boolean);
  const list=entries.map(x=>{
-  const m=/^(.{1,70}?)\s*[—–-]\s*(.+)$/u.exec(x);
+  const m=/^(.{1,70}?)\s+[—–]\s+(.+)$/u.exec(x);
   return m?'**'+m[1].trim()+'** — '+m[2].trim():x;
  }).join('\n\n');
  if(list)sections.push({name:'📋 Доступні підрозділи',value:list});
