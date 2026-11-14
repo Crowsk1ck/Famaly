@@ -524,13 +524,16 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
       SUM(CASE WHEN status='Погоджено' OR status='Завершено' THEN 1 ELSE 0 END) approved
       FROM records WHERE department_id=? AND deleted_at IS NULL
       AND module IN ('capt_matches','capt_training','capt_attendance')`).bind(dept.id).first();
+    const captPayments=await db.prepare(`SELECT COUNT(*) count,COALESCE(SUM(l.amount),0) total
+      FROM ledger l JOIN records r ON l.reference='capt_attendance:'||r.id
+      WHERE l.kind='capt' AND r.module='capt_attendance' AND r.department_id=?`).bind(dept.id).first();
     const num=x=>Number(x)||0;
     return json({department_id:dept.id,department_title:dept.title,
       contracts:{count:num(contracts.count),total:num(contracts.total),settled_total:num(contracts.settled_total),
         pending_total:num(contracts.pending_total),settled_count:num(contracts.settled_count)},
       treasury_contract_income:num(treasury.amount),
       payouts:{count:num(payout.count),accrued:num(payout.amount),handed_over:num(payout.handed_over)},
-      capt:{records:num(capt.count),approved:num(capt.approved)}});
+      capt:{records:num(capt.count),approved:num(capt.approved),paid_count:num(captPayments.count),paid_total:num(captPayments.total)}});
   }
   if(path==='/api/departments'&&method==='GET')return json({items:await allRows(db,'SELECT * FROM departments ORDER BY rowid')});
   m=path.match(/^\/api\/departments\/([\w-]+)$/);if(m&&method==='PATCH'){
