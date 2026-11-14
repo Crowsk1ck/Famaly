@@ -26,6 +26,8 @@ const nav=[
   {id:'leadership',text:'Контроль керівників',icon:'▥',group:'РОБОТА'},
   {id:'activity',text:'Активність 7/30 днів',icon:'◷',group:'РОБОТА'},
   {id:'absences',text:'Відпустки та неактив',icon:'☷',group:'РОБОТА'},
+  {id:'dossier',text:'Особові справи',icon:'▤',group:'РОБОТА'},
+  {id:'inactivity',text:'Контроль неактиву',icon:'◴',group:'РОБОТА'},
   {id:'contracts',text:'Контракти',icon:'▤',group:'ОПЕРАЦІЇ'},
   {id:'capt',text:'CAPT',icon:'◎',group:'ОПЕРАЦІЇ'},
   {id:'finance',text:'Фінанси',icon:'₴',group:'ОПЕРАЦІЇ'},
@@ -415,7 +417,7 @@ function renderPublic(){
 function loginModal(){modal('Вхід до панелі',`<p class="modal-desc">Логін і пароль видає керівник сім’ї. Реєстрація після заявки не відбувається автоматично.</p><form id="login-form" class="stack"><div class="field"><label>Логін</label><input class="input" name="username" autocomplete="username" required autofocus></div><div class="field"><label>Пароль</label><input class="input" type="password" name="password" autocomplete="current-password" required></div><button type="submit" class="btn">Увійти →</button></form>`);}
 function modal(title,html){$('#modal-root').innerHTML=`<div class="modal-backdrop" data-backdrop="1"><div class="modal" role="dialog" aria-modal="true" aria-label="${esc(title)}"><div class="modal-head"><h3>${esc(title)}</h3><button type="button" data-action="close-modal" class="iconbtn">✕</button></div><div class="modal-body">${html}</div></div></div>`;const first=$('#modal-root input:not([type=hidden])');if(first)setTimeout(()=>first.focus(),20);}
 function closeModal(){$('#modal-root').innerHTML='';state.galleryLightboxId=null;}
-function visible(n){if(n.id==='leadership'&&!['leader','deputy'].includes(state.user.role))return false;if(n.id==='workspace'&&!['leader','deputy','head'].includes(state.user.role))return false;if(['audit','settings'].includes(n.id)&&state.user.role!=='leader')return false;if(n.id==='applications'&&!can('recruitment:manage'))return false;if(['public_news','public_team','public_achievements','public_calendar'].includes(n.id)&&!can('content:manage'))return false;if(n.id==='discipline'&&!can('discipline:manage'))return false;if(n.id==='contracts'&&!can('finance:read')&&!can('finance:manage'))return true;return true;}
+function visible(n){if(n.id==='inactivity'&&!['leader','deputy','head'].includes(state.user.role))return false;if(n.id==='leadership'&&!['leader','deputy'].includes(state.user.role))return false;if(n.id==='workspace'&&!['leader','deputy','head'].includes(state.user.role))return false;if(['audit','settings'].includes(n.id)&&state.user.role!=='leader')return false;if(n.id==='applications'&&!can('recruitment:manage'))return false;if(['public_news','public_team','public_achievements','public_calendar'].includes(n.id)&&!can('content:manage'))return false;if(n.id==='discipline'&&!can('discipline:manage'))return false;if(n.id==='contracts'&&!can('finance:read')&&!can('finance:manage'))return true;return true;}
 function sidebar(){let current='';return `<aside class="sidebar"><div class="sidebrand"><div class="brand"><span class="brand-mark">🐻</span>GRIZZLY</div><span class="sub">FAMILY CONTROL</span></div><nav class="side-scroll"><a class="sideitem" href="/?view=public#home"><span class="ni">↗</span> Публічний сайт</a>${nav.filter(visible).map(n=>{let group='';if(n.group!==current){current=n.group;group=`<div class="nav-group">${esc(current)}</div>`;}return `${group}<a href="#${n.id}" class="sideitem ${state.route===n.id?'active':''}" data-route="${n.id}"><span class="ni">${n.icon}</span>${esc(n.text)}</a>`;}).join('')}</nav><div class="side-bottom"><div class="row"><div class="avatar">${esc((state.user.nickname||state.user.username).slice(0,1).toUpperCase())}</div><div style="min-width:0"><strong class="small">${esc(state.user.nickname||state.user.username)}</strong><div class="muted small">${esc(roles[state.user.role])}</div></div></div><button class="btn ghost tiny sidebar-logout" data-action="logout">Вийти ↗</button></div></aside>`;}
 function shell(content){const unread=state.notifications.filter(x=>!x.read_at).length;$('#app').innerHTML=`<div class="shell ${state.menu?'menu-open':''}">${sidebar()}<div class="app-main"><header class="topbar"><div class="row"><button class="iconbtn mobile-menu" data-action="toggle-menu">☰</button><div><small>GRIZZLY / ${esc(roles[state.user.role])}</small><h2>${esc(nav.find(n=>n.id===state.route)?.text||'Огляд')}</h2></div></div><div class="row"><div class="notif-menu"><button class="iconbtn" data-action="notifications" aria-label="Сповіщення">♧${unread?'<span class="alert-dot"></span>':''}</button><div id="notif-pop" class="notif-pop hide"></div></div><button class="iconbtn" data-route="profile" title="Мій профіль">◌</button></div></header><div class="app-content">${content}</div></div></div>`;}
 function notifyPopup(){const el=$('#notif-pop');if(!el)return;el.classList.toggle('hide');el.innerHTML=`<div class="card-head"><h3>Сповіщення</h3><span class="pill">${state.notifications.filter(x=>!x.read_at).length} нових</span></div>${state.notifications.length?state.notifications.slice(0,12).map(n=>`<div class="notif-item"><div class="row space"><strong class="small">${esc(n.title)}</strong>${n.read_at?'':`<button class="btn tiny ghost" data-action="read-notification" data-id="${esc(n.id)}">✓</button>`}</div><div class="muted small">${esc(n.details)}</div><div class="muted small">${date(n.created_at)}</div></div>`).join(''):empty('Немає сповіщень','Нові події з’являться тут.')}`;}
@@ -581,7 +583,7 @@ async function members(){
  const departmentOptions=[['all','Усі напрямки'],...state.departments.map(x=>[String(x.id),x.title])];
  const sortOptions=[['rank','За рангом ↓'],['name','За ніком А–Я'],['joined','За датою вступу ↓']];
  const isFiltered=role!=='all'||status!=='all'||department!=='all'||sort!=='rank'||Boolean(state.search);
- const editButton=u=>state.users.some(account=>account.id===u.id)?'<button class="btn tiny secondary" data-action="edit-user" data-id="'+esc(u.id)+'">Особова справа</button>':'<button class="btn tiny secondary" data-action="view-member" data-id="'+esc(u.id)+'">Переглянути</button>';
+ const editButton=u=>(state.users.some(account=>account.id===u.id)?'<button class="btn tiny secondary" data-action="edit-user" data-id="'+esc(u.id)+'">Редагувати</button> ': '')+'<button class="btn tiny secondary" data-action="open-dossier" data-id="'+esc(u.id)+'">Особова справа ↗</button>';
  const statusBadge=u=>'<span class="badge '+(u.status==='active'?'green':u.status==='blocked'?'red':'blue')+'">'+esc(memberStatusLabel(u.status))+'</span>';
  const tableRows=list.map(u=>'<tr><td><strong>'+esc(nameOf(u))+'</strong><div class="muted">Ігровий профіль</div></td><td>'+esc(roles[u.role]||u.role)+'<div class="muted">'+esc(rankName(u.rank_id))+'</div></td><td>'+esc(departmentName(u.department_id))+'</td><td>'+esc(u.game_id||'—')+'</td><td>'+statusBadge(u)+'<div class="muted">'+esc(u.joined_at?('Вступ: '+date(u.joined_at)):'У сім’ї')+'</div></td><td>'+editButton(u)+'</td></tr>');
  const mobileCards=list.map(u=>'<article class="card member-mobile-card"><div class="row space" style="align-items:start"><div><strong>'+esc(nameOf(u))+'</strong><div class="muted small">Учасник GRIZZLY</div></div>'+statusBadge(u)+'</div><div class="small mt">'+esc(roles[u.role]||u.role)+' · '+esc(rankName(u.rank_id))+'</div><div class="small muted mt">Напрямок: '+esc(departmentName(u.department_id))+'</div><div class="small muted">Ігровий ID: '+esc(u.game_id||'—')+'</div><div class="small muted">Активність: '+esc(u.joined_at?('Вступ: '+date(u.joined_at)):'У сім’ї')+'</div><div class="mt">'+editButton(u)+'</div></article>').join('');
@@ -694,7 +696,7 @@ const workspaceDepartmentSections=Object.freeze({
 });
 function workspaceTabs(departmentId,sections){
  const allowed=workspaceDepartmentSections[departmentId]||['personnel','tasks','reports','contracts','finance'];
- return ['weekly','report','activity','absences',...allowed].map(id=>sections.find(section=>section.id===id)).filter(Boolean);
+ return ['weekly','report','activity','absences','dossiers','inactivity',...allowed].map(id=>sections.find(section=>section.id===id)).filter(Boolean);
 }
 const workspaceDuties=Object.freeze({
  capt:['Координувати склад перед CAPT-боями','Проводити тренування та підтверджувати участь','Фіксувати підсумки боїв і звіти'],
@@ -760,6 +762,53 @@ function absenceTable(items){
  return rows.length?table(['Учасник','Тип','Період','Статус','Причина / рішення','Дії'],rows):
   empty('Заявок ще немає','Створіть заявку на відпустку або тимчасовий неактив.');
 }
+function inactivityTable(items){
+ const rows=items.map(x=>'<tr><td><strong>'+esc(x.nickname)+'</strong></td><td>'+esc(departmentName(x.department_id))+'</td>'+
+  '<td class="mono">'+fmt(x.actions_7)+'</td><td class="mono">'+fmt(x.actions_30)+'</td>'+
+  '<td>'+esc(x.days_since_action===null?'Немає записів':x.days_since_action+' дн.')+'</td><td>'+
+  (x.approved_absence?badge('Погоджена відсутність'):x.overdue?'<span class="badge red">Неактив</span>':'<span class="badge green">Є активність</span>')+'</td>'+
+  '<td><button class="btn tiny secondary" data-action="open-dossier" data-id="'+esc(x.id)+'">Досьє ↗</button></td></tr>');
+ return rows.length?table(['Учасник','Напрямок','7 днів','30 днів','Без дій','Стан',''],rows):empty('Немає учасників');
+}
+async function inactivityPage(){
+ if(!['leader','deputy','head'].includes(state.user.role))return intro('Недостатньо прав');
+ const days=Number(state.inactivityDays||14);
+ const dep=state.user.role==='head'?state.user.department_id:state.inactivityDepartment||'all';
+ const query='?days='+days+(dep&&dep!=='all'?'&department='+encodeURIComponent(dep):'');
+ const response=await api('/inactivity'+query);
+ const overdue=response.items.filter(x=>x.overdue).length;
+ const exempt=response.items.filter(x=>x.approved_absence).length;
+ const select=['leader','deputy'].includes(state.user.role)?'<select class="select" id="inactivity-department-select"><option value="all">Всі напрямки</option>'+
+ state.departments.map(d=>'<option value="'+esc(d.id)+'"'+(dep===d.id?' selected':'')+'>'+esc(d.title)+'</option>').join('')+'</select>':'';
+ return intro('Контроль неактиву','Відсутність робочих дій у панелі за вибраний термін — це не показник GTA-онлайну.')+
+  '<div class="card gr-v10-toolbar"><label>Період <select id="inactivity-days-select" class="select">'+[7,14,30].map(n=>'<option value="'+n+'"'+(days===n?' selected':'')+'>'+n+' днів</option>').join('')+'</select></label>'+select+
+  '<span>Без зафіксованих дій: <strong>'+overdue+'</strong></span><span>На погодженій відсутності: <strong>'+exempt+'</strong></span></div>'+
+  '<div class="card gr-activity-table">'+inactivityTable(response.items)+'</div>';
+}
+async function dossierPage(){
+ const id=state.dossierUser||state.user.id;
+ const {item:x}=await api('/personnel-dossier?user='+encodeURIComponent(id));
+ const people=state.roster.filter(p=>['leader','deputy'].includes(state.user.role)||
+  state.user.role==='head'&&state.user.head_appointed&&p.department_id===state.user.department_id||p.id===state.user.id);
+ const picker=people.length>1?'<select id="dossier-user-select" class="select" aria-label="Оберіть учасника">'+
+ people.map(p=>'<option value="'+esc(p.id)+'"'+(p.id===id?' selected':'')+'>'+esc(p.nickname)+'</option>').join('')+'</select>':'';
+ const badges=[['Завдання',x.stats.tasks],['Звіти',x.stats.reports],['Підвищення',x.stats.promotions],['CAPT',x.stats.capt],['Дії · 7 днів',x.activity?.actions_7||0],['Дії · 30 днів',x.activity?.actions_30||0]];
+ const actionRows=x.actions.map(a=>'<tr><td>'+esc(a.title)+'</td><td>'+esc(a.details)+'</td><td>'+badge(a.status)+'</td><td>'+esc(date(a.created_at))+'</td><td>'+
+  (x.can_manage&&a.status==='Чинне'?'<button class="btn tiny secondary" data-action="resolve-personnel-action" data-id="'+esc(a.id)+'" data-version="'+a.version+'">Зняти</button>':'')+'</td></tr>');
+ const history=x.latest_records.map(r=>'<tr><td>'+esc(r.title)+'</td><td>'+esc(r.module)+'</td><td>'+badge(r.status)+'</td><td>'+esc(date(r.created_at))+'</td></tr>');
+ const abs=x.absences.map(a=>'<tr><td>'+esc(absenceType(a.type))+'</td><td>'+esc(a.starts_at)+' — '+esc(a.ends_at)+'</td><td>'+badge(a.status)+'</td></tr>');
+ const auditRows=x.history.map(h=>'<tr><td>'+esc(date(h.created_at))+'</td><td>'+esc(h.action)+'</td><td>'+esc(h.detail||'—')+'</td></tr>');
+ return intro('Особова справа · '+x.person.nickname,'Дані учасника, рішення керівництва й історія активності. Фінансові операції недоступні.')+
+  '<div class="row space wrap mt">'+picker+(x.can_manage?'<button class="btn" data-action="new-personnel-action" data-id="'+esc(id)+'">＋ Догана / нагорода</button>':'')+'</div>'+
+  '<div class="card gr-v10-profile"><h3>'+esc(x.person.nickname)+'</h3><p>'+esc(roles[x.person.role]||x.person.role)+' · '+esc(rankName(x.person.rank_id))+
+  ' · '+esc(departmentName(x.person.department_id))+'</p><p class="muted small">Вступ: '+esc(x.person.joined_at||'—')+
+  ' · Статус: '+esc(x.person.status)+' · Ігровий ID: '+esc(x.person.game_id||'—')+'</p></div>'+
+  '<div class="gr-activity-stats">'+badges.map(([t,v])=>'<div class="card"><span class="muted small">'+esc(t)+'</span><strong>'+fmt(v)+'</strong></div>').join('')+'</div>'+
+  '<div class="card gr-activity-table"><h3>Догани та заохочення</h3>'+(actionRows.length?table(['Рішення','Причина','Статус','Дата',''],actionRows):empty('Рішень поки немає'))+'</div>'+
+  '<div class="card gr-activity-table"><h3>Звіти, завдання й CAPT</h3>'+(history.length?table(['Назва','Розділ','Статус','Дата'],history):empty('Записів поки немає'))+'</div>'+
+  '<div class="card gr-activity-table"><h3>Відпустки та неактив</h3>'+(abs.length?table(['Тип','Період','Статус'],abs):empty('Заявок поки немає'))+'</div>'+ 
+  '<div class="card gr-activity-table"><h3>Історія змін особової справи</h3>'+(auditRows.length?table(['Дата','Операція','Деталі'],auditRows):empty('Немає кадрових змін'))+'</div>';
+}
 async function activityPage(){
  const user=state.user;
  const department=['leader','deputy'].includes(user.role)?state.activityDepartment||'all':user.role==='head'?user.department_id:'';
@@ -805,6 +854,8 @@ async function departmentWorkspace(){
  state.workspaceGoals={department:dept.id,weekly};
  const id=state.workspaceSection||'weekly';
  const allSections=[{id:'weekly',title:'План на тиждень',group:'Керування',count:weekly.metrics?.length||0},
+  {id:'dossiers',title:'Особові справи',group:'Керування',count:members.length},
+  {id:'inactivity',title:'Контроль неактиву',group:'Керування',count:members.length},
   {id:'activity',title:'Активність 7/30',group:'Керування',count:members.length},
   {id:'absences',title:'Відпустки / неактив',group:'Керування',count:0},
   {id:'report',title:'Тижневий звіт',group:'Керування',count:report.report.id?1:0},
@@ -865,6 +916,9 @@ async function departmentWorkspace(){
  }
  else if(active.id==='activity')content=activityTable((await api('/activity?department='+encodeURIComponent(dept.id))).items);
  else if(active.id==='absences')content='<div class="row justify-end"><button class="btn tiny" data-action="absence-new">＋ Подати заявку</button></div>'+absenceTable((await api('/absences')).items.filter(x=>x.department_id===dept.id));
+ else if(active.id==='dossiers')content=members.length?table(['Учасник','Роль','Справа'],members.map(m=>
+  '<tr><td>'+esc(m.nickname)+'</td><td>'+esc(roles[m.role]||m.role)+'</td><td><button class="btn tiny secondary" data-action="open-dossier" data-id="'+esc(m.id)+'">Досьє ↗</button></td></tr>')):empty('Склад порожній');
+ else if(active.id==='inactivity')content=inactivityTable((await api('/inactivity?department='+encodeURIComponent(dept.id)+'&days='+Number(state.inactivityDays||14))).items);
  else if(active.id==='personnel')content=members.length?table(['Учасник','Ранг','Роль','Статус'],membersRows):empty('Учасників ще немає','Лідер може призначити учасників до цього напрямку.');
  else if(active.id==='contracts')content=(contracts.length?table(['Контракт','Сума','Статус','Дія'],contractRows):empty('Контрактів немає'))+
    '<p class="muted small mt">Фінансові нарахування й видача коштів виконуються тільки уповноваженим керівництвом.</p>';
@@ -1584,7 +1638,7 @@ return `${intro('Налаштування Grizzly','Редагування пу�
     '<div class="row wrap mt"><button class="btn secondary" type="button" data-action="discord-test" '+(discord.configured?'':'disabled')+'>Надіслати тестове повідомлення</button>'+
     '<button type="button" class="btn ghost" data-action="discord-refresh">Оновити статус</button><span class="muted small">Worker: famaly · Не надсилай webhook у чат.</span></div></div>':''}<div class="notice mt">Ставки CAPT застосовуються вручну при створенні виплат, щоб керівник контролював підставу нарахування. Права заступників задаються в особових справах.</div>`;}
 async function profile(){const u=state.user;const sessions=(await api('/auth/sessions')).items;return `${intro('Мій профіль','Особисті дані, пароль та активні сесії.')}<div class="grid2"><div class="card"><h3>${esc(u.nickname||u.username)}</h3><div class="stack mt"><div>Логін: <strong>${esc(u.username)}</strong></div><div>Роль доступу: <strong>${esc(roles[u.role])}</strong></div><div>Ігровий ранг: <strong>${esc(rankName(u.rank_id))}</strong></div><div>Напрямок: <strong>${esc(departmentName(u.department_id))}</strong></div><div>Ігровий ID: <strong>${esc(u.game_id||'—')}</strong></div><div>Discord: <strong>${esc(u.discord||'—')}</strong></div></div><button class="btn tiny secondary mt" data-action="edit-user" data-id="${u.id}">Редагувати профіль</button></div><div class="card"><h3>Зміна пароля</h3><form id="password-form" class="stack mt">${field('Поточний пароль','old_password','','password',true,'required')}${field('Новий пароль (12–128 символів)','new_password','','password',true,'minlength="12" required')}<button class="btn" type="submit">Змінити пароль і завершити сесії</button></form></div></div><div class="card mt"><div class="card-head"><h3>Сесії</h3><span class="muted small">Завершення доступу з інших пристроїв</span></div>${table(['Створено','Термін дії','Пристрій','Дія'],sessions.map(x=>`<tr><td>${date(x.created_at)}</td><td>${date(x.expires_at)}</td><td class="wordwrap">${esc(x.user_agent.slice(0,100))}</td><td>${x.revoked_at?badge('Завершено'):`<button class="btn tiny danger" data-action="revoke-session" data-id="${esc(x.id)}">Завершити</button>`}</td></tr>`))}</div>`;}
-async function render(){state.menu=false;let content='';try{if(!state.user||(location.pathname!=='/'&&Object.values(grPublicPaths).includes(location.pathname)&&!location.hash.startsWith('#overview'))){renderPublic();return;}if(['overview','members','ranks','departments','contracts','settings','profile'].includes(state.route)||state.route==='workspace')await preload();switch(state.route){case'overview':content=await overview();break;case'members':content=await members();break;case'ranks':content=await ranks();break;case'departments':content=await departments();break;case'workspace':content=await departmentWorkspace();break;case'leadership':content=await leadershipDashboard();break;case'activity':content=await activityPage();break;case'absences':content=await absencesPage();break;case'tasks':content=await renderModule('tasks');break;case'events':content=await renderModule('events');break;case'gallery':content=await galleryManager();break;case'public_news':content=await newsManager();break;case'public_team':content=await teamManager();break;case'public_achievements':content=await achievementsManager();break;case'public_calendar':content=await calendarManager();break;case'contracts':content=await contracts();break;case'capt':content=await captPage();break;case'fleet':content=await fleetPage();break;case'discipline':case'announcements':case'reports':content=await groupPage(state.route);break;case'finance':content=await finance();break;case'applications':content=await applications();break;case'stats':content=await stats();break;case'audit':content=await auditPage();break;case'settings':content=await settingsPage();break;case'profile':content=await profile();break;default:state.route='overview';content=await overview();}shell(content);}catch(e){if(e.status===401){state.user=null;state.route='overview';renderPublic();toast('Сесію завершено. Увійдіть повторно.',true);return;}shell(intro('Помилка завантаження',e.message)+`<button class="btn mt" data-action="refresh">Повторити</button>`);toast(e.message,true);}}
+async function render(){state.menu=false;let content='';try{if(!state.user||(location.pathname!=='/'&&Object.values(grPublicPaths).includes(location.pathname)&&!location.hash.startsWith('#overview'))){renderPublic();return;}if(['overview','members','ranks','departments','contracts','settings','profile'].includes(state.route)||state.route==='workspace')await preload();switch(state.route){case'overview':content=await overview();break;case'members':content=await members();break;case'ranks':content=await ranks();break;case'departments':content=await departments();break;case'workspace':content=await departmentWorkspace();break;case'leadership':content=await leadershipDashboard();break;case'activity':content=await activityPage();break;case'absences':content=await absencesPage();break;case'dossier':content=await dossierPage();break;case'inactivity':content=await inactivityPage();break;case'tasks':content=await renderModule('tasks');break;case'events':content=await renderModule('events');break;case'gallery':content=await galleryManager();break;case'public_news':content=await newsManager();break;case'public_team':content=await teamManager();break;case'public_achievements':content=await achievementsManager();break;case'public_calendar':content=await calendarManager();break;case'contracts':content=await contracts();break;case'capt':content=await captPage();break;case'fleet':content=await fleetPage();break;case'discipline':case'announcements':case'reports':content=await groupPage(state.route);break;case'finance':content=await finance();break;case'applications':content=await applications();break;case'stats':content=await stats();break;case'audit':content=await auditPage();break;case'settings':content=await settingsPage();break;case'profile':content=await profile();break;default:state.route='overview';content=await overview();}shell(content);}catch(e){if(e.status===401){state.user=null;state.route='overview';renderPublic();toast('Сесію завершено. Увійдіть повторно.',true);return;}shell(intro('Помилка завантаження',e.message)+`<button class="btn mt" data-action="refresh">Повторити</button>`);toast(e.message,true);}}
 async function navigate(route){const url=new URL(location.href);if(url.searchParams.has('view')||url.pathname!=='/'){url.searchParams.delete('view');history.replaceState(history.state,'','/'+url.search+url.hash);}state.route=route;state.search='';state.sort='new';state.filter='';state.menu=false;location.hash=route;await render();}
 async function initial(){try{state.public=await api('/public');}catch(e){state.public={settings:{tagline:'Сила в єдності.'},gallery:[]};toast('Не вдалося отримати публічні дані. Перевірте D1 та міграції.',true);}try{state.user=(await api('/auth/me')).user;}catch{state.user=null;}if(state.user){try{state.notifications=(await api('/notifications')).items;await preload();}catch(e){toast(e.message,true);}state.route=location.hash.replace('#','')||'overview';}if(new URL(location.href).searchParams.get('view')==='public'){renderPublic();return;}await render();}
 const lines=s=>String(s||'').split(/\n/).map(x=>x.trim()).filter(Boolean);
@@ -1597,6 +1651,14 @@ async function handleSubmit(e){const f=e.target;if(!f.id)return;e.preventDefault
     const result=await api(id?`/users/${id}`:'/users',id?'PATCH':'POST',payload);if(!id){closeModal();await preload();await render();credentialReceipt(result.item.username,b.password,result.item.nickname);return;}await afterSaved('Особову справу оновлено');return;}
   case 'rank-form':{const r=state.ranks.find(x=>x.id===Number(f.dataset.id));await api(`/ranks/${r.id}`,'PATCH',{title:b.title,requirements:b.requirements,checklist:lines(b.checklist),version:r.version});await afterSaved('Ранг оновлено');return;}
   case 'department-form':{const d=state.departments.find(x=>x.id===f.dataset.id);await api(`/departments/${d.id}`,'PATCH',{...b,version:d.version});await afterSaved();return;}
+  case 'personnel-action-form':{
+    await api('/personnel-actions','POST',{user_id:f.dataset.user,kind:b.kind,details:b.details});
+    state.dossierUser=f.dataset.user;await afterSaved('Рішення додано до особової справи');return;
+  }
+  case 'personnel-resolve-form':{
+    await api('/personnel-actions/'+encodeURIComponent(f.dataset.id),'PATCH',{version:Number(f.dataset.version),reason:b.reason});
+    await afterSaved('Рішення знято');return;
+  }
   case 'absence-request-form':{
     await api('/absences','POST',{type:b.type,starts_at:b.starts_at,ends_at:b.ends_at,details:b.details});
     await afterSaved('Заявку подано на перевірку');return;
@@ -1684,7 +1746,7 @@ async function handleSubmit(e){const f=e.target;if(!f.id)return;e.preventDefault
 } }catch(err){toast(err.message,true);if(err.status===409)toast('Оновіть сторінку перед повторним редагуванням.',true);}finally{if(submit)submit.disabled=false;}}
 document.addEventListener('submit',handleSubmit);
 document.addEventListener('input',e=>{if(e.target.closest('#contract-correction-form')){const f=e.target.closest('form');f.dataset.previewAmount='';f.dataset.previewReason='';const btn=f.querySelector('[data-action="contract-correction-save"]');if(btn)btn.disabled=true;const box=f.querySelector('#contract-correction-preview');if(box)box.textContent='Дані змінено. Повторіть попередній розрахунок.';}if(e.target.name==='photo_url'&&e.target.closest('#gallery-form'))updateGalleryFormPreview();if(e.target.name==='photo_url'&&e.target.closest('#team-form'))updateTeamFormPreview();if(e.target.name==='photo_url'&&e.target.closest('#achievement-form'))updateAchievementPreview();if(e.target.id==='search-input'){state.search=e.target.value;const start=e.target.selectionStart;render().then(()=>{const v=$('#search-input');if(v){v.focus();try{v.setSelectionRange(start,start);}catch{}}});}});
-document.addEventListener('change',e=>{if(e.target.id==='activity-department-filter'){state.activityDepartment=e.target.value;void render();return;}if(e.target.id==='workspace-department-select'){state.workspaceDepartment=e.target.value;state.workspaceSection='personnel';void render();return;}if(e.target.id==='gr-gallery-sort'){state.gallerySort=e.target.value;const node=$('#gr-gallery-content');if(node)node.innerHTML=renderPublicGallery();return;}if(e.target.id==='gr-achievement-sort'){state.achievementSort=e.target.value;const node=$('#gr-achievements-content');if(node)node.innerHTML=renderPublicAchievements();return;}if(e.target.matches('#record-form[data-module="promotions"] [name="extra_requested_rank_id"]')){const form=e.target.form,box=form.querySelector('#promotion-requirement-box');if(box){box.innerHTML=promotionChecklistView(e.target.value,[]);syncPromotionChecklist();}return;}if(e.target.matches('.promotion-requirement')){syncPromotionChecklist();return;}if(state.route==='members'&&['members-role-filter','members-status-filter','members-department-filter','members-sort-filter'].includes(e.target.id)){const key={'members-role-filter':'membersRole','members-status-filter':'membersStatus','members-department-filter':'membersDepartment','members-sort-filter':'membersSort'}[e.target.id];state[key]=e.target.value;render();return;}if(e.target.id==='contract-department-filter'){state.contractDepartment=e.target.value;render();return;}if(e.target.id==='status-filter'){state.filter=e.target.value;render();}if(e.target.id==='sort-select'){state.sort=e.target.value;render();}if(e.target.id==='period-filter'){state.period=e.target.value;render();}});
+document.addEventListener('change',e=>{if(e.target.id==='dossier-user-select'){state.dossierUser=e.target.value;void render();return;}if(e.target.id==='inactivity-days-select'){state.inactivityDays=Number(e.target.value);void render();return;}if(e.target.id==='inactivity-department-select'){state.inactivityDepartment=e.target.value;void render();return;}if(e.target.id==='activity-department-filter'){state.activityDepartment=e.target.value;void render();return;}if(e.target.id==='workspace-department-select'){state.workspaceDepartment=e.target.value;state.workspaceSection='personnel';void render();return;}if(e.target.id==='gr-gallery-sort'){state.gallerySort=e.target.value;const node=$('#gr-gallery-content');if(node)node.innerHTML=renderPublicGallery();return;}if(e.target.id==='gr-achievement-sort'){state.achievementSort=e.target.value;const node=$('#gr-achievements-content');if(node)node.innerHTML=renderPublicAchievements();return;}if(e.target.matches('#record-form[data-module="promotions"] [name="extra_requested_rank_id"]')){const form=e.target.form,box=form.querySelector('#promotion-requirement-box');if(box){box.innerHTML=promotionChecklistView(e.target.value,[]);syncPromotionChecklist();}return;}if(e.target.matches('.promotion-requirement')){syncPromotionChecklist();return;}if(state.route==='members'&&['members-role-filter','members-status-filter','members-department-filter','members-sort-filter'].includes(e.target.id)){const key={'members-role-filter':'membersRole','members-status-filter':'membersStatus','members-department-filter':'membersDepartment','members-sort-filter':'membersSort'}[e.target.id];state[key]=e.target.value;render();return;}if(e.target.id==='contract-department-filter'){state.contractDepartment=e.target.value;render();return;}if(e.target.id==='status-filter'){state.filter=e.target.value;render();}if(e.target.id==='sort-select'){state.sort=e.target.value;render();}if(e.target.id==='period-filter'){state.period=e.target.value;render();}});
 document.addEventListener('click',async e=>{const back=e.target.closest('[data-backdrop]');if(back&&e.target===back){closeModal();return;}const t=e.target.closest('[data-action],[data-route]');if(!t)return;e.preventDefault();try{if(t.dataset.route){await navigate(t.dataset.route);return;}const act=t.dataset.action,id=t.dataset.id,mod=t.dataset.module;switch(act){
   case 'show-login':loginModal();break;
   case 'close-modal':closeModal();break;
@@ -1755,6 +1817,24 @@ document.addEventListener('click',async e=>{const back=e.target.closest('[data-b
       '<p class="muted small full">Показники система додасть автоматично. За цей тиждень можна подати лише один звіт.</p>'+
       '<div class="field full"><label>Коментар керівника (необов’язково)</label><textarea class="textarea" name="comment" maxlength="800" rows="4" placeholder="Що вдалося, які виникли труднощі?"></textarea></div>'+
       '<div class="full form-actions"><button class="btn ghost" type="button" data-action="close-modal">Скасувати</button><button class="btn" type="submit">Подати на перевірку</button></div></form>');
+    break;
+  }
+  case 'open-dossier':state.dossierUser=t.dataset.id;await navigate('dossier');break;
+  case 'new-personnel-action':{
+    if(!['leader','deputy','head'].includes(state.user.role))throw new Error('Тільки керівництво може додавати рішення');
+    modal('Нове рішення в особовій справі','<form id="personnel-action-form" data-user="'+esc(t.dataset.id)+'" class="formgrid">'+
+     '<div class="field full"><label>Вид рішення</label><select name="kind" class="select" required>'+
+     '<option value="warning">Попередження</option><option value="reprimand">Догана</option>'+
+     '<option value="recognition">Подяка</option><option value="award">Нагорода</option></select></div>'+
+     '<div class="field full"><label>Причина</label><textarea class="textarea" name="details" maxlength="900" minlength="8" required></textarea></div>'+
+     '<p class="muted small full">Нагороди є нематеріальними: кошти автоматично не нараховуються.</p>'+
+     '<div class="full form-actions"><button type="button" class="btn ghost" data-action="close-modal">Скасувати</button><button type="submit" class="btn">Зберегти</button></div></form>');
+    break;
+  }
+  case 'resolve-personnel-action':{
+    modal('Зняти рішення','<form id="personnel-resolve-form" class="formgrid" data-id="'+esc(t.dataset.id)+'" data-version="'+Number(t.dataset.version)+'">'+
+     '<div class="field full"><label>Причина зняття</label><textarea class="textarea" name="reason" maxlength="500" minlength="8" required></textarea></div>'+
+     '<div class="full form-actions"><button type="button" class="btn ghost" data-action="close-modal">Назад</button><button type="submit" class="btn">Зняти рішення</button></div></form>');
     break;
   }
   case 'absence-new':{

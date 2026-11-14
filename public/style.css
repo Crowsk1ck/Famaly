@@ -964,3 +964,15 @@
 .gr-activity-filter select{min-width:170px}
 @media(max-width:900px){.gr-activity-stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:580px){.gr-activity-stats{gap:8px}.gr-activity-stats>.card{padding:12px}.gr-activity-stats strong{font-size:1.3rem}.gr-activity-filter{width:100%;justify-content:space-between}}
+
+/* v10 personnel files and inactivity monitoring */
+.gr-v10-toolbar{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:16px;margin:16px 0}
+.gr-v10-toolbar label{display:flex;align-items:center;gap:10px;font-size:.82rem;color:#c7cbd6}
+.gr-v10-toolbar select{min-width:105px}
+.gr-v10-toolbar strong{font-variant-numeric:tabular-nums}
+.gr-v10-profile{padding:20px;margin:18px 0 12px;border:1px solid #5e3947;background:linear-gradient(110deg,#2b1d28,#1b1e29)}
+.gr-v10-profile h3{font-size:1.35rem;margin:0 0 9px}
+.gr-v10-profile p{line-height:1.5;margin:6px 0}
+.gr-activity-table h3{font-size:1rem;margin-bottom:16px}
+.gr-activity-table+.gr-activity-table{margin-top:14px}
+@media(max-width:640px){.gr-v10-toolbar{gap:10px}.gr-v10-toolbar select{max-width:100%}.gr-v10-profile{padding:14px}}
