@@ -359,7 +359,12 @@ function renderPublic(){
    '<div class="gr-about-layout"><div class="gr-about-identity"><div class="gr-identity-symbol" aria-hidden="true">G<span>✦</span></div><p>ЄДНІСТЬ <em>·</em> ВІДДАНІСТЬ <em>·</em> СИЛА</p></div>'+
    '<div class="gr-about-story"><span class="gr-small-label">ХТО МИ</span><p class="gr-story-preview">'+esc(preview)+'</p>'+
    (history.length>480?'<details class="gr-story-expand"><summary>Читати повну історію <span>＋</span></summary><div class="gr-story-full">'+esc(history)+'</div></details>':'')+
-   '<a class="gr-text-link" href="#directions">Дізнайся, чим живе сім’я <span>↗</span></a></div></div></div></section>')+
+   '<a class="gr-text-link" href="#directions">Дізнайся, чим живе сім’я <span>↗</span></a></div></div>'+
+   '<div class="gr-history-timeline" aria-label="Етапи історії сім’ї">'+
+   '<article><span>01 / ПОЧАТОК</span><h3>КОРІННЯ СІМ’Ї</h3><p>Історія Grizzly бере початок в Україні — з довіри між найближчими людьми.</p></article>'+
+   '<article><span>02 / НОВИЙ ШЛЯХ</span><h3>ЛОС-САНТОС</h3><p>Переїзд до нового міста став випробуванням і початком спільної справи.</p></article>'+
+   '<article><span>03 / РОЗВИТОК</span><h3>GRIZZLY СЬОГОДНІ</h3><p>Сім’я будує власну історію через бізнес, командні події та спільні рішення.</p></article>'+
+   '</div></div></section>')+
     ('<section class="gr-section gr-team" id="team"><div class="gr-container"><div class="gr-section-heading gr-heading-row"><div><span class="gr-kicker">02 — КЕРІВНИЦТВО</span><h2>ЛЮДИ, ЯКІ<br><span>ВЕДУТЬ GRIZZLY.</span></h2></div><p>Ігрові профілі представників сім’ї. Кожна посада — відповідальність перед командою.</p></div>'+renderPublicTeam()+'</div></section>')+
     ('<section class="gr-section gr-directions" id="directions"><div class="gr-container"><div class="gr-section-heading gr-heading-row"><div><span class="gr-kicker">03 — НАШІ НАПРЯМКИ</span><h2>ОДНА СІМ’Я.<br><span>БАГАТО МОЖЛИВОСТЕЙ.</span></h2></div><p>У кожного своя сильна сторона. Разом ми досягаємо більшого.</p></div>'+
    '<div class="gr-direction-grid">'+
