@@ -2368,6 +2368,119 @@ test('v14.7 department head assignment rejects invalid status and outdated versi
  assert.equal(final.head_id||'',originalHead);
 });
 
+test('v14.8 personnel dossier history follows audited user changes without exposing credentials',async()=>{
+ const username='v148historymember',password='v148-history-strong-password';
+ const created=await req('/api/users',{method:'POST',token:leader,data:{
+  username,password,nickname:'History Original',role:'member',department_id:'farm'
+ }});
+ assert.equal(created.status,201,JSON.stringify(created.data));
+ const personId=created.data.item.id;
+ const initial=await req('/api/personnel-dossier?user='+personId,{token:leader});
+ assert.equal(initial.status,200,JSON.stringify(initial.data));
+ assert.ok(initial.data.item.history.some(x=>x.action==='create'));
+ const edited=await req('/api/users/'+personId,{method:'PATCH',token:leader,data:{
+  ...created.data.item,nickname:'History Updated',department_id:'events'
+ }});
+ assert.equal(edited.status,200,JSON.stringify(edited.data));
+ const stale=await req('/api/users/'+personId,{method:'PATCH',token:leader,data:{
+  ...created.data.item,nickname:'History Stale'
+ }});
+ assert.equal(stale.status,409);
+ const dossier=await req('/api/personnel-dossier?user='+personId,{token:leader});
+ assert.equal(dossier.status,200);
+ assert.equal(dossier.data.item.person.nickname,'History Updated');
+ assert.equal(dossier.data.item.person.department_id,'events');
+ assert.equal(dossier.data.item.history.filter(x=>x.action==='update').length,1,
+  'Rejected stale update must not add a personnel history event');
+ const userAudit=(await req('/api/audit',{token:leader})).data.items.filter(
+  x=>x.entity==='users'&&x.entity_id===personId
+ );
+ assert.equal(userAudit.filter(x=>x.action==='update').length,1);
+ assert.ok(userAudit.some(x=>x.action==='create'));
+ for(const entry of dossier.data.item.history){
+  assert.ok(entry.created_at);
+  for(const field of ['password_hash','token_hash','session_token'])
+   assert.equal(Object.hasOwn(entry,field),false,field);
+ }
+ assert.equal(Object.hasOwn(dossier.data.item.person,'password_hash'),false);
+ const signed=await req('/api/auth/login',{method:'POST',data:{username,password}});
+ assert.equal(signed.status,200);
+ const token=signed.cookie.match(/grizzly_session=([a-f0-9]+)/)[1];
+ const own=await req('/api/personnel-dossier?user='+personId,{token});
+ assert.equal(own.status,200);
+ assert.equal(own.data.item.can_manage,false);
+});
+
+test('v14.8 disciplinary lifecycle creates one audit event per accepted decision',async()=>{
+ const username='v148disciplinehistory';
+ const created=await req('/api/users',{method:'POST',token:leader,data:{
+  username,password:'v148-discipline-strong-password',
+  nickname:'Discipline audit target',role:'member',department_id:'fleet'
+ }});
+ assert.equal(created.status,201,JSON.stringify(created.data));
+ const subject=created.data.item.id;
+ const added=await req('/api/personnel-actions',{method:'POST',token:leader,data:{
+  user_id:subject,kind:'warning',details:'Documented disciplinary audit lifecycle'
+ }});
+ assert.equal(added.status,201,JSON.stringify(added.data));
+ const actionId=added.data.item.id;
+ const reason='Decision reviewed after internal investigation';
+ const resolved=await req('/api/personnel-actions/'+actionId,{method:'PATCH',token:leader,data:{
+  version:added.data.item.version,reason
+ }});
+ assert.equal(resolved.status,200,JSON.stringify(resolved.data));
+ const replay=await req('/api/personnel-actions/'+actionId,{method:'PATCH',token:leader,data:{
+  version:added.data.item.version,reason
+ }});
+ assert.equal(replay.status,409);
+ const dossier=await req('/api/personnel-dossier?user='+subject,{token:leader});
+ assert.equal(dossier.status,200);
+ const item=dossier.data.item.actions.find(x=>x.id===actionId);
+ assert.ok(item);
+ assert.equal(item.status,'Знято');
+ assert.equal(item.reason,reason);
+ const entries=(await req('/api/audit',{token:leader})).data.items.filter(
+  x=>x.entity==='personnel_actions'&&x.entity_id===actionId
+ );
+ assert.equal(entries.filter(x=>x.action==='create').length,1);
+ assert.equal(entries.filter(x=>x.action==='review').length,1);
+ assert.ok(entries.every(x=>x.actor_id));
+ assert.equal((await req('/api/audit')).status,401);
+});
+
+test('v14.8 department leadership audit records approved appointment and rejects stale changes',async()=>{
+ const deps=(await req('/api/departments',{token:leader})).data.items;
+ const dept=deps.find(x=>x.id==='farm')||deps[0];
+ assert.ok(dept);
+ const originalHead=dept.head_id||'';
+ const created=await req('/api/users',{method:'POST',token:leader,data:{
+  username:'v148audithead',password:'v148-audit-head-password',
+  nickname:'Audit Head',role:'head',department_id:dept.id
+ }});
+ assert.equal(created.status,201,JSON.stringify(created.data));
+ const appointed=await req('/api/departments/'+dept.id,{method:'PATCH',token:leader,data:{
+  title:dept.title,head_id:created.data.item.id,version:dept.version
+ }});
+ assert.equal(appointed.status,200,JSON.stringify(appointed.data));
+ const rejected=await req('/api/departments/'+dept.id,{method:'PATCH',token:leader,data:{
+  title:'Rejected stale department change',head_id:originalHead,version:dept.version
+ }});
+ assert.equal(rejected.status,409);
+ const beforeRestore=(await req('/api/audit',{token:leader})).data.items.filter(
+  x=>x.entity==='departments'&&x.entity_id===dept.id&&x.action==='update'&&
+   x.detail?.includes(created.data.item.id)
+ );
+ assert.equal(beforeRestore.length,1);
+ assert.ok(beforeRestore[0].actor_id);
+ const current=(await req('/api/departments',{token:leader})).data.items.find(x=>x.id===dept.id);
+ assert.equal(current.head_id,created.data.item.id);
+ assert.equal(current.title,dept.title);
+ const restored=await req('/api/departments/'+dept.id,{method:'PATCH',token:leader,data:{
+  title:dept.title,head_id:originalHead,version:current.version
+ }});
+ assert.equal(restored.status,200,JSON.stringify(restored.data));
+});
+
 // Run destructive session-revocation coverage last: other integration tests use this member's active session.
 test('blocking user revokes sessions and stops access',async()=>{const u=(await req('/api/users',{token:leader})).data.items.find(x=>x.id===memberId);const r=await req(`/api/users/${memberId}`,{method:'PATCH',token:leader,data:{...u,status:'blocked'}});assert.equal(r.status,200,JSON.stringify(r.data));assert.equal((await req('/api/auth/me',{token:member})).status,401);});
 
