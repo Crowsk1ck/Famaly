@@ -427,7 +427,7 @@ function sidebar(){
  let current='';
  const activeGroup=nav.find(n=>n.id===state.route)?.group;
  const collapsed=group=>group!==activeGroup&&Boolean(state.navCollapsed?.[group]??COMPACT_NAV_GROUPS.includes(group));
- return `<aside class="sidebar"><div class="sidebrand"><div class="brand"><span class="brand-mark">🐻</span>GRIZZLY</div><span class="sub">FAMILY CONTROL</span></div><nav class="side-scroll"><a class="sideitem" href="/?view=public#home"><span class="ni">↗</span> Публічний сайт</a>${nav.filter(visible).map(n=>{
+ return `<aside class="sidebar" id="gr-panel-navigation"><div class="sidebrand"><div class="brand"><span class="brand-mark">🐻</span>GRIZZLY</div><span class="sub">FAMILY CONTROL</span></div><nav class="side-scroll"><a class="sideitem" href="/?view=public#home"><span class="ni">↗</span> Публічний сайт</a>${nav.filter(visible).map(n=>{
   let group='';
   if(n.group!==current){
    current=n.group;
@@ -436,7 +436,7 @@ function sidebar(){
   return `${group}<a href="#${n.id}" class="sideitem ${state.route===n.id?'active':''} ${collapsed(n.group)?'gr-nav-hidden':''}" data-route="${n.id}"><span class="ni">${n.icon}</span>${esc(n.text)}</a>`;
  }).join('')}</nav><div class="side-bottom"><div class="row"><div class="avatar">${esc((state.user.nickname||state.user.username).slice(0,1).toUpperCase())}</div><div style="min-width:0"><strong class="small">${esc(state.user.nickname||state.user.username)}</strong><div class="muted small">${esc(roles[state.user.role])}</div></div></div><button class="btn ghost tiny sidebar-logout" data-action="logout">Вийти ↗</button></div></aside>`;
 }
-function shell(content){const unread=state.notifications.filter(x=>!x.read_at).length;$('#app').innerHTML=`<div class="shell ${state.menu?'menu-open':''}">${sidebar()}<div class="app-main"><header class="topbar"><div class="row"><button class="iconbtn mobile-menu" data-action="toggle-menu">☰</button><div><small>GRIZZLY / ${esc(roles[state.user.role])}</small><h2>${esc(nav.find(n=>n.id===state.route)?.text||'Огляд')}</h2></div></div><div class="row"><div class="notif-menu"><button class="iconbtn" data-action="notifications" aria-label="Сповіщення">♧${unread?'<span class="alert-dot"></span>':''}</button><div id="notif-pop" class="notif-pop hide"></div></div><button class="iconbtn" data-route="profile" title="Мій профіль">◌</button></div></header><div class="app-content">${content}</div></div></div>`;}
+function shell(content){const unread=state.notifications.filter(x=>!x.read_at).length;$('#app').innerHTML=`<div class="shell ${state.menu?'menu-open':''}">${sidebar()}<button type="button" class="gr-menu-scrim" data-action="close-menu" aria-label="Закрити меню"></button><div class="app-main"><header class="topbar"><div class="row"><button type="button" class="iconbtn mobile-menu" data-action="toggle-menu" aria-label="Відкрити меню" aria-expanded="false" aria-controls="gr-panel-navigation">☰</button><div><small>GRIZZLY / ${esc(roles[state.user.role])}</small><h2>${esc(nav.find(n=>n.id===state.route)?.text||'Огляд')}</h2></div></div><div class="row"><div class="notif-menu"><button class="iconbtn" data-action="notifications" aria-label="Сповіщення">♧${unread?'<span class="alert-dot"></span>':''}</button><div id="notif-pop" class="notif-pop hide"></div></div><button class="iconbtn" data-route="profile" title="Мій профіль">◌</button></div></header><div class="app-content">${content}</div></div></div>`;}
 function notifyPopup(){const el=$('#notif-pop');if(!el)return;el.classList.toggle('hide');el.innerHTML=`<div class="card-head"><h3>Сповіщення</h3><span class="pill">${state.notifications.filter(x=>!x.read_at).length} нових</span></div>${state.notifications.length?state.notifications.slice(0,12).map(n=>`<div class="notif-item"><div class="row space"><strong class="small">${esc(n.title)}</strong>${n.read_at?'':`<button class="btn tiny ghost" data-action="read-notification" data-id="${esc(n.id)}">✓</button>`}</div><div class="muted small">${esc(n.details)}</div><div class="muted small">${date(n.created_at)}</div></div>`).join(''):empty('Немає сповіщень','Нові події з’являться тут.')}`;}
 function table(headers,rows){return rows.length?`<div class="tablewrap"><table><thead><tr>${headers.map(s=>`<th>${esc(s)}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table></div>`:empty();}
 // Render large lists in bounded pages. The complete authorized dataset stays available
@@ -453,7 +453,7 @@ function pageControls(p,key){
  '<button type="button" class="btn tiny secondary" data-action="'+key+'" data-page="'+(p.page-1)+'"'+(p.page<=1?' disabled':'')+'>← Назад</button>'+
  '<button type="button" class="btn tiny secondary" data-action="'+key+'" data-page="'+(p.page+1)+'"'+(p.page>=p.pages?' disabled':'')+'>Далі →</button></nav>';
 }
-function searchBar(){return `<input id="search-input" class="input" aria-label="Пошук" placeholder="⌕  Пошук за назвою, ніком, ID…" value="${esc(state.search)}">`;}
+function searchBar(){return `<input id="search-input" type="search" class="input" aria-label="Пошук" placeholder="⌕  Пошук за назвою, ніком, ID…" autocomplete="off" value="${esc(state.search)}">`;}
 function filterControls(options=statuses){return `<div class="row wrap"><select class="select" style="width:auto" id="status-filter"><option value="">Усі статуси</option>${options.map(x=>`<option ${state.filter===x?'selected':''}>${x}</option>`).join('')}</select><select class="select" style="width:auto" id="sort-select"><option value="new" ${state.sort==='new'?'selected':''}>Спочатку нові</option><option value="old" ${state.sort==='old'?'selected':''}>Спочатку старі</option><option value="name" ${state.sort==='name'?'selected':''}>За назвою</option></select></div>`;}
 function applyFilters(items){return items.filter(x=>!state.filter||x.status===state.filter).sort((a,b)=>state.sort==='name'?String(a.title||a.nickname||'').localeCompare(String(b.title||b.nickname||''),'uk'):state.sort==='old'?String(a.created_at||'').localeCompare(String(b.created_at||'')):String(b.created_at||'').localeCompare(String(a.created_at||'')));}
 function exportButton(mod){return `<button class="btn tiny ghost" data-action="export" data-module="${esc(mod)}">↓ Експорт JSON</button>`;}
@@ -647,7 +647,7 @@ async function members(){
  const mobileCards=memberPage.items.map(u=>'<article class="card member-mobile-card"><div class="row space" style="align-items:start"><div><strong>'+esc(nameOf(u))+'</strong><div class="muted small">Учасник GRIZZLY</div></div>'+statusBadge(u)+'</div><div class="small mt">'+esc(roles[u.role]||u.role)+' · '+esc(rankName(u.rank_id))+'</div><div class="small muted mt">Напрямок: '+esc(departmentName(u.department_id))+'</div><div class="small muted">Ігровий ID: '+esc(u.game_id||'—')+'</div><div class="small muted">Активність: '+esc(u.joined_at?('Вступ: '+date(u.joined_at)):'У сім’ї')+'</div><div class="mt">'+editButton(u)+'</div></article>').join('');
  return intro('Склад сім’ї','Особовий склад, ігрові ранги, напрямки та доступи.',can('members:write')?'<button class="btn" data-action="new-user">＋ Додати учасника</button>':'')+
  '<div class="cards">'+summary.map(([title,value])=>'<div class="card stat"><div class="muted small">'+esc(title)+'</div><div class="number">'+value+'</div></div>').join('')+'</div>'+
- '<div class="toolbar mt">'+searchBar()+'<span class="muted small">Знайдено: '+list.length+'</span>'+(can('members:read')?exportButton('users'):'')+'</div>'+
+ '<div class="toolbar mt gr-member-searchbar">'+searchBar()+'<button type="button" class="btn tiny secondary" data-action="members-clear-search"'+(!state.search?' disabled':'')+'>Очистити пошук</button><span class="muted small">Знайдено: '+list.length+'</span>'+(can('members:read')?exportButton('users'):'')+'</div>'+
  '<div class="card mb"><div class="row wrap member-filters" style="gap:10px;align-items:end">'+select('members-role-filter','Роль',roleOptions,role)+select('members-status-filter','Статус',statusOptions,status)+select('members-department-filter','Напрямок',departmentOptions,department)+select('members-sort-filter','Сортування',sortOptions,sort)+'<button class="btn tiny secondary" data-action="members-reset" '+(!isFiltered?'disabled':'')+'>Скинути фільтри</button></div></div>'+
  (list.length?'<div class="member-desktop-table">'+table(['Учасник','Роль / ранг','Напрямок','Ігровий ID','Активність','Дії'],tableRows)+'</div><div class="member-mobile-list">'+mobileCards+'</div>'+pageControls(memberPage,'members-page'):empty('Учасників не знайдено','Спробуйте інші параметри пошуку або скиньте фільтри.'));
 }
@@ -1901,7 +1901,7 @@ function memberContextTabs(active){
   esc(item.text)+'</a>').join('')+'</nav>';
 }
 async function render(){state.menu=false;let content='';try{if(!state.user||(location.pathname!=='/'&&Object.values(grPublicPaths).includes(location.pathname)&&!location.hash.startsWith('#overview'))){renderPublic();return;}if(ROUTES_WITH_RENDER_PRELOAD.has(state.route))await preload();switch(state.route){case'overview':content=await overview();break;case'members':content=await members();break;case'ranks':content=await ranks();break;case'departments':content=await departments();break;case'workspace':content=await departmentWorkspace();break;case'leadership':content=await leadershipDashboard();break;case'activity':content=await activityPage();break;case'absences':content=await absencesPage();break;case'dossier':content=await dossierPage();break;case'inactivity':content=await inactivityPage();break;case'tasks':content=await renderModule('tasks');break;case'events':content=await renderModule('events');break;case'gallery':content=await galleryManager();break;case'public_news':content=await newsManager();break;case'public_team':content=await teamManager();break;case'public_achievements':content=await achievementsManager();break;case'public_calendar':content=await calendarManager();break;case'contracts':content=await contracts();break;case'capt':content=await captPage();break;case'fleet':content=await fleetPage();break;case'discipline':case'announcements':case'reports':content=await groupPage(state.route);break;case'finance':content=await finance();break;case'applications':content=await applications();break;case'stats':content=await stats();break;case'audit':content=await auditPage();break;case'settings':content=await settingsPage();break;case'profile':content=await profile();break;default:state.route='overview';content=await overview();}if(MEMBER_CONTEXT_ROUTES.includes(state.route))content=memberContextTabs(state.route)+content;shell(content);}catch(e){if(e.status===401){state.user=null;state.route='overview';renderPublic();toast('Сесію завершено. Увійдіть повторно.',true);return;}shell(intro('Помилка завантаження',e.message)+`<button class="btn mt" data-action="refresh">Повторити</button>`);toast(e.message,true);}}
-async function navigate(route){const url=new URL(location.href);if(url.searchParams.has('view')||url.pathname!=='/'){url.searchParams.delete('view');history.replaceState(history.state,'','/'+url.search+url.hash);}state.route=route;state.search='';state.sort='new';state.filter='';state.menu=false;location.hash=route;await render();}
+async function navigate(route){clearTimeout(memberSearchTimer);const url=new URL(location.href);if(url.searchParams.has('view')||url.pathname!=='/'){url.searchParams.delete('view');history.replaceState(history.state,'','/'+url.search+url.hash);}state.route=route;state.search='';state.sort='new';state.filter='';state.menu=false;location.hash=route;await render();}
 // Initial public data and session lookup are independent network requests.
 // Render will load the roster for roster-dependent pages; avoid fetching it twice.
 const ROUTES_WITH_RENDER_PRELOAD=new Set(['overview','members','ranks','departments','contracts','profile','workspace']);
@@ -2038,6 +2038,7 @@ document.addEventListener('change',async event=>{
  try{await render();}catch(err){toast(err.message,true);}
 });
 document.addEventListener('submit',handleSubmit);
+let memberSearchTimer=null;
 document.addEventListener('input',e=>{
  if(e.target.id==='dossier-person-search'){
   const select=document.getElementById('dossier-user-select'),count=document.getElementById('dossier-person-count');
@@ -2052,7 +2053,18 @@ document.addEventListener('input',e=>{
   if(count)count.textContent=allowed.length+' знайдено';
   return;
  }
- if(e.target.closest('#contract-correction-form')){const f=e.target.closest('form');f.dataset.previewAmount='';f.dataset.previewReason='';const btn=f.querySelector('[data-action="contract-correction-save"]');if(btn)btn.disabled=true;const box=f.querySelector('#contract-correction-preview');if(box)box.textContent='Дані змінено. Повторіть попередній розрахунок.';}if(e.target.name==='photo_url'&&e.target.closest('#gallery-form'))updateGalleryFormPreview();if(e.target.name==='photo_url'&&e.target.closest('#team-form'))updateTeamFormPreview();if(e.target.name==='photo_url'&&e.target.closest('#achievement-form'))updateAchievementPreview();if(e.target.id==='search-input'){state.membersPage=1;state.auditPage=1;state.search=e.target.value;const start=e.target.selectionStart;render().then(()=>{const v=$('#search-input');if(v){v.focus();try{v.setSelectionRange(start,start);}catch{}}});}});
+ if(e.target.closest('#contract-correction-form')){const f=e.target.closest('form');f.dataset.previewAmount='';f.dataset.previewReason='';const btn=f.querySelector('[data-action="contract-correction-save"]');if(btn)btn.disabled=true;const box=f.querySelector('#contract-correction-preview');if(box)box.textContent='Дані змінено. Повторіть попередній розрахунок.';}if(e.target.name==='photo_url'&&e.target.closest('#gallery-form'))updateGalleryFormPreview();if(e.target.name==='photo_url'&&e.target.closest('#team-form'))updateTeamFormPreview();if(e.target.name==='photo_url'&&e.target.closest('#achievement-form'))updateAchievementPreview();if(e.target.id==='search-input'){
+  state.membersPage=1;state.auditPage=1;state.search=e.target.value;
+  const route=state.route,start=e.target.selectionStart;
+  clearTimeout(memberSearchTimer);
+  memberSearchTimer=setTimeout(()=>{
+   if(state.route!==route)return;
+   render().then(()=>{
+    if(state.route!==route)return;
+    const v=$('#search-input');if(v){v.focus();try{v.setSelectionRange(start,start);}catch{}}
+   }).catch(err=>toast(err.message,true));
+  },220);
+ }});
 document.addEventListener('change',e=>{if(['dossier-kind-filter','dossier-status-filter','dossier-from-filter','dossier-to-filter'].includes(e.target.id)){
  const field={'dossier-kind-filter':'dossierKind','dossier-status-filter':'dossierStatus','dossier-from-filter':'dossierFrom','dossier-to-filter':'dossierTo'}[e.target.id];
  state[field]=e.target.value;void render();return;
@@ -2063,7 +2075,26 @@ document.addEventListener('change',e=>{if(['dossier-kind-filter','dossier-status
 document.addEventListener('click',async e=>{const back=e.target.closest('[data-backdrop]');if(back&&e.target===back){closeModal();return;}const t=e.target.closest('[data-action],[data-route]');if(!t)return;e.preventDefault();try{if(t.dataset.route){await navigate(t.dataset.route);return;}const act=t.dataset.action,id=t.dataset.id,mod=t.dataset.module;switch(act){
   case 'show-login':loginModal();break;
   case 'close-modal':closeModal();break;
-  case 'toggle-menu':$('.shell')?.classList.toggle('menu-open');break;
+  case 'toggle-menu':{
+    const shell=$('.shell'),button=shell?.querySelector('[data-action="toggle-menu"]');
+    const open=!!shell?.classList.toggle('menu-open');
+    button?.setAttribute('aria-expanded',String(open));
+    button?.setAttribute('aria-label',open?'Закрити меню':'Відкрити меню');
+    break;
+  }
+  case 'close-menu':{
+    $('.shell')?.classList.remove('menu-open');
+    const button=document.querySelector('[data-action="toggle-menu"]');
+    button?.setAttribute('aria-expanded','false');
+    button?.setAttribute('aria-label','Відкрити меню');
+    button?.focus();
+    break;
+  }
+  case 'members-clear-search':{
+    clearTimeout(memberSearchTimer);
+    state.search='';state.membersPage=1;
+    await render();$('#search-input')?.focus();break;
+  }
   case 'nav-group-toggle':{
     const group=t.dataset.group;
     if(!nav.filter(visible).some(n=>n.group===group))break;
@@ -2437,3 +2468,15 @@ window.addEventListener('hashchange',()=>{
   if(!state.user||new URL(location.href).searchParams.get('view')==='public')renderPublic();
 });
 initial();
+
+// Keep the small-screen drawer dismissible from the keyboard without changing routes.
+document.addEventListener('keydown',event=>{
+ if(event.key!=='Escape')return;
+ const shell=document.querySelector('.shell.menu-open');
+ if(!shell)return;
+ shell.classList.remove('menu-open');
+ const trigger=shell.querySelector('[data-action="toggle-menu"]');
+ trigger?.setAttribute('aria-expanded','false');
+ trigger?.setAttribute('aria-label','Відкрити меню');
+ trigger?.focus();
+});
