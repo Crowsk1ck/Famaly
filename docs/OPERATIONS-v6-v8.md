@@ -33,7 +33,7 @@
 - Canonical public URLs: `/`, `/about/`, `/news/`, `/achievements/`, `/gallery/`, `/calendar/`, `/join/`.
 - Historic `#about` and related links remain accepted in the JavaScript UI.
 - The Worker serves distinct HTML title, description, canonical and static crawlable introductory content for these routes.
-- Social preview graphic currently uses SVG; test Discord unfurling. If the platform rejects SVG, replace it with a PNG or JPEG and update `og:image`.
+- Social preview uses a static 1200×630 PNG (`/grizzly-social.png`). Test the actual Discord link unfurl after deployment; previews may be cached by Discord.
 
 ## Date convention
 - Record form dates are stored as timezone-naive wall time, interpreted by the interface as **Europe/Kyiv** for scheduled events/deadlines.
