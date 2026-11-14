@@ -502,6 +502,36 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
   m=path.match(/^\/api\/ranks\/(\d+)$/);if(m&&method==='PATCH'){
     if(user.role!=='leader')fail(403,'Лише лідер редагує ранги');const b=await body(req);if(!Number.isInteger(b.version))fail(428,'Потрібна версія');const checklist=Array.isArray(b.checklist)?b.checklist.map(x=>str(x,250)).filter(Boolean):[];if(checklist.length>30)fail(400,'Забагато умов');const r=await db.prepare('UPDATE ranks SET title=?,requirements=?,checklist=?,is_example=0,version=version+1,updated_at=? WHERE id=? AND version=?').bind(str(b.title,100),str(b.requirements,3000),JSON.stringify(checklist),now(),Number(m[1]),b.version).run();if(r.meta.changes!==1)fail(409,'Ранг змінився, оновіть список');await audit(db,user,'update','ranks',m[1]);return json({ok:true});
   }
+  m=path.match(/^\/api\/departments\/([\w-]+)\/finance-summary$/);
+  if(m&&method==='GET'){
+    const dept=await db.prepare('SELECT id,title FROM departments WHERE id=?').bind(m[1]).first();
+    if(!dept)fail(404,'Підрозділ не знайдено');
+    if(user.role!=='leader'&&user.role!=='deputy'&&!(user.role==='head'&&user.department_id===dept.id))
+      fail(403,'Фінансова статистика доступна лише керівнику свого підрозділу та керівництву сім’ї');
+    const contracts=await db.prepare(`SELECT COUNT(*) count,COALESCE(SUM(amount),0) total,
+      COALESCE(SUM(CASE WHEN settled_at IS NOT NULL THEN amount ELSE 0 END),0) settled_total,
+      COALESCE(SUM(CASE WHEN settled_at IS NULL THEN amount ELSE 0 END),0) pending_total,
+      SUM(CASE WHEN settled_at IS NOT NULL THEN 1 ELSE 0 END) settled_count
+      FROM contracts WHERE department_id=?`).bind(dept.id).first();
+    const treasury=await db.prepare(`SELECT COALESCE(SUM(l.amount),0) amount FROM ledger l
+      JOIN contracts c ON l.reference='contract:'||c.id
+      WHERE l.kind='treasury' AND c.department_id=?`).bind(dept.id).first();
+    const payout=await db.prepare(`SELECT COUNT(*) count,COALESCE(SUM(p.amount),0) amount,
+      COALESCE(SUM(CASE WHEN pc.confirmed_at IS NOT NULL THEN p.amount ELSE 0 END),0) handed_over
+      FROM payouts p JOIN contracts c ON c.id=p.contract_id
+      LEFT JOIN payout_confirmations pc ON pc.payout_id=p.id WHERE c.department_id=?`).bind(dept.id).first();
+    const capt=await db.prepare(`SELECT COUNT(*) count,
+      SUM(CASE WHEN status='Погоджено' OR status='Завершено' THEN 1 ELSE 0 END) approved
+      FROM records WHERE department_id=? AND deleted_at IS NULL
+      AND module IN ('capt_matches','capt_training','capt_attendance')`).bind(dept.id).first();
+    const num=x=>Number(x)||0;
+    return json({department_id:dept.id,department_title:dept.title,
+      contracts:{count:num(contracts.count),total:num(contracts.total),settled_total:num(contracts.settled_total),
+        pending_total:num(contracts.pending_total),settled_count:num(contracts.settled_count)},
+      treasury_contract_income:num(treasury.amount),
+      payouts:{count:num(payout.count),accrued:num(payout.amount),handed_over:num(payout.handed_over)},
+      capt:{records:num(capt.count),approved:num(capt.approved)}});
+  }
   if(path==='/api/departments'&&method==='GET')return json({items:await allRows(db,'SELECT * FROM departments ORDER BY rowid')});
   m=path.match(/^\/api\/departments\/([\w-]+)$/);if(m&&method==='PATCH'){
     if(user.role!=='leader')fail(403,'Лише лідер редагує напрямки');const b=await body(req);if(!Number.isInteger(b.version))fail(428,'Потрібна версія');const headId=str(b.head_id,80)||null;
@@ -705,7 +735,7 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
     const rows=await allRows(db,'SELECT * FROM contracts ORDER BY created_at DESC LIMIT 500');return json({items:rows.map(contractView)});
   }
   if(path==='/api/contracts'&&method==='POST'){
-    requirePerm(user,'finance:manage');const b=await body(req),ids=uniqueIds(b.participant_ids);await safeContractUsers(db,ids);const s=await settings(db),pct=percent(b.treasury_percent??s.treasury_percent),amount=money(b.amount),title=str(b.title,160);if(!title)fail(400,'Назва обов’язкова');const id=uuid(),t=now();await db.prepare('INSERT INTO contracts(id,title,details,amount,treasury_percent,participant_ids,status,evidence,owner_id,department_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)').bind(id,title,str(b.details,2500),amount,pct,JSON.stringify(ids),validStatus(b.status||'Заплановано'),JSON.stringify(evidence(b.evidence||[])),user.id,str(b.department_id,80)||null,t,t).run();await audit(db,user,'create','contracts',id);return json({item:contractView(await db.prepare('SELECT * FROM contracts WHERE id=?').bind(id).first())},201);
+    requirePerm(user,'finance:manage');const b=await body(req),ids=uniqueIds(b.participant_ids);await safeContractUsers(db,ids);const s=await settings(db),pct=percent(b.treasury_percent??s.treasury_percent),amount=money(b.amount),title=str(b.title,160);const departmentId=str(b.department_id,80)||null;if(departmentId&&!await db.prepare('SELECT id FROM departments WHERE id=?').bind(departmentId).first())fail(400,'Невідомий підрозділ');if(!title)fail(400,'Назва обов’язкова');const id=uuid(),t=now();await db.prepare('INSERT INTO contracts(id,title,details,amount,treasury_percent,participant_ids,status,evidence,owner_id,department_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)').bind(id,title,str(b.details,2500),amount,pct,JSON.stringify(ids),validStatus(b.status||'Заплановано'),JSON.stringify(evidence(b.evidence||[])),user.id,departmentId,t,t).run();await audit(db,user,'create','contracts',id);return json({item:contractView(await db.prepare('SELECT * FROM contracts WHERE id=?').bind(id).first())},201);
   }
   m=path.match(/^\/api\/contracts\/([\w-]+)(?:\/(preview|settle|correction-preview|correct))?$/);
   if(m){const c=await db.prepare('SELECT * FROM contracts WHERE id=?').bind(m[1]).first();if(!c)fail(404,'Контракт не знайдено');// All authenticated family members may inspect contract previews. Settlement and editing remain permission-gated.
