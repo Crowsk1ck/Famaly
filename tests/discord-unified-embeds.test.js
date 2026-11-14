@@ -7,7 +7,13 @@ test('all supported Discord categories share GRIZZLY branding and security setti
  for(const kind of kinds){
   const payload=buildDiscordNotification(kind,{event:'Важливе повідомлення'});
   assert.equal(payload.username,'GRIZZLY FAMILY');
-  assert.deepEqual(payload.allowed_mentions,{parse:[]});
+  if(kind==='test'){
+   assert.deepEqual(payload.allowed_mentions,{parse:[]});
+   assert.equal(payload.content,undefined);
+  }else{
+   assert.equal(payload.content,'<@&1563285390989987962>');
+   assert.deepEqual(payload.allowed_mentions,{parse:[],roles:['1563285390989987962']});
+  }
   assert.equal(payload.embeds.length,1);
   const embed=payload.embeds[0];
   assert.equal(embed.color,0xDC2626,kind);
@@ -35,10 +41,11 @@ test('long announcements stay inside Discord embed field limits',()=>{
 });
 test('user supplied mentions cannot notify users or roles',()=>{
  const p=buildDiscordNotification('announcements',{event:'@everyone <@123456789012345678>',message:'@here <@&123456789012345678>'});
- assert.deepEqual(p.allowed_mentions,{parse:[]});
+ assert.deepEqual(p.allowed_mentions,{parse:[],roles:['1563285390989987962']});
  const serialized=JSON.stringify(p);
  assert.ok(!serialized.includes('@everyone'));
  assert.ok(!serialized.includes('@here'));
- assert.ok(!serialized.includes('<@&'));
+ assert.equal((serialized.match(/<@&/g)||[]).length,1);
+ assert.ok(!serialized.includes('<@&123456789012345678>'));
  assert.ok(!serialized.includes('<@123'));
 });

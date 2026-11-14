@@ -403,6 +403,7 @@ async function recordDiscordDelivery(db,kind,error=null){
   }
 }
 const GRIZZLY_DISCORD_COLOR=0xDC2626;
+const GRIZZLY_DISCORD_PING_ROLE='1563285390989987962';
 const GRIZZLY_DISCORD_TITLES=Object.freeze({
  applications:'📝 Нова заявка',decisions:'📋 Рішення за заявкою',
  events:'📅 Календар заходів',capt:'🎯 CAPT',news:'📰 Новина сім’ї',
@@ -443,7 +444,9 @@ export function buildDiscordNotification(kind,info={}){
  add('📍 Місце',info.location,120,true);
  return {
   username:'GRIZZLY FAMILY',
-  allowed_mentions:{parse:[]},
+  // Role ping lives in message content: Discord does not notify for embed-only mentions.
+  // Suppress pings in test messages and allow only this explicitly selected role.
+  ...(kind==='test'?{allowed_mentions:{parse:[]}}:{content:`<@&${GRIZZLY_DISCORD_PING_ROLE}>`,allowed_mentions:{parse:[],roles:[GRIZZLY_DISCORD_PING_ROLE]}}),
   embeds:[{
    author:{name:'🐻 GRIZZLY FAMILY • ОФІЦІЙНЕ СПОВІЩЕННЯ'},
    title,
