@@ -972,5 +972,31 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
   }
   fail(404,'Маршрут не знайдено');
 }
+// Server-rendered public landing metadata and crawlable summary; private API content is never embedded.
+const PUBLIC_SEO={
+ '/about/':{title:'Історія та напрямки — GRIZZLY Family',description:'Історія сім’ї Grizzly, її принципи, керівництво та напрямки у GTA 5 Roleplay.',heading:'ІСТОРІЯ GRIZZLY',intro:'Сім’я Grizzly об’єднує гравців, для яких важливі повага, дисципліна й командна робота.'},
+ '/news/':{title:'Новини сім’ї — GRIZZLY Family',description:'Оголошення, новини та важливі події сім’ї GRIZZLY у GTA 5 RP.',heading:'НОВИНИ GRIZZLY',intro:'Офіційні новини та оголошення сім’ї. Актуальні записи з’являються після публікації.'},
+ '/achievements/':{title:'Досягнення — GRIZZLY Family',description:'Перемоги CAPT, нагороди та важливі досягнення GRIZZLY Family.',heading:'ДОСЯГНЕННЯ GRIZZLY',intro:'Здобутки сім’ї, результати спільних подій і підтверджені перемоги.'},
+ '/gallery/':{title:'Галерея — GRIZZLY Family',description:'Фотографії сім’ї GRIZZLY: CAPT, автомобілі, збори та події GTA 5 RP.',heading:'ГАЛЕРЕЯ GRIZZLY',intro:'Світлини та найкращі моменти спільного життя сім’ї GRIZZLY.'},
+ '/calendar/':{title:'Календар заходів — GRIZZLY Family',description:'Збори, тренування, CAPT та інші публічні заходи сім’ї GRIZZLY.',heading:'КАЛЕНДАР GRIZZLY',intro:'Публічний розклад зборів, тренувань та інших заходів сім’ї.'},
+ '/join/':{title:'Вступити до сім’ї — GRIZZLY Family',description:'Подайте заявку на вступ до GRIZZLY Family у GTA 5 Roleplay.',heading:'ВСТУП ДО GRIZZLY',intro:'Познайомтеся з правилами вступу й подайте заявку до сім’ї.'}
+};
+function seoSafe(v){return String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+async function publicHtml(req,env){
+ const url=new URL(req.url),page=PUBLIC_SEO[url.pathname];
+ if(!page||req.method!=='GET')return env.ASSETS.fetch(req);
+ const res=await env.ASSETS.fetch(new Request(new URL('/index.html',req.url),req));
+ if(!res.ok)return res;
+ let html=await res.text();
+ const canonical='https://grizzly-family.online'+url.pathname;
+ const swap=(key,value)=>{const re=new RegExp('(<meta (?:name|property)="'+key+'" content=")[^"]*(" />)');html=html.replace(re,(_,a,b)=>a+seoSafe(value)+b);};
+ html=html.replace(/<title>[^<]*<\/title>/,'<title>'+seoSafe(page.title)+'</title>')
+          .replace(/(<link rel="canonical" href=")[^"]*(" \/>)/,'$1'+canonical+'$2');
+ swap('description',page.description);swap('og:title',page.title);swap('og:description',page.description);swap('og:url',canonical);
+ html=html.replace(/<div id="app">[\s\S]*?<\/div><\/div>/,
+  '<div id="app"><main class="gr-prerender"><h1>'+seoSafe(page.heading)+'</h1><p>'+seoSafe(page.intro)+'</p><a href="/">GRIZZLY Family — Головна</a></main></div>');
+ const headers=new Headers(res.headers);headers.delete('content-length');headers.set('Content-Type','text/html; charset=utf-8');
+ return new Response(html,{status:res.status,headers});
+}
 const SECURITY_HEADERS={'X-Content-Type-Options':'nosniff','Referrer-Policy':'strict-origin-when-cross-origin','X-Frame-Options':'DENY','Permissions-Policy':'camera=(), microphone=(), geolocation=()'};
-export default {async fetch(req,env,ctx){try{if(!new URL(req.url).pathname.startsWith('/api/'))return env.ASSETS.fetch(req);const res=await handleApi(req,env,ctx);const h=new Headers(res.headers);Object.entries(SECURITY_HEADERS).forEach(([k,v])=>h.set(k,v));return new Response(res.body,{status:res.status,headers:h});}catch(err){const code=err instanceof HttpError?err.status:500;if(code===500)console.error('Grizzly API error',err);return json({error:code===500?'Внутрішня помилка сервера':err.message},code,SECURITY_HEADERS);}}};
+export default {async fetch(req,env,ctx){try{if(!new URL(req.url).pathname.startsWith('/api/'))return publicHtml(req,env);const res=await handleApi(req,env,ctx);const h=new Headers(res.headers);Object.entries(SECURITY_HEADERS).forEach(([k,v])=>h.set(k,v));return new Response(res.body,{status:res.status,headers:h});}catch(err){const code=err instanceof HttpError?err.status:500;if(code===500)console.error('Grizzly API error',err);return json({error:code===500?'Внутрішня помилка сервера':err.message},code,SECURITY_HEADERS);}}};
