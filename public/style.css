@@ -976,3 +976,9 @@
 .gr-activity-table h3{font-size:1rem;margin-bottom:16px}
 .gr-activity-table+.gr-activity-table{margin-top:14px}
 @media(max-width:640px){.gr-v10-toolbar{gap:10px}.gr-v10-toolbar select{max-width:100%}.gr-v10-profile{padding:14px}}
+
+/* v12 compact navigation: keyboard-accessible expandable groups. */
+.gr-nav-group-toggle{display:flex;width:100%;align-items:center;justify-content:space-between;background:transparent;border:0;cursor:pointer;text-align:left;font:inherit}
+.gr-nav-group-toggle:hover{color:#F5C5C5}
+.gr-nav-group-toggle:focus-visible{outline:2px solid var(--red);outline-offset:2px;border-radius:7px}
+.sideitem.gr-nav-hidden{display:none}
