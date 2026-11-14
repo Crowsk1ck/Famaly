@@ -547,7 +547,8 @@ export async function sendDiscordWebhook(env,kind,info,targetKind=kind){
       throw new Error('Немає з’єднання з Discord');
     }
     if(response.status!==429||attempt>0)break;
-    const seconds=Number(response.headers.get('Retry-After'));
+    const retryAfter=response.headers.get('Retry-After');
+    const seconds=retryAfter===null?NaN:Number(retryAfter);
     // Respect short retry windows only. Long delays require a durable outbox (future release).
     if(!Number.isFinite(seconds)||seconds<0||seconds>2)break;
     await new Promise(resolve=>setTimeout(resolve,Math.ceil(seconds*1000)));
