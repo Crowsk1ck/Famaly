@@ -60,7 +60,7 @@ function validApplicationStatus(value){
   return value;
 }
 function applicationView(record){return {...record,status:applicationStatus(record.status)};}
-function dateInput(v){const s=str(v,40);if(!s)return '';if(!/^\d{4}-\d\d-\d\d(?:T\d\d:\d\d(?::\d\d)?)?$/.test(s))fail(400,'Невірний формат дати');const [year,month,day,hour='0',minute='0',second='0']=s.split(/[-T:]/).map(Number);const t=new Date(Date.UTC(year,month-1,day,hour,minute,second));if(t.getUTCFullYear()!==year||t.getUTCMonth()!==month-1||t.getUTCDate()!==day||t.getUTCHours()!==hour||t.getUTCMinutes()!==minute||t.getUTCSeconds()!==second)fail(400,'Некоректна календарна дата');return s;}
+function dateInput(v){const s=str(v,40);if(!s)return '';if(!/^\d{4}-\d\d-\d\d(?:T\d\d:\d\d(?::\d\d)?)?$/.test(s))fail(400,'Невірний формат дати');const [year,month,day,hour=0,minute=0,second=0]=s.split(/[-T:]/).map(Number);const t=new Date(Date.UTC(year,month-1,day,hour,minute,second));if(t.getUTCFullYear()!==year||t.getUTCMonth()!==month-1||t.getUTCDate()!==day||t.getUTCHours()!==hour||t.getUTCMinutes()!==minute||t.getUTCSeconds()!==second)fail(400,'Некоректна календарна дата');return s;}
 function tokenValue(){const b=new Uint8Array(32);crypto.getRandomValues(b);return [...b].map(x=>x.toString(16).padStart(2,'0')).join('');}
 async function sha256(s){const d=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s));return [...new Uint8Array(d)].map(x=>x.toString(16).padStart(2,'0')).join('');}
 function fromHex(s){return new Uint8Array(s.match(/.{2}/g)?.map(v=>parseInt(v,16))||[]);}
