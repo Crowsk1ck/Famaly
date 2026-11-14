@@ -18,30 +18,30 @@ const statuses=['Заплановано','У роботі','На перевір�
 const applicationStatuses=['Очікує','Прийнято','Відхилено'];
 const permissionNames={'members:read':'Перегляд складу','members:write':'Керування складом','tasks:manage':'Завдання','reports:review':'Перевірка звітів','promotions:review':'Підвищення','events:manage':'Заходи','capt:manage':'CAPT','fleet:manage':'Автопарк','recruitment:manage':'Рекрутинг','notices:manage':'Оголошення','content:manage':'Публічний контент','finance:read':'Перегляд фінансів','finance:manage':'Нарахування й фінанси','discipline:manage':'Дисципліна','stats:read':'Статистика'};
 const nav=[
-  {id:'overview',text:'Огляд',icon:'◫',group:'РОБОТА'},
-  {id:'members',text:'Склад сім’ї',icon:'♟',group:'РОБОТА'},
-  {id:'ranks',text:'Ранги та підвищення',icon:'⬡',group:'РОБОТА'},
-  {id:'departments',text:'Напрямки',icon:'▦',group:'РОБОТА'},
-  {id:'workspace',text:'Управління підрозділом',icon:'▤',group:'РОБОТА'},
-  {id:'leadership',text:'Контроль керівників',icon:'▥',group:'РОБОТА'},
-  {id:'activity',text:'Активність 7/30 днів',icon:'◷',group:'РОБОТА'},
-  {id:'absences',text:'Відпустки та неактив',icon:'☷',group:'РОБОТА'},
-  {id:'dossier',text:'Особові справи',icon:'▤',group:'РОБОТА'},
-  {id:'inactivity',text:'Контроль неактиву',icon:'◴',group:'РОБОТА'},
-  {id:'contracts',text:'Контракти',icon:'▤',group:'ОПЕРАЦІЇ'},
+  {id:'overview',text:'Огляд',icon:'◫',group:'ГОЛОВНЕ'},
+  {id:'members',text:'Учасники',icon:'♟',group:'ГОЛОВНЕ'},
+  {id:'dossier',text:'Особові справи',icon:'▤',group:'ГОЛОВНЕ'},
+  {id:'activity',text:'Активність 7/30 днів',icon:'◷',group:'ГОЛОВНЕ'},
+  {id:'inactivity',text:'Контроль неактиву',icon:'◴',group:'ГОЛОВНЕ'},
+  {id:'departments',text:'Підрозділи',icon:'▦',group:'ПІДРОЗДІЛИ'},
+  {id:'workspace',text:'Робочий простір',icon:'▤',group:'ПІДРОЗДІЛИ'},
+  {id:'leadership',text:'Контроль керівників',icon:'▥',group:'ПІДРОЗДІЛИ'},
   {id:'capt',text:'CAPT',icon:'◎',group:'ОПЕРАЦІЇ'},
-  {id:'finance',text:'Фінанси',icon:'₴',group:'ОПЕРАЦІЇ'},
+  {id:'contracts',text:'Контракти',icon:'▤',group:'ОПЕРАЦІЇ'},
   {id:'fleet',text:'Автопарк',icon:'▣',group:'ОПЕРАЦІЇ'},
   {id:'events',text:'Заходи',icon:'◈',group:'ОПЕРАЦІЇ'},
-  {id:'applications',text:'Заявки на вступ',icon:'✉',group:'АДМІНІСТРУВАННЯ'},
-  {id:'reports',text:'Звіти та підвищення',icon:'☷',group:'АДМІНІСТРУВАННЯ'},
-  {id:'discipline',text:'Дисципліна',icon:'⚑',group:'АДМІНІСТРУВАННЯ'},
-  {id:'announcements',text:'Оголошення',icon:'◉',group:'АДМІНІСТРУВАННЯ'},
-  {id:'gallery',text:'Галерея',icon:'▧',group:'АДМІНІСТРУВАННЯ'},
-  {id:'public_news',text:'Новини сайту',icon:'✦',group:'АДМІНІСТРУВАННЯ'},
-  {id:'public_team',text:'Керівництво сайту',icon:'♛',group:'АДМІНІСТРУВАННЯ'},
-  {id:'public_achievements',text:'Досягнення сайту',icon:'★',group:'АДМІНІСТРУВАННЯ'},
-  {id:'public_calendar',text:'Календар сайту',icon:'▣',group:'АДМІНІСТРУВАННЯ'},
+  {id:'reports',text:'Звіти',icon:'☷',group:'ОПЕРАЦІЇ'},
+  {id:'ranks',text:'Ранги та кар’єра',icon:'⬡',group:'КЕРІВНИЦТВО'},
+  {id:'absences',text:'Відпустки та неактив',icon:'☷',group:'КЕРІВНИЦТВО'},
+  {id:'applications',text:'Рекрутинг',icon:'✉',group:'КЕРІВНИЦТВО'},
+  {id:'discipline',text:'Дисципліна',icon:'⚑',group:'КЕРІВНИЦТВО'},
+  {id:'announcements',text:'Оголошення',icon:'◉',group:'КЕРІВНИЦТВО'},
+  {id:'finance',text:'Фінанси',icon:'₴',group:'КЕРІВНИЦТВО'},
+  {id:'gallery',text:'Галерея',icon:'▧',group:'ПУБЛІЧНИЙ САЙТ'},
+  {id:'public_news',text:'Новини сайту',icon:'✦',group:'ПУБЛІЧНИЙ САЙТ'},
+  {id:'public_team',text:'Керівництво сайту',icon:'♛',group:'ПУБЛІЧНИЙ САЙТ'},
+  {id:'public_achievements',text:'Досягнення сайту',icon:'★',group:'ПУБЛІЧНИЙ САЙТ'},
+  {id:'public_calendar',text:'Календар сайту',icon:'▣',group:'ПУБЛІЧНИЙ САЙТ'},
   {id:'stats',text:'Статистика',icon:'▥',group:'СИСТЕМА'},
   {id:'audit',text:'Журнал змін',icon:'≡',group:'СИСТЕМА'},
   {id:'settings',text:'Налаштування',icon:'⚙',group:'СИСТЕМА'},
@@ -523,12 +523,23 @@ async function overview(){
  const activityLeaders=(activityData?.leaderboard_week||[]).slice(0,5);
  const activityOverview=activityData?'<div class="card overview-activity"><div class="card-head"><h3>Активність учасників · 7 днів</h3><button class="btn tiny secondary" data-route="stats">Уся статистика ↗</button></div>'+
  (activityLeaders.length?'<div class="overview-activity-list">'+activityLeaders.map((r,i)=>'<div class="row space"><span><strong>'+esc(String(i+1)+'. '+userName(r.user_id))+'</strong><span class="muted small"> · '+fmt(r.completed)+' дій</span></span><strong class="mono">'+fmt(r.points)+' балів</strong></div>').join('')+'</div>':empty('Немає завершених активностей','Рейтинг формується на підставі погоджених і завершених записів.'))+'</div>':'';
+ const needsAttention=[
+   ...(overdueTasks.length?[{route:'tasks',title:'Прострочені завдання',count:overdueTasks.length}]:[]),
+   ...(reviewReports.length?[{route:'reports',title:manager?'Звіти очікують перевірки':'Мої звіти очікують рішення',count:reviewReports.length}]:[]),
+   ...(leader&&unassignedMembers?[{route:'members',title:'Учасники без підрозділу',count:unassignedMembers}]:[])
+ ];
+ const attentionPanel='<div class="card gr-overview-attention"><div class="card-head"><h3>Потребує уваги</h3></div>'+
+  (needsAttention.length?'<div class="stack">'+needsAttention.map(x=>
+   '<div class="row space wrap"><span>'+esc(x.title)+' · <strong>'+fmt(x.count)+'</strong></span>'+
+   '<button class="btn tiny secondary" data-route="'+x.route+'">Переглянути ↗</button></div>').join('')+'</div>':
+   '<p class="muted small">Термінових завдань і рішень немає.</p>')+'</div>';
  const notices=(state.notifications||[]).filter(x=>!x.read_at).slice(0,4);
  const notifySection=notices.length?'<div class="card mt"><div class="card-head"><h3>Нові сповіщення</h3></div><div class="stack">'+notices.map(n=>'<div class="row space"><div><strong>'+esc(n.title)+'</strong><div class="muted small">'+esc((n.details||'').slice(0,150))+'</div></div><span class="muted small">'+date(n.created_at)+'</span></div>').join('')+'</div></div>':'';
  return intro('Огляд GRIZZLY','Головна панель сім’ї · актуальні показники та швидкий доступ до роботи',
   '<button class="btn secondary" data-action="refresh">↻ Оновити</button>')+
  '<div class="stack gr-overview-v4 gr-overview-design-v5"><div class="dashboard-welcome"><div><div class="overline">GRIZZLY / FAMILY OPERATIONS</div><h2>Вітаємо, '+esc(user.nickname||user.username||'учаснику')+'! 🐻</h2><p>'+(ownDepartment?'Твій підрозділ: '+esc(ownDepartment.title)+' · ':'')+'Слідкуй за завданнями, подіями та роботою сім’ї.</p></div><span class="bear">🐻</span></div>'+
  (manager?'<div class="card gr-workspace-entry"><div><div class="overline">GRIZZLY / УПРАВЛІННЯ</div><h3>'+(user.role==='head'?'Мій робочий простір керівника':'Робочі простори керівників')+'</h3><p class="small muted">Особовий склад, завдання, звіти, контракти й інші розділи за підрозділами.</p></div><button class="btn" data-route="workspace">Відкрити підрозділ ↗</button></div>':'')+
+ attentionPanel+
  '<div class="cards">'+
  metric('Учасників сім’ї',fmt(state.roster.filter(u=>u.status==='active').length),'Активні акаунти')+
  metric('Мої активні завдання',fmt(myTasks.length),overdueTasks.length?'Прострочено: '+overdueTasks.length:'Потребують виконання')+
