@@ -436,11 +436,13 @@ function formatDateField(v){return (v||'').slice(0,16);}
 async function overview(){
  const mayViewFinance=can('finance:read')||can('finance:manage');
  const trendPeriod=state.overviewTrendPeriod==='30'?'30':'7';
- const [finance,taskData,reportData,eventData,contractData,trendData,auditData,activityData]=await Promise.all([
+ const [finance,taskData,reportData,eventData,contractData,trendData,auditData,activityData,discordStatus,discordLogs]=await Promise.all([
   api('/finance'),api('/records/tasks'),api('/records/reports'),api('/records/events'),api('/contracts'),
   mayViewFinance?api('/finance/trends?period='+trendPeriod):Promise.resolve(null),
   state.user?.role==='leader'?api('/audit'):Promise.resolve(null),
-  can('stats:read')?api('/stats'):Promise.resolve(null)
+  can('stats:read')?api('/stats'):Promise.resolve(null),
+  state.user?.role==='leader'?api('/discord/status').catch(()=>null):Promise.resolve(null),
+  state.user?.role==='leader'?api('/discord/deliveries').catch(()=>null):Promise.resolve(null)
  ]);
  const user=state.user||{},leader=user.role==='leader',manager=leader||user.role==='deputy'||user.role==='head';
  const tasks=taskData.items||[],reports=reportData.items||[],events=eventData.items||[],contracts=contractData.items||[];
@@ -520,6 +522,17 @@ async function overview(){
   esc(x.action||'Дія')+'<div class="muted small">'+esc(x.entity||'')+' · '+esc(String(x.detail||'').slice(0,110))+'</div></div>'+
   '<span class="muted small">'+esc(String(x.created_at||'').replace('T',' ').slice(0,16))+'</span></div>').join(''):
   '<p class="muted small">У журналі ще немає подій.</p>')+'</div>':'';
+ const discordRoutes=discordStatus?.routes||{};
+ const discordMissing=Object.entries(discordRoutes).filter(([,r])=>!r.configured).map(([key])=>key);
+ const discordErrors=(discordLogs?.items||[]).filter(x=>x.status==='failed').slice(0,5);
+ const discordOverview=leader?'<div class="card gr-overview-discord"><div class="card-head"><h3>Discord · стан сповіщень</h3>'+
+  '<button class="btn tiny secondary" data-route="settings">Налаштування ↗</button></div>'+
+  (!discordStatus?'<p class="muted small">Не вдалося перевірити стан Discord. Переглянь налаштування.</p>':
+   '<p class="small">'+(discordMissing.length?'Канали без підключення: <strong>'+fmt(discordMissing.length)+'</strong>':'Усі налаштовані маршрути підключені')+'</p>'+
+   (discordMissing.length?'<p class="muted small">Перевір: '+esc(discordMissing.join(', '))+'</p>':'')+
+   '<p class="muted small">Останні невдалі доставки (із 100 записів): <strong>'+fmt(discordErrors.length)+'</strong></p>'+
+   (discordErrors.length?discordErrors.map(x=>'<div class="row space"><span>'+esc(x.kind)+'</span><span class="muted small">'+esc(x.http_status?'HTTP '+x.http_status:x.error_code||'Помилка')+'</span></div>').join(''):''))+
+   '</div>':'';
  const activityLeaders=(activityData?.leaderboard_week||[]).slice(0,5);
  const activityOverview=activityData?'<div class="card overview-activity"><div class="card-head"><h3>Активність учасників · 7 днів</h3><button class="btn tiny secondary" data-route="stats">Уся статистика ↗</button></div>'+
  (activityLeaders.length?'<div class="overview-activity-list">'+activityLeaders.map((r,i)=>'<div class="row space"><span><strong>'+esc(String(i+1)+'. '+userName(r.user_id))+'</strong><span class="muted small"> · '+fmt(r.completed)+' дій</span></span><strong class="mono">'+fmt(r.points)+' балів</strong></div>').join('')+'</div>':empty('Немає завершених активностей','Рейтинг формується на підставі погоджених і завершених записів.'))+'</div>':'';
@@ -574,6 +587,7 @@ async function overview(){
  overviewDetails+
  financeOverview+
  activityOverview+
+ discordOverview+
  auditOverview+
  (leader?'<div class="card"><div class="card-head"><h3>Контракти за підрозділами</h3></div><div class="grid3 mt">'+departmentSummary+'</div></div>':'')+
  (leader?'<div class="card"><div class="card-head"><h3>Стан підрозділів</h3><button class="btn tiny secondary" data-route="departments">Керувати ↗</button></div><div class="grid3 mt">'+departmentCards+'</div></div>':'')+
