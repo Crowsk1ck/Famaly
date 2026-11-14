@@ -8,7 +8,7 @@ import worker,{payoutPreview,hashPassword,verifyPassword,validDiscordWebhookUrl,
 
 const dir=mkdtempSync(join(tmpdir(),'grizzly-test-'));
 const file=join(dir,'local.sqlite');
-const schema=['0001_init.sql','0002_capt_signups.sql','0003_discord_notifications.sql','0004_discord_capt_news.sql','0005_discord_announcements.sql','0006_application_statuses.sql','0007_payout_confirmations.sql'].map(file=>readFileSync(resolve('migrations',file),'utf8')).join('\n');
+const schema=['0001_init.sql','0002_capt_signups.sql','0003_discord_notifications.sql','0004_discord_capt_news.sql','0005_discord_announcements.sql','0006_application_statuses.sql','0007_payout_confirmations.sql','0008_discord_outbox.sql'].map(file=>readFileSync(resolve('migrations',file),'utf8')).join('\n');
 const child=spawn('python',['-u',resolve('tests/db_adapter.py')]);let pending=[],buf='';child.stdout.on('data',d=>{buf+=d.toString();let idx;while((idx=buf.indexOf('\n'))>=0){const line=buf.slice(0,idx);buf=buf.slice(idx+1);const {resolve:res,reject:rej}=pending.shift();const obj=JSON.parse(line);if(obj.error)rej(new Error(obj.error));else res(obj);}});
 function python(payload){return new Promise((res,rej)=>{pending.push({resolve:res,reject:rej});child.stdin.write(JSON.stringify({file,...payload})+'\n');});}
 await python({init:schema});
@@ -1818,6 +1818,30 @@ test('v13 matrix: guest/member/head/deputy/leader respect dossier and Discord bo
  }
  assert.equal((await req('/api/discord/status',{token:deputy.token})).status,403);
  assert.equal((await req('/api/discord/status',{token:leader})).status,200);
+});
+test('v13.1 leader sees only outbox metadata, with route/status filters',async()=>{
+ const previous=env.DISCORD_OUTBOX_ENABLED;
+ try{
+  env.DISCORD_OUTBOX_ENABLED='true';
+  const t=new Date().toISOString(),id=crypto.randomUUID();
+  await DB1.prepare("INSERT INTO discord_outbox(id,kind,route,payload,status,available_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)")
+   .bind(id,'announcements','announcements',JSON.stringify({message:'PRIVATE_OUTBOX_TEXT_MUST_NOT_LEAK'}),
+    'uncertain',t,t,t).run();
+  assert.equal((await req('/api/discord/outbox',{token:member})).status,403);
+  assert.equal((await req('/api/discord/outbox')).status,401);
+  const response=await req('/api/discord/outbox?status=uncertain&route=announcements',{token:leader});
+  assert.equal(response.status,200,JSON.stringify(response.data));
+  assert.equal(response.data.enabled,true);
+  const item=response.data.items.find(x=>x.id===id);
+  assert.ok(item);
+  assert.equal(item.status,'uncertain');
+  assert.equal(item.route,'announcements');
+  assert.equal(response.data.counts.uncertain>=1,true);
+  assert.ok(!JSON.stringify(response.data).includes('PRIVATE_OUTBOX_TEXT_MUST_NOT_LEAK'));
+  assert.ok(!Object.hasOwn(item,'payload'));
+  assert.equal((await req('/api/discord/outbox?status=unknown',{token:leader})).status,400);
+  assert.equal((await req('/api/discord/outbox?route=unknown',{token:leader})).status,400);
+ }finally{if(previous===undefined)delete env.DISCORD_OUTBOX_ENABLED;else env.DISCORD_OUTBOX_ENABLED=previous;}
 });
 // Run destructive session-revocation coverage last: other integration tests use this member's active session.
 test('blocking user revokes sessions and stops access',async()=>{const u=(await req('/api/users',{token:leader})).data.items.find(x=>x.id===memberId);const r=await req(`/api/users/${memberId}`,{method:'PATCH',token:leader,data:{...u,status:'blocked'}});assert.equal(r.status,200,JSON.stringify(r.data));assert.equal((await req('/api/auth/me',{token:member})).status,401);});
