@@ -1488,5 +1488,39 @@ test('department head permissions follow specialty and require appointment',asyn
   assert.equal(after.data.user.head_appointed,false);
   assert.ok(!after.data.user.permissions.includes('recruitment:manage'));
 });
+test('weekly department goals are versioned, leader-only and derived from scoped records',async()=>{
+  const first=await req('/api/department-workspace?department=farm',{token:leader});
+  assert.equal(first.status,200,JSON.stringify(first.data));
+  assert.equal(first.data.weekly.period_days,7);
+  assert.equal(first.data.weekly.can_edit,true);
+  const metrics=first.data.weekly.metrics;
+  assert.deepEqual(metrics.map(m=>m.id),['tasks_done','reports_approved','contracts_settled']);
+  assert.ok(metrics.every(m=>Number.isInteger(m.actual)&&m.actual>=0));
+  const goals=Object.fromEntries(metrics.map((m,i)=>[m.id,i===0?4:0]));
+  assert.equal((await req('/api/department-goals/farm',{token:member,method:'PATCH',
+    data:{targets:goals,version:first.data.weekly.version}})).status,403);
+  assert.equal((await req('/api/department-goals/farm',{token:leader,method:'PATCH',
+    data:{targets:{tasks_done:9},version:first.data.weekly.version}})).status,400);
+  assert.equal((await req('/api/department-goals/farm',{token:leader,method:'PATCH',
+    data:{targets:{...goals,tasks_done:-1},version:first.data.weekly.version}})).status,400);
+  const updated=await req('/api/department-goals/farm',{token:leader,method:'PATCH',
+    data:{targets:goals,version:first.data.weekly.version}});
+  assert.equal(updated.status,200,JSON.stringify(updated.data));
+  assert.equal(updated.data.targets.tasks_done,4);
+  assert.equal((await req('/api/department-goals/farm',{token:leader,method:'PATCH',
+    data:{targets:goals,version:first.data.weekly.version}})).status,409,'Outdated version must conflict');
+  const after=await req('/api/department-workspace?department=farm',{token:leader});
+  assert.equal(after.status,200);
+  assert.equal(after.data.weekly.version,updated.data.version);
+  assert.equal(after.data.weekly.metrics.find(x=>x.id==='tasks_done').target,4);
+  const task=await req('/api/records/tasks',{token:leader,method:'POST',
+    data:{title:'Тижневе завдання для KPI',status:'Завершено',department_id:'farm'}});
+  assert.equal(task.status,201,JSON.stringify(task.data));
+  const counted=await req('/api/department-workspace?department=farm',{token:leader});
+  assert.ok(counted.data.weekly.metrics.find(x=>x.id==='tasks_done').actual>=
+    after.data.weekly.metrics.find(x=>x.id==='tasks_done').actual+1);
+  assert.equal((await req('/api/department-goals/no-such-department',{token:leader,method:'PATCH',
+    data:{version:0,targets:{tasks_done:1}}})).status,404);
+});
 // Run destructive session-revocation coverage last: other integration tests use this member's active session.
 test('blocking user revokes sessions and stops access',async()=>{const u=(await req('/api/users',{token:leader})).data.items.find(x=>x.id===memberId);const r=await req(`/api/users/${memberId}`,{method:'PATCH',token:leader,data:{...u,status:'blocked'}});assert.equal(r.status,200,JSON.stringify(r.data));assert.equal((await req('/api/auth/me',{token:member})).status,401);});
