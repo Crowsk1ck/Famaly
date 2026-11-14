@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import {discordMentionRole,buildDiscordNotification} from '../worker/index.js';
 
 const app=readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
-const nav=app.slice(app.indexOf('const nav=['),app.indexOf('const moduleInfo=',app.indexOf('const nav=[')));
+const nav=app.slice(app.indexOf('const nav=['),app.indexOf('];',app.indexOf('const nav=['))+2);
 const overview=app.slice(app.indexOf('async function overview()'),app.indexOf('function memberStatusLabel',app.indexOf('async function overview()')));
 
 test('v12 navigation preserves all existing module routes, reordered into practical groups',()=>{
