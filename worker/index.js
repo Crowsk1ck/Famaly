@@ -5,9 +5,17 @@ const ROLES = ['leader','deputy','head','member'];
 const DEFAULT_PERMISSIONS = {
   leader: ['*'],
   deputy: ['members:read','members:write','tasks:manage','reports:review','promotions:review','events:manage','capt:manage','fleet:manage','recruitment:manage','notices:manage','content:manage','finance:read','stats:read'],
-  head: ['members:read','tasks:manage','reports:review','promotions:review','events:manage','capt:manage','stats:read'],
+  head: ['members:read','tasks:manage','reports:review','promotions:review','stats:read'],
   member: []
 };
+const HEAD_DEPARTMENT_PERMISSIONS = Object.freeze({
+  capt:['capt:manage'],
+  farm:[],
+  fleet:['fleet:manage'],
+  discipline:['discipline:manage'],
+  recruitment:['recruitment:manage'],
+  events:['events:manage','notices:manage']
+});
 const MODULES = {
   tasks: {manage:'tasks:manage', memberRead:true, memberUpdate:true},
   reports: {manage:'reports:review', memberRead:true, memberCreate:true, review:true},
@@ -32,6 +40,17 @@ const MODULES = {
   bonuses: {manage:'finance:manage', restricted:true},
   capt_payments: {manage:'finance:manage', restricted:true}
 };
+// Department workspaces reuse existing records and privileges; no parallel ledger or D1 tables.
+const DEPARTMENT_WORKSPACE_MODULES = [
+ ['tasks','Завдання','Робота'],['reports','Звіти','Робота'],['promotions','Підвищення','Робота'],
+ ['events','Заходи','Робота'],['capt_matches','CAPT — бої','CAPT'],['capt_training','CAPT — тренування','CAPT'],
+ ['capt_attendance','CAPT — участь','CAPT'],['vehicles','Автопарк','Ресурси'],
+ ['vehicle_loans','Видача транспорту','Ресурси'],['discipline','Дисципліна','Адміністрування'],
+ ['blacklist','Чорний список','Адміністрування'],['notices','Оголошення','Адміністрування'],
+ ['templates','Шаблони','Адміністрування'],['gallery','Галерея','Контент'],
+ ['public_news','Новини сайту','Контент'],['public_team','Керівництво сайту','Контент'],
+ ['public_achievements','Досягнення сайту','Контент'],['public_calendar','Календар сайту','Контент']
+];
 const PUBLIC_SETTINGS = ['family_name','tagline','history','discord_url','rules','requirements'];
 const ALL_SETTINGS = [...PUBLIC_SETTINGS,'treasury_percent','capt_afk_rate','capt_battle_rate'];
 
@@ -67,13 +86,13 @@ function fromHex(s){return new Uint8Array(s.match(/.{2}/g)?.map(v=>parseInt(v,16
 function toHex(b){return [...b].map(x=>x.toString(16).padStart(2,'0')).join('');}
 export async function hashPassword(password){if(typeof password!=='string'||password.length<12||password.length>128)fail(400,'Пароль: 12–128 символів');const salt=new Uint8Array(16);crypto.getRandomValues(salt);const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(password),'PBKDF2',false,['deriveBits']);const bits=await crypto.subtle.deriveBits({name:'PBKDF2',salt,iterations:100000,hash:'SHA-256'},key,256);return `pbkdf2-sha256$100000$${toHex(salt)}$${toHex(new Uint8Array(bits))}`;}
 export async function verifyPassword(password,encoded){if(typeof password!=='string'||password.length>128)return false;const parts=String(encoded||'').split('$');if(parts.length!==4||parts[0]!=='pbkdf2-sha256'||parts[1]!=='100000')return false;const salt=fromHex(parts[2]), expected=fromHex(parts[3]);if(salt.length!==16||expected.length!==32)return false;const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(password),'PBKDF2',false,['deriveBits']);const actual=new Uint8Array(await crypto.subtle.deriveBits({name:'PBKDF2',salt,iterations:100000,hash:'SHA-256'},key,256));let diff=0;for(let i=0;i<32;i++)diff |=actual[i]^expected[i];return diff===0;}
-function permissions(user){const p=parseJson(user.permissions,[]);return (p && !Array.isArray(p) && p.custom===true && Array.isArray(p.items))?p.items:DEFAULT_PERMISSIONS[user.role]||[];}
-function can(user,perm){if(!user)return false;if(user.role==='head'&&(perm.startsWith('finance:')||perm==='members:write'))return false;return user.role==='leader'||permissions(user).includes('*')||permissions(user).includes(perm);}
+function permissions(user){const p=parseJson(user.permissions,[]);if(p&&!Array.isArray(p)&&p.custom===true&&Array.isArray(p.items))return p.items;const base=DEFAULT_PERMISSIONS[user.role]||[];return user.role==='head'?[...new Set([...base,...(HEAD_DEPARTMENT_PERMISSIONS[user.department_id]||[])])]:base;}
+function can(user,perm){if(!user)return false;if(user.role==='head'&&(perm.startsWith('finance:')||perm==='members:write'||(!user.head_appointed&&perm!=='members:read'&&perm!=='stats:read')))return false;return user.role==='leader'||permissions(user).includes('*')||permissions(user).includes(perm);}
 function requirePerm(user,perm){if(!can(user,perm))fail(403,'Недостатньо прав');}
 function manageInDepartment(user,department){return user.role!=='head'||(!!user.department_id && user.department_id===department);}
 function cookie(req,token){const host=new URL(req.url).hostname;const secure=(host!=='localhost'&&host!=='127.0.0.1')?'; Secure':'';return `grizzly_session=${token}; Path=/; HttpOnly; SameSite=Strict${secure}; Max-Age=604800`;}
 function clearCookie(req){return cookie(req,'')+'; Max-Age=0';}
-function safeUser(u){if(!u)return null;return {id:u.id,username:u.username,nickname:u.nickname,game_id:u.game_id,discord:u.discord,role:u.role,permissions:permissions(u),custom_permissions:parseJson(u.permissions,[]),rank_id:u.rank_id,department_id:u.department_id,joined_at:u.joined_at,status:u.status,activity:u.activity,version:u.version,created_at:u.created_at,updated_at:u.updated_at};}
+function safeUser(u){if(!u)return null;return {id:u.id,username:u.username,nickname:u.nickname,game_id:u.game_id,discord:u.discord,role:u.role,permissions:u.role==='head'&&!u.head_appointed?['members:read','stats:read']:permissions(u),head_appointed:u.role==='head'?!!u.head_appointed:undefined,custom_permissions:parseJson(u.permissions,[]),rank_id:u.rank_id,department_id:u.department_id,joined_at:u.joined_at,status:u.status,activity:u.activity,version:u.version,created_at:u.created_at,updated_at:u.updated_at};}
 async function audit(db,user,action,entity,id,detail=''){await db.prepare('INSERT INTO audit(id,actor_id,actor_name,action,entity,entity_id,detail,created_at) VALUES(?,?,?,?,?,?,?,?)').bind(uuid(),user?.id||'system',user?.username||'system',action,entity,id,str(detail,1000),now()).run();}
 async function notify(db,userId,title,details=''){if(!userId)return;await db.prepare('INSERT INTO notifications(id,user_id,title,details,created_at) VALUES(?,?,?,?,?)').bind(uuid(),userId,str(title,150),str(details,600),now()).run();}
 // A Discord webhook is a credential. Never store it in D1, echo it in JSON,
@@ -261,7 +280,8 @@ function queueDiscord(ctx,db,env,kind,info,targetKind=kind){
   if(ctx&&typeof ctx.waitUntil==='function')ctx.waitUntil(task);
   return task;
 }
-async function auth(req,db){const match=(req.headers.get('cookie')||'').match(/(?:^|;\s*)grizzly_session=([a-f0-9]{64})(?:;|$)/);if(!match)fail(401,'Потрібно увійти');const hashed=await sha256(match[1]);const u=await db.prepare("SELECT u.* FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND s.revoked_at IS NULL AND s.expires_at>? AND u.status='active'").bind(hashed,now()).first();if(!u)fail(401,'Сесію завершено. Увійдіть повторно');return u;}
+async function markHeadAppointment(db,user){if(user.role==='head'){const row=await db.prepare('SELECT head_id FROM departments WHERE id=?').bind(user.department_id).first();user.head_appointed=!!row&&row.head_id===user.id;}return user;}
+async function auth(req,db){const match=(req.headers.get('cookie')||'').match(/(?:^|;\s*)grizzly_session=([a-f0-9]{64})(?:;|$)/);if(!match)fail(401,'Потрібно увійти');const hashed=await sha256(match[1]);const u=await db.prepare("SELECT u.* FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND s.revoked_at IS NULL AND s.expires_at>? AND u.status='active'").bind(hashed,now()).first();if(!u)fail(401,'Сесію завершено. Увійдіть повторно');return markHeadAppointment(db,u);}
 function writeSafety(req){if(['POST','PATCH','PUT','DELETE'].includes(req.method)){
   const o=req.headers.get('origin');if(o && o!==new URL(req.url).origin)fail(403,'Неприпустиме походження запиту');
   if(req.headers.get('x-grizzly-client')!=='1')fail(403,'Відсутній захисний заголовок запиту');
@@ -425,7 +445,7 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
     const b=await body(req),username=str(b.username,50).toLowerCase(),password=String(b.password||'');const ip=await sha256(publicOrigin(req)),key='auth:'+await sha256(ip+'|'+username),ipkey='ip:'+ip;
     await rateCheck(db,key);await rateCheck(db,ipkey,25);const user=await db.prepare('SELECT * FROM users WHERE username=?').bind(username).first();const valid=user&&user.status==='active'&&await verifyPassword(password,user.password_hash);
     if(!valid){await rateFail(db,key);await rateFail(db,ipkey,25);fail(401,'Неправильний логін або пароль');}
-    await db.prepare('DELETE FROM login_attempts WHERE key=?').bind(key).run();const token=tokenValue(),sid=uuid(),t=now(),exp=new Date(Date.now()+7*86400000).toISOString();await db.prepare('INSERT INTO sessions(id,user_id,token_hash,created_at,expires_at,user_agent) VALUES(?,?,?,?,?,?)').bind(sid,user.id,await sha256(token),t,exp,str(req.headers.get('user-agent'),180)).run();await audit(db,user,'login','sessions',sid);return json({user:safeUser(user)},200,{'Set-Cookie':cookie(req,token)});
+    await db.prepare('DELETE FROM login_attempts WHERE key=?').bind(key).run();const token=tokenValue(),sid=uuid(),t=now(),exp=new Date(Date.now()+7*86400000).toISOString();await db.prepare('INSERT INTO sessions(id,user_id,token_hash,created_at,expires_at,user_agent) VALUES(?,?,?,?,?,?)').bind(sid,user.id,await sha256(token),t,exp,str(req.headers.get('user-agent'),180)).run();await audit(db,user,'login','sessions',sid);return json({user:safeUser(await markHeadAppointment(db,user))},200,{'Set-Cookie':cookie(req,token)});
   }
   const user=await auth(req,db);
   if(path==='/api/auth/me'&&method==='GET')return json({user:safeUser(user)});
@@ -535,6 +555,44 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
       payouts:{count:num(payout.count),accrued:num(payout.amount),handed_over:num(payout.handed_over)},
       capt:{records:num(capt.count),approved:num(capt.approved),paid_count:num(captPayments.count),paid_total:num(captPayments.total)}});
   }
+  if(path==='/api/department-workspace'&&method==='GET'){
+    if(!['leader','deputy','head'].includes(user.role))fail(403,'Панель доступна керівництву');
+    const requested=str(url.searchParams.get('department'),80);
+    const departmentId=user.role==='head'?user.department_id:requested;
+    if(!departmentId)fail(400,'Оберіть підрозділ');
+    if(user.role==='head'&&requested&&requested!==departmentId)fail(403,'Доступ лише до свого підрозділу');
+    const dept=await db.prepare('SELECT id,title,head_id FROM departments WHERE id=?').bind(departmentId).first();
+    if(!dept)fail(404,'Підрозділ не знайдено');
+    // Role "head" alone does not grant access. The leader must appoint this exact active head.
+    if(user.role==='head'&&dept.head_id!==user.id)fail(403,'Лідер ще не призначив вас керівником цього підрозділу');
+    const [allRecords,members,contracts]=await Promise.all([
+      allRows(db,'SELECT * FROM records WHERE department_id=? AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 1500',dept.id),
+      allRows(db,"SELECT id,nickname,role,rank_id,status,joined_at FROM users WHERE department_id=? ORDER BY created_at DESC",dept.id),
+      allRows(db,'SELECT * FROM contracts WHERE department_id=? ORDER BY created_at DESC LIMIT 500',dept.id)
+    ]);
+    const sections=DEPARTMENT_WORKSPACE_MODULES.map(([mod,title,group])=>{
+      const cfg=MODULES[mod];
+      const items=allRecords.filter(r=>r.module===mod&&permittedRecord(user,mod,r)).map(mapRecord);
+      const mayManage=can(user,cfg.manage)&&manageInDepartment(user,dept.id)&&!cfg.restricted;
+      const maySubmit=!!cfg.memberCreate;
+      return {id:mod,title,group,items,count:items.length,can_create:mayManage||maySubmit,
+        can_manage:mayManage,can_review:!!cfg.review&&mayManage,
+        attention:items.filter(r=>r.status==='На перевірці').length,
+        active:items.filter(r=>!['Завершено','Відхилено','Погоджено'].includes(r.status)).length};
+    });
+    return json({
+      department:dept,sections,
+      members:members.map(m=>({id:m.id,nickname:m.nickname||'Учасник',role:m.role,rank_id:m.rank_id,status:m.status,joined_at:m.joined_at})),
+      contracts:contracts.map(contractView),
+      summary:{
+        members:members.filter(m=>m.status==='active').length,
+        tasks_open:sections.find(x=>x.id==='tasks').active,
+        reports_review:sections.find(x=>x.id==='reports').attention,
+        contracts_count:contracts.length,
+        contracts_settled:contracts.filter(c=>!!c.settled_at).length
+      }
+    });
+  }
   if(path==='/api/departments'&&method==='GET')return json({items:await allRows(db,'SELECT * FROM departments ORDER BY rowid')});
   m=path.match(/^\/api\/departments\/([\w-]+)$/);if(m&&method==='PATCH'){
     if(user.role!=='leader')fail(403,'Лише лідер редагує напрямки');const b=await body(req);if(!Number.isInteger(b.version))fail(428,'Потрібна версія');const headId=str(b.head_id,80)||null;
@@ -612,9 +670,9 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
     const r=await db.prepare(`UPDATE settings SET value=CASE key ${caseSql} ELSE value END,version=version+1,updated_at=? WHERE key IN (${keys}) AND (SELECT COUNT(*) FROM settings WHERE ${guard})=?`).bind(...args,normalized.length).run();
     if(r.meta.changes!==normalized.length)fail(409,'Налаштування змінив інший лідер. Оновіть сторінку');await audit(db,user,'update','settings','site',entries.map(([k])=>k).join(','));return json({items:await settings(db)});
   }
-  if(path==='/api/applications'&&method==='GET'){requirePerm(user,'recruitment:manage');return json({items:(await allRows(db,'SELECT * FROM applications ORDER BY created_at DESC LIMIT 500')).map(applicationView)});}
+  if(path==='/api/applications'&&method==='GET'){requirePerm(user,'recruitment:manage');if(user.role==='head'){const appointed=await db.prepare('SELECT head_id FROM departments WHERE id=?').bind('recruitment').first();if(user.department_id!=='recruitment'||appointed?.head_id!==user.id)fail(403,'Лише призначений керівник рекрутингу переглядає заявки');}return json({items:(await allRows(db,'SELECT * FROM applications ORDER BY created_at DESC LIMIT 500')).map(applicationView)});}
   m=path.match(/^\/api\/applications\/([\w-]+)$/);if(m&&method==='PATCH'){
-    requirePerm(user,'recruitment:manage');const b=await body(req);if(!Number.isInteger(b.version))fail(428,'Потрібна версія');const old=await db.prepare('SELECT nickname,status FROM applications WHERE id=?').bind(m[1]).first();if(!old)fail(404,'Заявку не знайдено');const status=validApplicationStatus(b.status);const r=await db.prepare('UPDATE applications SET status=?,comment=?,version=version+1,updated_at=? WHERE id=? AND version=?').bind(status,str(b.comment,1200),now(),m[1],b.version).run();if(r.meta.changes!==1)fail(409,'Заявку змінено іншим користувачем');await audit(db,user,'review','applications',m[1],status);if(applicationStatus(old.status)!==status)queueDiscord(ctx,db,env,'decisions',{nickname:old.nickname,status},applicationWebhookKind(status));return json({ok:true});
+    requirePerm(user,'recruitment:manage');if(user.role==='head'){const appointed=await db.prepare('SELECT head_id FROM departments WHERE id=?').bind('recruitment').first();if(user.department_id!=='recruitment'||appointed?.head_id!==user.id)fail(403,'Лише призначений керівник рекрутингу розглядає заявки');}const b=await body(req);if(!Number.isInteger(b.version))fail(428,'Потрібна версія');const old=await db.prepare('SELECT nickname,status FROM applications WHERE id=?').bind(m[1]).first();if(!old)fail(404,'Заявку не знайдено');const status=validApplicationStatus(b.status);const r=await db.prepare('UPDATE applications SET status=?,comment=?,version=version+1,updated_at=? WHERE id=? AND version=?').bind(status,str(b.comment,1200),now(),m[1],b.version).run();if(r.meta.changes!==1)fail(409,'Заявку змінено іншим користувачем');await audit(db,user,'review','applications',m[1],status);if(applicationStatus(old.status)!==status)queueDiscord(ctx,db,env,'decisions',{nickname:old.nickname,status},applicationWebhookKind(status));return json({ok:true});
   }
   // CAPT dashboard: return only records the current role can see. Payout details
   // remain limited to finance managers or the payout recipient.

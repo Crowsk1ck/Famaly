@@ -1407,5 +1407,86 @@ test('GRIZZLY overview v2 uses authenticated role-scoped sources and shows key p
   const memberAccounts=await req('/api/users',{token:member});
   assert.equal(memberAccounts.data.items.length,1,'Overview must not depend on unrestricted user account data');
 });
+test('department workspaces require a real appointment and never return foreign records',async()=>{
+  const depList=(await req('/api/departments',{token:leader})).data.items;
+  const own=depList.find(d=>!d.head_id&&d.id!=='capt')||depList.find(d=>!d.head_id);
+  assert.ok(own,'Expected available department for assigned head');
+  const foreign=depList.find(d=>d.id!==own.id);
+  const created=await req('/api/users',{method:'POST',token:leader,data:{
+    username:'workspacehead',password:'workspace-head-pass-123',nickname:'Workspace Manager',
+    role:'head',department_id:own.id
+  }});
+  assert.equal(created.status,201,JSON.stringify(created.data));
+  const headId=created.data.item.id;
+  const auth=await req('/api/auth/login',{method:'POST',data:{username:'workspacehead',password:'workspace-head-pass-123'}});
+  assert.equal(auth.status,200);
+  const headToken=auth.cookie.match(/grizzly_session=([a-f0-9]+)/)[1];
+  assert.equal((await req('/api/department-workspace?department='+own.id,{token:member})).status,403);
+  assert.equal((await req('/api/department-workspace?department='+own.id,{token:headToken})).status,403,
+    'Role head alone must not grant departmental workspace privileges');
+  assert.equal((await req('/api/department-workspace?department='+foreign.id,{token:headToken})).status,403);
+  const appointed=await req('/api/departments/'+own.id,{method:'PATCH',token:leader,
+    data:{title:own.title,head_id:headId,version:own.version}});
+  assert.equal(appointed.status,200,JSON.stringify(appointed.data));
+
+  const ownTask=await req('/api/records/tasks',{method:'POST',token:leader,
+    data:{title:'Тестове завдання керівника підрозділу',department_id:own.id,status:'Заплановано'}});
+  const foreignTask=await req('/api/records/tasks',{method:'POST',token:leader,
+    data:{title:'Завдання іншого відділу',department_id:foreign.id,status:'Заплановано'}});
+  assert.equal(ownTask.status,201,JSON.stringify(ownTask.data));
+  assert.equal(foreignTask.status,201,JSON.stringify(foreignTask.data));
+
+  const scoped=await req('/api/department-workspace?department='+own.id,{token:headToken});
+  assert.equal(scoped.status,200,JSON.stringify(scoped.data));
+  assert.equal(scoped.data.department.id,own.id);
+  const tasks=scoped.data.sections.find(x=>x.id==='tasks');
+  assert.ok(tasks.items.some(x=>x.id===ownTask.data.item.id));
+  assert.ok(!tasks.items.some(x=>x.id===foreignTask.data.item.id));
+  assert.ok(scoped.data.sections.every(x=>x.items.every(r=>r.department_id===own.id)));
+  assert.ok(scoped.data.contracts.every(c=>c.department_id===own.id));
+  assert.ok(scoped.data.members.every(m=>!Object.hasOwn(m,'password_hash')&&!Object.hasOwn(m,'username')));
+  assert.ok(scoped.data.sections.some(x=>x.id==='capt_matches'));
+  assert.ok(scoped.data.sections.some(x=>x.id==='vehicle_loans'));
+  assert.equal((await req('/api/department-workspace?department='+foreign.id,{token:headToken})).status,403);
+  const leadership=await req('/api/department-workspace?department='+foreign.id,{token:leader});
+  assert.equal(leadership.status,200,JSON.stringify(leadership.data));
+  assert.ok(leadership.data.sections.find(x=>x.id==='tasks').items.some(x=>x.id===foreignTask.data.item.id));
+  assert.equal((await req('/api/department-workspace?department=missing',{token:leader})).status,404);
+});
+test('department head permissions follow specialty and require appointment',async()=>{
+  const departments=(await req('/api/departments',{token:leader})).data.items;
+  const recruitment=departments.find(d=>d.id==='recruitment');
+  assert.ok(recruitment&&!recruitment.head_id,'Recruitment must be available for this test');
+  const created=await req('/api/users',{token:leader,method:'POST',data:{
+    username:'recruitworkspace',password:'recruit-workspace-pass123',
+    nickname:'Recruit Workspace Manager',role:'head',department_id:'recruitment'
+  }});
+  assert.equal(created.status,201,JSON.stringify(created.data));
+  const login=await req('/api/auth/login',{method:'POST',data:{username:'recruitworkspace',password:'recruit-workspace-pass123'}});
+  assert.equal(login.status,200);
+  const token=login.cookie.match(/grizzly_session=([a-f0-9]+)/)[1];
+  assert.equal(login.data.user.head_appointed,false);
+  assert.ok(!login.data.user.permissions.includes('recruitment:manage'));
+  assert.equal((await req('/api/applications',{token})).status,403);
+  const appoint=await req('/api/departments/recruitment',{method:'PATCH',token:leader,
+    data:{title:recruitment.title,head_id:created.data.item.id,version:recruitment.version}});
+  assert.equal(appoint.status,200,JSON.stringify(appoint.data));
+  const identity=await req('/api/auth/me',{token});
+  assert.equal(identity.status,200);
+  assert.equal(identity.data.user.head_appointed,true);
+  assert.ok(identity.data.user.permissions.includes('recruitment:manage'));
+  assert.ok(!identity.data.user.permissions.includes('capt:manage'));
+  assert.ok(!identity.data.user.permissions.includes('fleet:manage'));
+  assert.equal((await req('/api/applications',{token})).status,200);
+  assert.equal((await req('/api/records/capt_matches',{token,method:'POST',
+    data:{title:'Неавторизований CAPT',department_id:'recruitment'}})).status,403);
+  const updated=(await req('/api/departments',{token:leader})).data.items.find(d=>d.id==='recruitment');
+  assert.equal((await req('/api/departments/recruitment',{method:'PATCH',token:leader,
+    data:{title:updated.title,head_id:'',version:updated.version}})).status,200);
+  assert.equal((await req('/api/applications',{token})).status,403,'Revoked head loses recruitment access immediately');
+  const after=await req('/api/auth/me',{token});
+  assert.equal(after.data.user.head_appointed,false);
+  assert.ok(!after.data.user.permissions.includes('recruitment:manage'));
+});
 // Run destructive session-revocation coverage last: other integration tests use this member's active session.
 test('blocking user revokes sessions and stops access',async()=>{const u=(await req('/api/users',{token:leader})).data.items.find(x=>x.id===memberId);const r=await req(`/api/users/${memberId}`,{method:'PATCH',token:leader,data:{...u,status:'blocked'}});assert.equal(r.status,200,JSON.stringify(r.data));assert.equal((await req('/api/auth/me',{token:member})).status,401);});
