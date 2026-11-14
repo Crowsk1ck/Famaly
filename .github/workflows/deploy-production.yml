@@ -84,7 +84,7 @@ jobs:
             await page.goto('https://grizzly-family.online/',{waitUntil:'networkidle2',timeout:30000});
             await page.waitForSelector('#gr-main',{timeout:20000});
             await page.evaluate(()=>window.__grizzlyNavigationProbe='persistent-document');
-            await page.click('a[href="/join/"]');
+            await page.evaluate(()=>document.querySelector('a[href="/join/"]').click());
             await page.waitForFunction(()=>location.pathname==='/join/' && !!document.querySelector('#apply-form'),{timeout:20000});
             const state=await page.evaluate(()=>({probe:window.__grizzlyNavigationProbe,form:!!document.querySelector('#apply-form'),url:location.pathname}));
             if(state.probe!=='persistent-document')throw new Error('Public navigation reloaded the document: '+JSON.stringify(state));
