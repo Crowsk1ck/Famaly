@@ -54,7 +54,9 @@ test('missing dates never trigger fake overdue warnings, and top rank has no nex
 test('UI is within existing authorized dossier, read-only and responsive',()=>{
  const start=source.indexOf('async function dossierPage()'),end=source.indexOf('async function activityPage()',start);
  const view=source.slice(start,end);
- assert.match(view,/api\('\/personnel-dossier\?user='/);
+ assert.match(source,/async function loadAuthorizedDossier\(requestedId\)/);
+ assert.match(source,/api\(path\(requestedId\)\)/);
+ assert.match(view,/loadAuthorizedDossier\(state\.dossierUser\|\|state\.user\.id\)/);
  assert.match(view,/dossierCareerReview\(x,state\.ranks\)/);
  assert.match(view,/Кар’єра та кадровий контроль/);
  assert.match(view,/Історія заявок на підвищення/);
