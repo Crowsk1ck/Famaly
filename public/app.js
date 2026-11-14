@@ -1591,6 +1591,13 @@ async function auditPage(){const a=(await api('/audit')).items;return `${intro('
 async function settingsPage(){const response=await api('/settings');const s=response.items;state.settingsVersions=response.versions||{};const discord=state.user.role==='leader'?await api('/discord/status'):null;
 if(discord)state.discordVersions=discord.versions||{};
 let discordLogs=[],discordLogError='';
+let outbox=null,outboxError='';
+if(discord?.outbox_enabled){
+ try{
+  const status=state.outboxStatus||'all',route=state.outboxRoute||'all';
+  outbox=await api('/discord/outbox?status='+encodeURIComponent(status)+'&route='+encodeURIComponent(route));
+ }catch(e){outboxError=e.message;}
+}
 if(discord&&!discord.migrationRequired){
   try{
     const kind=state.discordLogKind||'all',status=state.discordLogStatus||'all';
@@ -1670,6 +1677,29 @@ const applicationWebhooksHtml=discord?
      '<span class="gr-discord-route-status '+(route.separate?'is-ready':'is-missing')+'">'+status+'</span>'+
      '<button class="btn tiny secondary" type="button" data-action="discord-test-route" data-kind="'+kind+'" '+(route.configured?'':'disabled')+'>Тест статусу</button></div>';
  }).join('')+'</div>':'';
+const outboxHtml=discord?.outbox_enabled?
+ '<div class="gr-discord-log"><div class="row space wrap"><h3>Черга Discord · v13.1</h3><span class="muted small">Моніторинг без повторної відправки</span></div>'+
+ (outboxError?'<div class="notice mt">'+esc(outboxError)+'</div>':
+ !outbox?'<p class="muted small">Немає даних про чергу.</p>':
+ '<div class="gr-activity-stats">'+
+ [['Очікують','pending'],['Надсилаються','sending'],['Доставлено','sent'],['Помилки','failed'],['Невизначені','uncertain']].map(([label,key])=>
+ '<div class="card"><span class="muted small">'+label+'</span><strong>'+fmt(outbox.counts[key]||0)+'</strong></div>').join('')+'</div>'+
+ '<p class="muted small mt">Невизначені доставки потребують ручної перевірки Discord; автоматично повторно не надсилаються.</p>'+
+ '<div class="row wrap mt"><label class="muted small">Стан <select class="select" id="discord-outbox-status">'+
+ [['all','Усі'],['pending','Очікують'],['sending','Надсилаються'],['sent','Доставлено'],['failed','Помилка'],['uncertain','Невизначені']].map(([value,label])=>
+ '<option value="'+value+'"'+((state.outboxStatus||'all')===value?' selected':'')+'>'+label+'</option>').join('')+
+ '</select></label><label class="muted small">Канал <select class="select" id="discord-outbox-route">'+
+ '<option value="all">Усі канали</option>'+Object.entries(discordNames).map(([kind,label])=>
+ '<option value="'+kind+'"'+((state.outboxRoute||'all')===kind?' selected':'')+'>'+esc(label)+'</option>').join('')+
+ '</select></label></div>'+
+ '<p class="muted small mt">Знайдено: '+fmt(outbox.total)+(outbox.has_more?' · Показано останні 100':'')+'</p>'+
+ (outbox.items.length?
+ '<div class="gr-discord-log-scroll"><table class="gr-discord-table"><thead><tr><th>Створено</th><th>Канал</th><th>Статус</th><th>Спроб</th><th>Причина</th></tr></thead><tbody>'+
+ outbox.items.map(x=>'<tr><td>'+esc(date(x.created_at))+'</td><td>'+esc(discordNames[x.route]||x.route)+'</td>'+
+ '<td>'+esc(({pending:'Очікує',sending:'Надсилається',sent:'Доставлено',failed:'Помилка',uncertain:'Перевірити вручну'})[x.status]||x.status)+'</td>'+
+ '<td>'+fmt(x.attempts)+'</td><td>'+esc(({http_error:'HTTP помилка',network_error:'Мережевий збій',configuration_error:'Проблема налаштувань',unknown_delivery:'Результат доставки невідомий'})[x.last_error]||'—')+'</td></tr>').join('')+
+ '</tbody></table></div>':'<p class="muted small">Немає записів за вибраними фільтрами.</p>'))+
+ '</div>':'';
 const discordLogsHtml=discord&&!discord.migrationRequired?
  '<div class="gr-discord-log"><div class="row space wrap"><h3>Журнал доставки</h3><span class="muted small">Останні 300 записів, до 100 результатів</span></div>'+
  '<div class="row wrap mt"><label class="muted small">Тип <select class="select" id="discord-log-kind">'+
@@ -1698,7 +1728,7 @@ return `${intro('Налаштування Grizzly','Редагування пу�
     '<span class="pill">CAPT: '+(discord.categories.capt?'увімкнено':'вимкнено')+'</span>'+ 
     '<span class="pill">Новини: '+(discord.categories.news?'увімкнено':'вимкнено')+'</span>'+ 
     '<span class="pill">Оголошення: '+(discord.categories.announcements?'увімкнено':'вимкнено')+'</span></div>'+
-    applicationWebhooksHtml+discordRoutesHtml+discordSettingsHtml+discordLogsHtml+
+    applicationWebhooksHtml+discordRoutesHtml+discordSettingsHtml+outboxHtml+discordLogsHtml+
     '<div class="row wrap mt"><button class="btn secondary" type="button" data-action="discord-test" '+(discord.configured?'':'disabled')+'>Надіслати тестове повідомлення</button>'+
     '<button type="button" class="btn ghost" data-action="discord-refresh">Оновити статус</button><span class="muted small">Worker: famaly · Не надсилай webhook у чат.</span></div></div>':''}<div class="notice mt">Ставки CAPT застосовуються вручну при створенні виплат, щоб керівник контролював підставу нарахування. Права заступників задаються в особових справах.</div>`;}
 async function profile(){const u=state.user;const sessions=(await api('/auth/sessions')).items;return `${intro('Мій профіль','Особисті дані, пароль та активні сесії.')}<div class="grid2"><div class="card"><h3>${esc(u.nickname||u.username)}</h3><div class="stack mt"><div>Логін: <strong>${esc(u.username)}</strong></div><div>Роль доступу: <strong>${esc(roles[u.role])}</strong></div><div>Ігровий ранг: <strong>${esc(rankName(u.rank_id))}</strong></div><div>Напрямок: <strong>${esc(departmentName(u.department_id))}</strong></div><div>Ігровий ID: <strong>${esc(u.game_id||'—')}</strong></div><div>Discord: <strong>${esc(u.discord||'—')}</strong></div></div><button class="btn tiny secondary mt" data-action="edit-user" data-id="${u.id}">Редагувати профіль</button></div><div class="card"><h3>Зміна пароля</h3><form id="password-form" class="stack mt">${field('Поточний пароль','old_password','','password',true,'required')}${field('Новий пароль (12–128 символів)','new_password','','password',true,'minlength="12" required')}<button class="btn" type="submit">Змінити пароль і завершити сесії</button></form></div></div><div class="card mt"><div class="card-head"><h3>Сесії</h3><span class="muted small">Завершення доступу з інших пристроїв</span></div>${table(['Створено','Термін дії','Пристрій','Дія'],sessions.map(x=>`<tr><td>${date(x.created_at)}</td><td>${date(x.expires_at)}</td><td class="wordwrap">${esc(x.user_agent.slice(0,100))}</td><td>${x.revoked_at?badge('Завершено'):`<button class="btn tiny danger" data-action="revoke-session" data-id="${esc(x.id)}">Завершити</button>`}</td></tr>`))}</div>`;}
@@ -1819,10 +1849,12 @@ async function handleSubmit(e){const f=e.target;if(!f.id)return;e.preventDefault
 } }catch(err){toast(err.message,true);if(err.status===409)toast('Оновіть сторінку перед повторним редагуванням.',true);}finally{if(submit)submit.disabled=false;}}
 document.addEventListener('change',async event=>{
  const control=event.target;
- if(!control||!['discord-log-kind','discord-log-status'].includes(control.id))return;
+ if(!control||!['discord-log-kind','discord-log-status','discord-outbox-status','discord-outbox-route'].includes(control.id))return;
  if(state.user?.role!=='leader')return;
  if(control.id==='discord-log-kind')state.discordLogKind=control.value;
- else state.discordLogStatus=control.value;
+ else if(control.id==='discord-log-status')state.discordLogStatus=control.value;
+ else if(control.id==='discord-outbox-status')state.outboxStatus=control.value;
+ else state.outboxRoute=control.value;
  try{await render();}catch(err){toast(err.message,true);}
 });
 document.addEventListener('submit',handleSubmit);
