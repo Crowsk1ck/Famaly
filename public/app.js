@@ -2414,7 +2414,7 @@ document.addEventListener('input',e=>{
   return;
  }
  if(e.target.closest('#contract-correction-form')){const f=e.target.closest('form');f.dataset.previewAmount='';f.dataset.previewReason='';const btn=f.querySelector('[data-action="contract-correction-save"]');if(btn)btn.disabled=true;const box=f.querySelector('#contract-correction-preview');if(box)box.textContent='Дані змінено. Повторіть попередній розрахунок.';}if(e.target.name==='photo_url'&&e.target.closest('#gallery-form'))updateGalleryFormPreview();if(e.target.name==='photo_url'&&e.target.closest('#team-form'))updateTeamFormPreview();if(e.target.name==='photo_url'&&e.target.closest('#achievement-form'))updateAchievementPreview();if(e.target.id==='search-input'){
-  state.membersPage=1;state.auditPage=1;if(state.route==='members')state.membersSelectedIds=[];state.search=e.target.value;
+  if(state.route==='members')state.membersSelectedIds=[];state.membersPage=1;state.auditPage=1;state.search=e.target.value;
   const route=state.route,start=e.target.selectionStart;
   clearTimeout(memberSearchTimer);
   memberSearchTimer=setTimeout(()=>{
