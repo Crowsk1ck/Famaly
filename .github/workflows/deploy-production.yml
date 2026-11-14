@@ -47,18 +47,27 @@ jobs:
           npm test
       - name: Deploy production Worker (no D1 migration)
         run: npx wrangler deploy
-      - name: Public health check (Worker and custom domain)
+      - name: Verify Worker and GRIZZLY production domain
+        shell: bash
         run: |
           set -euo pipefail
-          curl --fail --silent --show-error --retry 5 --retry-delay 4 \
-            https://famaly.crowskick4133.workers.dev/api/health \
-            | grep -q '"ok":true'
-          curl --fail --silent --show-error --retry 5 --retry-delay 4 \
-            https://grizzly-family.online/api/health \
-            | grep -q '"ok":true'
-          curl --fail --silent --show-error --retry 5 --retry-delay 4 \
-            https://grizzly-family.online/about/ \
-            | grep -q 'ІСТОРІЯ GRIZZLY'
-          curl --fail --silent --show-error --retry 5 --retry-delay 4 \
-            -o /dev/null https://grizzly-family.online/grizzly-social.png
-          echo 'GRIZZLY Worker and public custom domain serve v8 content.'
+          check() {
+            local label="$1" url="$2" pattern="$3" attempt code
+            for attempt in $(seq 1 12); do
+              code=$(curl --silent --show-error --location --max-time 15 \
+                --output /tmp/grizzly-response --write-out '%{http_code}' "$url" || true)
+              if [[ "$code" == "200" ]] && grep -Fq "$pattern" /tmp/grizzly-response; then
+                echo "::notice::$label OK (HTTP $code)"
+                return 0
+              fi
+              echo "$label: attempt $attempt/12 returned HTTP $code or missing expected marker"
+              sleep 5
+            done
+            echo "::error::$label failed for $url (HTTP $code)"
+            return 1
+          }
+          check "Worker health" "https://famaly.crowskick4133.workers.dev/api/health" '"ok":true'
+          check "Domain health" "https://grizzly-family.online/api/health" '"ok":true'
+          check "Domain v8 page" "https://grizzly-family.online/about/" 'ІСТОРІЯ GRIZZLY'
+          preview_code=$(curl --silent --show-error --location --output /tmp/grizzly-preview --write-out '%{http_code}' https://grizzly-family.online/grizzly-social.png)
+          [[ "$preview_code" == "200" ]] && [[ "$(od -An -tx1 -N8 /tmp/grizzly-preview | tr -d ' \\n')" == "89504e470d0a1a0a" ]] || { echo "::error::GRIZZLY PNG preview missing or invalid (HTTP $preview_code)"; exit 1; }
