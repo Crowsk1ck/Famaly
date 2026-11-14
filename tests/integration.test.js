@@ -1453,5 +1453,33 @@ test('department workspaces require a real appointment and never return foreign 
   assert.ok(leadership.data.sections.find(x=>x.id==='tasks').items.some(x=>x.id===foreignTask.data.item.id));
   assert.equal((await req('/api/department-workspace?department=missing',{token:leader})).status,404);
 });
+test('department head permissions follow specialty and require appointment',async()=>{
+  const departments=(await req('/api/departments',{token:leader})).data.items;
+  const recruitment=departments.find(d=>d.id==='recruitment');
+  assert.ok(recruitment&&!recruitment.head_id,'Recruitment must be available for this test');
+  const created=await req('/api/users',{token:leader,method:'POST',data:{
+    username:'recruitworkspace',password:'recruit-workspace-pass123',
+    nickname:'Recruit Workspace Manager',role:'head',department_id:'recruitment'
+  }});
+  assert.equal(created.status,201,JSON.stringify(created.data));
+  const login=await req('/api/auth/login',{method:'POST',data:{username:'recruitworkspace',password:'recruit-workspace-pass123'}});
+  assert.equal(login.status,200);
+  const token=login.cookie.match(/grizzly_session=([a-f0-9]+)/)[1];
+  assert.equal(login.data.user.head_appointed,false);
+  assert.ok(!login.data.user.permissions.includes('recruitment:manage'));
+  assert.equal((await req('/api/applications',{token})).status,403);
+  const appoint=await req('/api/departments/recruitment',{method:'PATCH',token:leader,
+    data:{title:recruitment.title,head_id:created.data.item.id,version:recruitment.version}});
+  assert.equal(appoint.status,200,JSON.stringify(appoint.data));
+  const identity=await req('/api/auth/me',{token});
+  assert.equal(identity.status,200);
+  assert.equal(identity.data.user.head_appointed,true);
+  assert.ok(identity.data.user.permissions.includes('recruitment:manage'));
+  assert.ok(!identity.data.user.permissions.includes('capt:manage'));
+  assert.ok(!identity.data.user.permissions.includes('fleet:manage'));
+  assert.equal((await req('/api/applications',{token})).status,200);
+  assert.equal((await req('/api/records/capt_matches',{token,method:'POST',
+    data:{title:'Неавторизований CAPT',department_id:'recruitment'}})).status,403);
+});
 // Run destructive session-revocation coverage last: other integration tests use this member's active session.
 test('blocking user revokes sessions and stops access',async()=>{const u=(await req('/api/users',{token:leader})).data.items.find(x=>x.id===memberId);const r=await req(`/api/users/${memberId}`,{method:'PATCH',token:leader,data:{...u,status:'blocked'}});assert.equal(r.status,200,JSON.stringify(r.data));assert.equal((await req('/api/auth/me',{token:member})).status,401);});
