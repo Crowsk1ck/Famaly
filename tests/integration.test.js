@@ -1522,5 +1522,67 @@ test('weekly department goals are versioned, leader-only and derived from scoped
   assert.equal((await req('/api/department-goals/no-such-department',{token:leader,method:'PATCH',
     data:{version:0,targets:{tasks_done:1}}})).status,404);
 });
+test('leader overview and automatic weekly reports enforce role, appointment and single submission',async()=>{
+ const leadership=await req('/api/leadership-overview',{token:leader});
+ assert.equal(leadership.status,200,JSON.stringify(leadership.data));
+ assert.equal(leadership.data.items.length,6);
+ assert.ok(leadership.data.items.every(x=>x.metrics.length>=2));
+ assert.ok(leadership.data.items.every(x=>!Object.hasOwn(x,'password_hash')));
+ assert.equal((await req('/api/leadership-overview',{token:member})).status,403);
+ assert.equal((await req('/api/department-weekly-report?department=farm',{token:member})).status,403);
+ const departments=(await req('/api/departments',{token:leader})).data.items;
+ const dept=departments.find(d=>!d.head_id&&d.id!=='recruitment')||departments.find(d=>!d.head_id);
+ assert.ok(dept,'Need an unassigned department for safe appointment test');
+ const newHead=await req('/api/users',{token:leader,method:'POST',data:{
+   username:'weeklyreporthead',password:'weekly-report-head-123',
+   nickname:'Weekly Head',role:'head',department_id:dept.id
+ }});
+ assert.equal(newHead.status,201,JSON.stringify(newHead.data));
+ const signedIn=await req('/api/auth/login',{method:'POST',data:{
+   username:'weeklyreporthead',password:'weekly-report-head-123'
+ }});
+ assert.equal(signedIn.status,200);
+ const headToken=signedIn.cookie.match(/grizzly_session=([a-f0-9]+)/)[1];
+ assert.equal((await req('/api/department-weekly-report?department='+dept.id,{token:headToken})).status,403);
+ const appointment=await req('/api/departments/'+dept.id,{method:'PATCH',token:leader,data:{
+   title:dept.title,head_id:newHead.data.item.id,version:dept.version
+ }});
+ assert.equal(appointment.status,200,JSON.stringify(appointment.data));
+ const own=await req('/api/department-weekly-report?department='+dept.id,{token:headToken});
+ assert.equal(own.status,200,JSON.stringify(own.data));
+ assert.equal(own.data.item.department_id,dept.id);
+ assert.equal(own.data.item.report.id,null);
+ assert.equal(own.data.item.report.status,'Не подано');
+ assert.equal((await req('/api/department-weekly-report?department=fake',{token:leader})).status,404);
+ assert.equal((await req('/api/department-weekly-report?department='+departments.find(d=>d.id!==dept.id).id,{token:headToken})).status,403);
+ const payload={department_id:dept.id,week_start:own.data.item.week_start,comment:'Перевірено склад, цілі та звіти.'};
+ assert.equal((await req('/api/department-weekly-report',{method:'POST',token:member,data:payload})).status,403);
+ assert.equal((await req('/api/department-weekly-report',{method:'POST',token:headToken,data:{...payload,week_start:'2025-01-01'}})).status,409);
+ const submitted=await req('/api/department-weekly-report',{method:'POST',token:headToken,data:payload});
+ assert.equal(submitted.status,201,JSON.stringify(submitted.data));
+ assert.equal(submitted.data.status,'На перевірці');
+ assert.equal((await req('/api/department-weekly-report',{method:'POST',token:headToken,data:payload})).status,409);
+ const frozen=await req('/api/records/reports',{token:headToken});
+ assert.equal(frozen.status,200);
+ const record=frozen.data.items.find(x=>x.id===submitted.data.id);
+ assert.ok(record);
+ assert.equal(record.extra.kind,'department_weekly');
+ assert.equal(record.extra.week_start,payload.week_start);
+ assert.ok(record.details.includes('Перевірено склад'));
+ assert.equal(record.amount,0);
+ assert.equal((await req('/api/records/reports/'+record.id,{method:'PATCH',token:headToken,data:{
+   title:'Підмінений звіт',status:'На перевірці',version:record.version
+ }})).status,403);
+ assert.equal((await req('/api/records/reports/'+record.id,{method:'DELETE',token:leader,data:{
+   version:record.version
+ }})).status,403);
+ const review=await req('/api/records/reports/'+record.id+'/review',{method:'POST',token:leader,
+   data:{status:'Погоджено',version:record.version,comment:'План підтверджено'}});
+ assert.equal(review.status,200,JSON.stringify(review.data));
+ const after=await req('/api/department-weekly-report?department='+dept.id,{token:leader});
+ assert.equal(after.data.item.report.status,'Погоджено');
+ const overview=await req('/api/leadership-overview',{token:leader});
+ assert.ok(overview.data.items.some(x=>x.department_id===dept.id&&x.report.id===record.id));
+});
 // Run destructive session-revocation coverage last: other integration tests use this member's active session.
 test('blocking user revokes sessions and stops access',async()=>{const u=(await req('/api/users',{token:leader})).data.items.find(x=>x.id===memberId);const r=await req(`/api/users/${memberId}`,{method:'PATCH',token:leader,data:{...u,status:'blocked'}});assert.equal(r.status,200,JSON.stringify(r.data));assert.equal((await req('/api/auth/me',{token:member})).status,401);});
