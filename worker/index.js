@@ -5,9 +5,17 @@ const ROLES = ['leader','deputy','head','member'];
 const DEFAULT_PERMISSIONS = {
   leader: ['*'],
   deputy: ['members:read','members:write','tasks:manage','reports:review','promotions:review','events:manage','capt:manage','fleet:manage','recruitment:manage','notices:manage','content:manage','finance:read','stats:read'],
-  head: ['members:read','tasks:manage','reports:review','promotions:review','events:manage','capt:manage','stats:read'],
+  head: ['members:read','tasks:manage','reports:review','promotions:review','stats:read'],
   member: []
 };
+const HEAD_DEPARTMENT_PERMISSIONS = Object.freeze({
+  capt:['capt:manage'],
+  farm:[],
+  fleet:['fleet:manage'],
+  discipline:['discipline:manage'],
+  recruitment:['recruitment:manage'],
+  events:['events:manage','notices:manage']
+});
 const MODULES = {
   tasks: {manage:'tasks:manage', memberRead:true, memberUpdate:true},
   reports: {manage:'reports:review', memberRead:true, memberCreate:true, review:true},
@@ -78,7 +86,7 @@ function fromHex(s){return new Uint8Array(s.match(/.{2}/g)?.map(v=>parseInt(v,16
 function toHex(b){return [...b].map(x=>x.toString(16).padStart(2,'0')).join('');}
 export async function hashPassword(password){if(typeof password!=='string'||password.length<12||password.length>128)fail(400,'Пароль: 12–128 символів');const salt=new Uint8Array(16);crypto.getRandomValues(salt);const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(password),'PBKDF2',false,['deriveBits']);const bits=await crypto.subtle.deriveBits({name:'PBKDF2',salt,iterations:100000,hash:'SHA-256'},key,256);return `pbkdf2-sha256$100000$${toHex(salt)}$${toHex(new Uint8Array(bits))}`;}
 export async function verifyPassword(password,encoded){if(typeof password!=='string'||password.length>128)return false;const parts=String(encoded||'').split('$');if(parts.length!==4||parts[0]!=='pbkdf2-sha256'||parts[1]!=='100000')return false;const salt=fromHex(parts[2]), expected=fromHex(parts[3]);if(salt.length!==16||expected.length!==32)return false;const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(password),'PBKDF2',false,['deriveBits']);const actual=new Uint8Array(await crypto.subtle.deriveBits({name:'PBKDF2',salt,iterations:100000,hash:'SHA-256'},key,256));let diff=0;for(let i=0;i<32;i++)diff |=actual[i]^expected[i];return diff===0;}
-function permissions(user){const p=parseJson(user.permissions,[]);return (p && !Array.isArray(p) && p.custom===true && Array.isArray(p.items))?p.items:DEFAULT_PERMISSIONS[user.role]||[];}
+function permissions(user){const p=parseJson(user.permissions,[]);if(p&&!Array.isArray(p)&&p.custom===true&&Array.isArray(p.items))return p.items;const base=DEFAULT_PERMISSIONS[user.role]||[];return user.role==='head'?[...new Set([...base,...(HEAD_DEPARTMENT_PERMISSIONS[user.department_id]||[])])]:base;}
 function can(user,perm){if(!user)return false;if(user.role==='head'&&(perm.startsWith('finance:')||perm==='members:write'))return false;return user.role==='leader'||permissions(user).includes('*')||permissions(user).includes(perm);}
 function requirePerm(user,perm){if(!can(user,perm))fail(403,'Недостатньо прав');}
 function manageInDepartment(user,department){return user.role!=='head'||(!!user.department_id && user.department_id===department);}
@@ -661,9 +669,9 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
     const r=await db.prepare(`UPDATE settings SET value=CASE key ${caseSql} ELSE value END,version=version+1,updated_at=? WHERE key IN (${keys}) AND (SELECT COUNT(*) FROM settings WHERE ${guard})=?`).bind(...args,normalized.length).run();
     if(r.meta.changes!==normalized.length)fail(409,'Налаштування змінив інший лідер. Оновіть сторінку');await audit(db,user,'update','settings','site',entries.map(([k])=>k).join(','));return json({items:await settings(db)});
   }
-  if(path==='/api/applications'&&method==='GET'){requirePerm(user,'recruitment:manage');return json({items:(await allRows(db,'SELECT * FROM applications ORDER BY created_at DESC LIMIT 500')).map(applicationView)});}
+  if(path==='/api/applications'&&method==='GET'){requirePerm(user,'recruitment:manage');if(user.role==='head'){const appointed=await db.prepare('SELECT head_id FROM departments WHERE id=?').bind('recruitment').first();if(user.department_id!=='recruitment'||appointed?.head_id!==user.id)fail(403,'Лише призначений керівник рекрутингу переглядає заявки');}return json({items:(await allRows(db,'SELECT * FROM applications ORDER BY created_at DESC LIMIT 500')).map(applicationView)});}
   m=path.match(/^\/api\/applications\/([\w-]+)$/);if(m&&method==='PATCH'){
-    requirePerm(user,'recruitment:manage');const b=await body(req);if(!Number.isInteger(b.version))fail(428,'Потрібна версія');const old=await db.prepare('SELECT nickname,status FROM applications WHERE id=?').bind(m[1]).first();if(!old)fail(404,'Заявку не знайдено');const status=validApplicationStatus(b.status);const r=await db.prepare('UPDATE applications SET status=?,comment=?,version=version+1,updated_at=? WHERE id=? AND version=?').bind(status,str(b.comment,1200),now(),m[1],b.version).run();if(r.meta.changes!==1)fail(409,'Заявку змінено іншим користувачем');await audit(db,user,'review','applications',m[1],status);if(applicationStatus(old.status)!==status)queueDiscord(ctx,db,env,'decisions',{nickname:old.nickname,status},applicationWebhookKind(status));return json({ok:true});
+    requirePerm(user,'recruitment:manage');if(user.role==='head'){const appointed=await db.prepare('SELECT head_id FROM departments WHERE id=?').bind('recruitment').first();if(user.department_id!=='recruitment'||appointed?.head_id!==user.id)fail(403,'Лише призначений керівник рекрутингу розглядає заявки');}const b=await body(req);if(!Number.isInteger(b.version))fail(428,'Потрібна версія');const old=await db.prepare('SELECT nickname,status FROM applications WHERE id=?').bind(m[1]).first();if(!old)fail(404,'Заявку не знайдено');const status=validApplicationStatus(b.status);const r=await db.prepare('UPDATE applications SET status=?,comment=?,version=version+1,updated_at=? WHERE id=? AND version=?').bind(status,str(b.comment,1200),now(),m[1],b.version).run();if(r.meta.changes!==1)fail(409,'Заявку змінено іншим користувачем');await audit(db,user,'review','applications',m[1],status);if(applicationStatus(old.status)!==status)queueDiscord(ctx,db,env,'decisions',{nickname:old.nickname,status},applicationWebhookKind(status));return json({ok:true});
   }
   // CAPT dashboard: return only records the current role can see. Payout details
   // remain limited to finance managers or the payout recipient.
