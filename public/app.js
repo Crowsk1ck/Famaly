@@ -23,7 +23,6 @@ const nav=[
   {id:'ranks',text:'Ранги та підвищення',icon:'⬡',group:'РОБОТА'},
   {id:'departments',text:'Напрямки',icon:'▦',group:'РОБОТА'},
   {id:'workspace',text:'Управління підрозділом',icon:'▤',group:'РОБОТА'},
-  {id:'tasks',text:'Завдання',icon:'☑',group:'ОПЕРАЦІЇ'},
   {id:'contracts',text:'Контракти',icon:'▤',group:'ОПЕРАЦІЇ'},
   {id:'capt',text:'CAPT',icon:'◎',group:'ОПЕРАЦІЇ'},
   {id:'finance',text:'Фінанси',icon:'₴',group:'ОПЕРАЦІЇ'},
