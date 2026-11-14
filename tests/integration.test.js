@@ -1375,6 +1375,8 @@ test('department contract finances remain scoped to the assigned head and track 
   assert.match(app,/finance-summary/);
   assert.match(app,/Підрозділ контракту/);
   assert.match(app,/Статистика тільки цього підрозділу/);
+  assert.match(app,/contract-department-filter/);
+  assert.match(app,/department-contracts/);
 });
 // Run destructive session-revocation coverage last: other integration tests use this member's active session.
 test('blocking user revokes sessions and stops access',async()=>{const u=(await req('/api/users',{token:leader})).data.items.find(x=>x.id===memberId);const r=await req(`/api/users/${memberId}`,{method:'PATCH',token:leader,data:{...u,status:'blocked'}});assert.equal(r.status,200,JSON.stringify(r.data));assert.equal((await req('/api/auth/me',{token:member})).status,401);});
