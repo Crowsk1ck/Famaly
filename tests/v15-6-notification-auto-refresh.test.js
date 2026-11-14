@@ -86,7 +86,7 @@ test('v15.6 expired sessions stop background activity without exposing old data'
  h.runtime.startNotificationPolling();
  await h.runtime.pollNotifications();
  assert.equal(h.state.user,null);
- assert.deepEqual(h.state.notifications,[]);
+ assert.equal(h.state.notifications.length,0);
  assert.equal(h.counts().cancelled,1);
  assert.equal(h.counts().signouts,1);
  h.advance(60000);
