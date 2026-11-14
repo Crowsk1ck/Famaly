@@ -959,9 +959,9 @@ async function dossierPage(){
  '<label>До<input class="input" type="date" id="dossier-timeline-to" value="'+esc(state.dossierTimelineTo||'')+'"></label>'+
  '<button type="button" class="btn tiny secondary" data-action="dossier-timeline-reset">Скинути</button></div>';
  const timelineRows=timelinePage.items.map(event=>
- '<tr><td>'+esc(date(event.date))+'</td><td>'+esc(timelineLabels[event.category]||event.category)+'</td>'+
- '<td><strong>'+esc(event.title)+'</strong>'+(event.detail?'<div class="muted small">'+esc(event.detail)+'</div>':'')+'</td>'+
- '<td>'+(event.status?badge(event.status):'—')+'</td></tr>');
+ '<tr><td data-label="Дата">'+esc(date(event.date))+'</td><td data-label="Тип">'+esc(timelineLabels[event.category]||event.category)+'</td>'+
+ '<td data-label="Подія"><strong>'+esc(event.title)+'</strong>'+(event.detail?'<div class="muted small">'+esc(event.detail)+'</div>':'')+'</td>'+
+ '<td data-label="Статус">'+(event.status?badge(event.status):'—')+'</td></tr>');
  const actionKinds=[['all','Усі рішення'],['warning','Попередження'],['reprimand','Догани'],['recognition','Подяки'],['award','Нагороди']];
  const actionKind=state.dossierKind||'all',actionStatus=state.dossierStatus||'all';
  const from=state.dossierFrom||'',to=state.dossierTo||'';
@@ -973,7 +973,7 @@ async function dossierPage(){
  '<label>Від<input type="date" class="input" id="dossier-from-filter" value="'+esc(from)+'"></label>'+
  '<label>До<input type="date" class="input" id="dossier-to-filter" value="'+esc(to)+'"></label>'+
  '<button class="btn tiny secondary" data-action="dossier-reset-filters" type="button">Скинути</button></div>';
- const actionRows=filteredActions.map(a=>'<tr><td>'+esc(a.title)+'</td><td>'+esc(a.details)+'</td><td>'+badge(a.status)+'</td><td>'+esc(date(a.created_at))+'</td><td>'+
+ const actionRows=filteredActions.map(a=>'<tr><td data-label="Рішення">'+esc(a.title)+'</td><td data-label="Причина">'+esc(a.details)+'</td><td data-label="Статус">'+badge(a.status)+'</td><td data-label="Дата">'+esc(date(a.created_at))+'</td><td data-label="Дія">'+
   (x.can_manage&&a.status==='Чинне'?'<button class="btn tiny secondary" data-action="resolve-personnel-action" data-id="'+esc(a.id)+'" data-version="'+a.version+'">Зняти</button>':'')+'</td></tr>');
  const history=x.latest_records.map(r=>'<tr><td>'+esc(r.title)+'</td><td>'+esc(r.module)+'</td><td>'+badge(r.status)+'</td><td>'+esc(date(r.created_at))+'</td></tr>');
  const abs=x.absences.map(a=>'<tr><td>'+esc(absenceType(a.type))+'</td><td>'+esc(a.starts_at)+' — '+esc(a.ends_at)+'</td><td>'+badge(a.status)+'</td></tr>');
@@ -990,7 +990,7 @@ async function dossierPage(){
   timelineFilters+'<p class="muted small">Знайдено: '+timelinePage.total+' із '+timelineAll.length+'</p>'+
   (timelineRows.length?table(['Дата','Тип','Подія','Статус'],timelineRows)+pageControls(timelinePage,'dossier-timeline-page'):
     empty('За вибраними фільтрами подій немає'))+'</div>'+
-  '<div class="card gr-activity-table"><h3>Догани та заохочення</h3>'+actionFilters+
+  '<div class="card gr-activity-table gr-dossier-actions"><h3>Догани та заохочення</h3>'+actionFilters+
  '<p class="muted small">Знайдено рішень: '+filteredActions.length+' із '+x.actions.length+'</p>'+
  (actionRows.length?table(['Рішення','Причина','Статус','Дата',''],actionRows):empty('Немає рішень за обраними фільтрами'))+'</div>'+
   '<div class="card gr-activity-table"><h3>Звіти, завдання й CAPT</h3>'+(history.length?table(['Назва','Розділ','Статус','Дата'],history):empty('Записів поки немає'))+'</div>'+
