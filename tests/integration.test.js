@@ -1584,5 +1584,99 @@ test('leader overview and automatic weekly reports enforce role, appointment and
  const overview=await req('/api/leadership-overview',{token:leader});
  assert.ok(overview.data.items.some(x=>x.department_id===dept.id&&x.report.id===record.id));
 });
+test('v9 activity 7/30 counts only actual operations and scopes to each role',async()=>{
+ const departments=(await req('/api/departments',{token:leader})).data.items;
+ const dept=departments.find(d=>!d.head_id)||departments[0];
+ const foreign=departments.find(d=>d.id!==dept.id);
+ const userCreated=await req('/api/users',{method:'POST',token:leader,data:{
+  username:'activitymember9',password:'activity-member-password-123',nickname:'Active Reporter',role:'member',department_id:dept.id
+ }});
+ assert.equal(userCreated.status,201,JSON.stringify(userCreated.data));
+ const memberLogin=await req('/api/auth/login',{method:'POST',data:{username:'activitymember9',password:'activity-member-password-123'}});
+ assert.equal(memberLogin.status,200);
+ const token=memberLogin.cookie.match(/grizzly_session=([a-f0-9]+)/)[1];
+ const before=await req('/api/activity',{token});
+ assert.equal(before.status,200,JSON.stringify(before.data));
+ assert.equal(before.data.items.length,1);
+ assert.equal(before.data.items[0].actions_7,0,'Login must not count as RP activity');
+ assert.equal(before.data.items[0].actions_30,0);
+ assert.match(before.data.basis,/не час у GTA 5/);
+ assert.equal((await req('/api/activity?department='+foreign.id,{token})).status,403);
+ const created=await req('/api/records/reports',{method:'POST',token,data:{
+  title:'Activity test report',details:'A real operational report',department_id:dept.id
+ }});
+ assert.equal(created.status,201,JSON.stringify(created.data));
+ const after=await req('/api/activity',{token});
+ assert.ok(after.data.items[0].actions_7>=1);
+ assert.ok(after.data.items[0].actions_30>=after.data.items[0].actions_7);
+ const leaderView=await req('/api/activity?department='+dept.id,{token:leader});
+ assert.equal(leaderView.status,200);
+ assert.ok(leaderView.data.items.find(x=>x.id===userCreated.data.item.id));
+ assert.ok(leaderView.data.items.every(x=>x.department_id===dept.id));
+ const head=await req('/api/users',{method:'POST',token:leader,data:{
+  username:'activityhead9',password:'activity-head-password-123',nickname:'Activity Head',role:'head',department_id:dept.id
+ }});
+ assert.equal(head.status,201,JSON.stringify(head.data));
+ const headLogin=await req('/api/auth/login',{method:'POST',data:{username:'activityhead9',password:'activity-head-password-123'}});
+ const headToken=headLogin.cookie.match(/grizzly_session=([a-f0-9]+)/)[1];
+ assert.equal((await req('/api/activity',{token:headToken})).status,403,'Unappointed head cannot see other members activity');
+ const current=(await req('/api/departments',{token:leader})).data.items.find(d=>d.id===dept.id);
+ assert.equal((await req('/api/departments/'+dept.id,{method:'PATCH',token:leader,data:{
+  title:current.title,head_id:head.data.item.id,version:current.version
+ }})).status,200);
+ const headView=await req('/api/activity',{token:headToken});
+ assert.equal(headView.status,200);
+ assert.ok(headView.data.items.some(x=>x.id===userCreated.data.item.id));
+ assert.ok(headView.data.items.every(x=>x.department_id===dept.id));
+ assert.equal((await req('/api/activity?department='+foreign.id,{token:headToken})).status,403);
+
+ const today=new Date().toISOString().slice(0,10);
+ const leave={type:'vacation',starts_at:today,ends_at:today,details:'Відпустка для перевірки заявок'};
+ assert.equal((await req('/api/absences',{method:'POST',token,data:{...leave,type:'invalid'}})).status,400);
+ assert.equal((await req('/api/absences',{method:'POST',token,data:{...leave,starts_at:'2024-02-31'}})).status,400);
+ const applied=await req('/api/absences',{method:'POST',token,data:leave});
+ assert.equal(applied.status,201,JSON.stringify(applied.data));
+ const id=applied.data.item.id,version=applied.data.item.version;
+ assert.equal(applied.data.item.status,'На перевірці');
+ assert.equal((await req('/api/absences',{method:'POST',token,data:leave})).status,409,'Overlapping leave must fail');
+ assert.equal((await req('/api/absences/'+id,{method:'PATCH',token,data:{
+  status:'Погоджено',version
+ }})).status,403,'Cannot approve own leave');
+ const headItems=await req('/api/absences',{token:headToken});
+ assert.ok(headItems.data.items.some(x=>x.id===id));
+ const foreignMember=await req('/api/users',{method:'POST',token:leader,data:{
+  username:'activityforeign9',password:'activity-foreign-password-123',nickname:'Foreign Member',role:'member',department_id:foreign.id
+ }});
+ assert.equal(foreignMember.status,201);
+ const foreignLogin=await req('/api/auth/login',{method:'POST',data:{
+  username:'activityforeign9',password:'activity-foreign-password-123'
+ }});
+ const foreignToken=foreignLogin.cookie.match(/grizzly_session=([a-f0-9]+)/)[1];
+ const other=await req('/api/absences',{method:'POST',token:foreignToken,data:{
+  type:'inactive',starts_at:today,ends_at:today,details:'Потреба тимчасово бути неактивним'
+ }});
+ assert.equal(other.status,201);
+ assert.ok(!(await req('/api/absences',{token:headToken})).data.items.some(x=>x.id===other.data.item.id));
+ assert.ok(!(await req('/api/absences',{token})).data.items.some(x=>x.id===other.data.item.id));
+ assert.equal((await req('/api/absences/'+other.data.item.id,{method:'PATCH',token:headToken,data:{
+  status:'Погоджено',version:other.data.item.version
+ }})).status,404,'Head cannot read or approve foreign applications');
+ const reviewed=await req('/api/absences/'+id,{method:'PATCH',token:headToken,data:{
+  status:'Погоджено',version,comment:'Відпустку погоджено'
+ }});
+ assert.equal(reviewed.status,200,JSON.stringify(reviewed.data));
+ assert.equal((await req('/api/absences/'+id,{method:'PATCH',token:headToken,data:{
+  status:'Відхилено',version
+ }})).status,409);
+ const approvedActivity=await req('/api/activity',{token});
+ assert.equal(approvedActivity.data.items[0].absence,'vacation');
+ const cancelled=await req('/api/absences/'+id,{method:'PATCH',token:leader,data:{
+  status:'Скасовано',version:version+1
+ }});
+ assert.equal(cancelled.status,200);
+ assert.equal((await req('/api/activity',{token})).data.items[0].absence,null);
+ const inactive=(await req('/api/absences',{token:leader})).data.items.find(x=>x.id===other.data.item.id);
+ assert.equal(inactive.type,'inactive');
+});
 // Run destructive session-revocation coverage last: other integration tests use this member's active session.
 test('blocking user revokes sessions and stops access',async()=>{const u=(await req('/api/users',{token:leader})).data.items.find(x=>x.id===memberId);const r=await req(`/api/users/${memberId}`,{method:'PATCH',token:leader,data:{...u,status:'blocked'}});assert.equal(r.status,200,JSON.stringify(r.data));assert.equal((await req('/api/auth/me',{token:member})).status,401);});

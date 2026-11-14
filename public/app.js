@@ -24,6 +24,8 @@ const nav=[
   {id:'departments',text:'Напрямки',icon:'▦',group:'РОБОТА'},
   {id:'workspace',text:'Управління підрозділом',icon:'▤',group:'РОБОТА'},
   {id:'leadership',text:'Контроль керівників',icon:'▥',group:'РОБОТА'},
+  {id:'activity',text:'Активність 7/30 днів',icon:'◷',group:'РОБОТА'},
+  {id:'absences',text:'Відпустки та неактив',icon:'☷',group:'РОБОТА'},
   {id:'contracts',text:'Контракти',icon:'▤',group:'ОПЕРАЦІЇ'},
   {id:'capt',text:'CAPT',icon:'◎',group:'ОПЕРАЦІЇ'},
   {id:'finance',text:'Фінанси',icon:'₴',group:'ОПЕРАЦІЇ'},
@@ -692,7 +694,7 @@ const workspaceDepartmentSections=Object.freeze({
 });
 function workspaceTabs(departmentId,sections){
  const allowed=workspaceDepartmentSections[departmentId]||['personnel','tasks','reports','contracts','finance'];
- return ['weekly','report',...allowed].map(id=>sections.find(section=>section.id===id)).filter(Boolean);
+ return ['weekly','report','activity','absences',...allowed].map(id=>sections.find(section=>section.id===id)).filter(Boolean);
 }
 const workspaceDuties=Object.freeze({
  capt:['Координувати склад перед CAPT-боями','Проводити тренування та підтверджувати участь','Фіксувати підсумки боїв і звіти'],
@@ -730,6 +732,57 @@ async function leadershipDashboard(){
   '<p class="muted small mt">Цифри формуються з фактичних записів. Звіти створюються автоматично для перегляду та подаються керівником на перевірку. Дані не змінюють фінанси.</p>'+
   '<div class="gr-leader-grid">'+cards+'</div>';
 }
+
+function absenceType(type){return type==='vacation'?'Відпустка':type==='inactive'?'Тимчасовий неактив':'Відсутність';}
+function activityTable(items){
+ const rows=items.map(x=>'<tr><td class="table-title">'+esc(x.nickname)+'</td><td>'+esc(departmentName(x.department_id))+'</td>'+
+   '<td class="mono">'+fmt(x.actions_7)+'</td><td class="mono">'+fmt(x.actions_30)+'</td>'+
+   '<td>'+esc(x.last_action?date(x.last_action):'Немає дій')+'</td>'+
+   '<td>'+(x.absence?badge(absenceType(x.absence)):x.actions_30?'Дії зафіксовано':'Немає зафіксованих дій')+'</td></tr>');
+ return rows.length?table(['Учасник','Підрозділ','7 днів','30 днів','Остання дія','Стан'],rows):
+   empty('Записів активності немає','Статистика формується лише із зафіксованих операцій у панелі.');
+}
+function absenceTable(items){
+ const me=state.user;
+ const rows=items.map(x=>{
+  const own=x.owner_id===me.id;
+  const canReview=!own&&(me.role==='leader'||me.role==='deputy'||me.role==='head'&&me.head_appointed&&me.department_id===x.department_id);
+  const approve=canReview&&x.status==='На перевірці';
+  const cancel=own&&x.status==='На перевірці';
+  const managerCancel=canReview&&x.status==='Погоджено';
+  const buttons=(approve?'<button class="btn tiny secondary" data-action="absence-review" data-id="'+esc(x.id)+'" data-version="'+x.version+'" data-decision="Погоджено">Погодити</button> '+
+   '<button class="btn tiny secondary" data-action="absence-review" data-id="'+esc(x.id)+'" data-version="'+x.version+'" data-decision="Відхилено">Відхилити</button>':'')+
+   (cancel||managerCancel?'<button class="btn tiny ghost" data-action="absence-review" data-id="'+esc(x.id)+'" data-version="'+x.version+'" data-decision="Скасовано">Скасувати</button>':'');
+  return '<tr><td class="table-title">'+esc(userName(x.owner_id))+'</td><td>'+esc(absenceType(x.type))+
+   '</td><td>'+esc(x.starts_at)+' — '+esc(x.ends_at)+'</td><td>'+badge(x.status)+'</td>'+
+   '<td>'+esc(x.details||'')+(x.review_comment?'<div class="muted small">Рішення: '+esc(x.review_comment)+'</div>':'')+'</td><td>'+buttons+'</td></tr>';
+ });
+ return rows.length?table(['Учасник','Тип','Період','Статус','Причина / рішення','Дії'],rows):
+  empty('Заявок ще немає','Створіть заявку на відпустку або тимчасовий неактив.');
+}
+async function activityPage(){
+ const user=state.user;
+ const department=['leader','deputy'].includes(user.role)?state.activityDepartment||'all':user.role==='head'?user.department_id:'';
+ const query=department&&department!=='all'?'?department='+encodeURIComponent(department):'';
+ const data=await api('/activity'+query);
+ const selector=['leader','deputy'].includes(user.role)?'<label class="gr-activity-filter">Підрозділ <select class="select" id="activity-department-filter"><option value="all">Усі підрозділи</option>'+
+  state.departments.map(d=>'<option value="'+esc(d.id)+'"'+(department===d.id?' selected':'')+'>'+esc(d.title)+'</option>').join('')+'</select></label>':'';
+ const total=data.items.length,week=data.items.filter(x=>x.actions_7>0).length,
+   month=data.items.filter(x=>x.actions_30>0).length,leave=data.items.filter(x=>x.absence).length;
+ return intro('Активність учасників','Статистика за 7 і 30 днів лише за діями в панелі GRIZZLY, а не за онлайном у GTA 5.')+
+  '<div class="row space wrap mt">'+selector+'<p class="small muted">Погоджені відпустки та неактив відображаються окремо.</p></div>'+
+  '<div class="gr-activity-stats">'+[['Учасників',total],['Дії за 7 днів',week],['Дії за 30 днів',month],['На погодженій відсутності',leave]].map(([k,v])=>
+    '<div class="card"><span class="muted small">'+esc(k)+'</span><strong>'+fmt(v)+'</strong></div>').join('')+'</div>'+
+  '<div class="card gr-activity-table">'+activityTable(data.items)+'</div>';
+}
+async function absencesPage(){
+ const data=await api('/absences');
+ const me=state.user;
+ const items=(data.items||[]).filter(x=>me.role!=='member'||x.owner_id===me.id);
+ return intro('Відпустки та неактив','Учасники подають заявки, а призначені керівники їх погоджують. Схвалена відсутність враховується в активності.',
+  '<button class="btn" data-action="absence-new">＋ Подати заявку</button>')+
+  '<div class="card gr-activity-table">'+absenceTable(items)+'</div>';
+}
 async function departmentWorkspace(){
  const user=state.user;
  if(!['leader','deputy','head'].includes(user.role))return intro('Доступ до підрозділу','Тільки призначені керівники та вище керівництво.');
@@ -752,6 +805,8 @@ async function departmentWorkspace(){
  state.workspaceGoals={department:dept.id,weekly};
  const id=state.workspaceSection||'weekly';
  const allSections=[{id:'weekly',title:'План на тиждень',group:'Керування',count:weekly.metrics?.length||0},
+  {id:'activity',title:'Активність 7/30',group:'Керування',count:members.length},
+  {id:'absences',title:'Відпустки / неактив',group:'Керування',count:0},
   {id:'report',title:'Тижневий звіт',group:'Керування',count:report.report.id?1:0},
   {id:'personnel',title:'Особовий склад',group:'Керування',count:members.length},
   {id:'contracts',title:'Контракти',group:'Керування',count:contracts.length},
@@ -808,6 +863,8 @@ async function departmentWorkspace(){
    (submitted?'<button class="btn secondary" data-action="view-record" data-module="reports" data-id="'+esc(report.report.id)+'">Переглянути поданий звіт ↗</button>':'')+'</div>'+
    (!submitted&&!submitAllowed?'<p class="muted small mt">Подати звіт може лише призначений керівник цього підрозділу.</p>':'')+'</div>';
  }
+ else if(active.id==='activity')content=activityTable((await api('/activity?department='+encodeURIComponent(dept.id))).items);
+ else if(active.id==='absences')content='<div class="row justify-end"><button class="btn tiny" data-action="absence-new">＋ Подати заявку</button></div>'+absenceTable((await api('/absences')).items.filter(x=>x.department_id===dept.id));
  else if(active.id==='personnel')content=members.length?table(['Учасник','Ранг','Роль','Статус'],membersRows):empty('Учасників ще немає','Лідер може призначити учасників до цього напрямку.');
  else if(active.id==='contracts')content=(contracts.length?table(['Контракт','Сума','Статус','Дія'],contractRows):empty('Контрактів немає'))+
    '<p class="muted small mt">Фінансові нарахування й видача коштів виконуються тільки уповноваженим керівництвом.</p>';
@@ -1527,7 +1584,7 @@ return `${intro('Налаштування Grizzly','Редагування пу�
     '<div class="row wrap mt"><button class="btn secondary" type="button" data-action="discord-test" '+(discord.configured?'':'disabled')+'>Надіслати тестове повідомлення</button>'+
     '<button type="button" class="btn ghost" data-action="discord-refresh">Оновити статус</button><span class="muted small">Worker: famaly · Не надсилай webhook у чат.</span></div></div>':''}<div class="notice mt">Ставки CAPT застосовуються вручну при створенні виплат, щоб керівник контролював підставу нарахування. Права заступників задаються в особових справах.</div>`;}
 async function profile(){const u=state.user;const sessions=(await api('/auth/sessions')).items;return `${intro('Мій профіль','Особисті дані, пароль та активні сесії.')}<div class="grid2"><div class="card"><h3>${esc(u.nickname||u.username)}</h3><div class="stack mt"><div>Логін: <strong>${esc(u.username)}</strong></div><div>Роль доступу: <strong>${esc(roles[u.role])}</strong></div><div>Ігровий ранг: <strong>${esc(rankName(u.rank_id))}</strong></div><div>Напрямок: <strong>${esc(departmentName(u.department_id))}</strong></div><div>Ігровий ID: <strong>${esc(u.game_id||'—')}</strong></div><div>Discord: <strong>${esc(u.discord||'—')}</strong></div></div><button class="btn tiny secondary mt" data-action="edit-user" data-id="${u.id}">Редагувати профіль</button></div><div class="card"><h3>Зміна пароля</h3><form id="password-form" class="stack mt">${field('Поточний пароль','old_password','','password',true,'required')}${field('Новий пароль (12–128 символів)','new_password','','password',true,'minlength="12" required')}<button class="btn" type="submit">Змінити пароль і завершити сесії</button></form></div></div><div class="card mt"><div class="card-head"><h3>Сесії</h3><span class="muted small">Завершення доступу з інших пристроїв</span></div>${table(['Створено','Термін дії','Пристрій','Дія'],sessions.map(x=>`<tr><td>${date(x.created_at)}</td><td>${date(x.expires_at)}</td><td class="wordwrap">${esc(x.user_agent.slice(0,100))}</td><td>${x.revoked_at?badge('Завершено'):`<button class="btn tiny danger" data-action="revoke-session" data-id="${esc(x.id)}">Завершити</button>`}</td></tr>`))}</div>`;}
-async function render(){state.menu=false;let content='';try{if(!state.user||(location.pathname!=='/'&&Object.values(grPublicPaths).includes(location.pathname)&&!location.hash.startsWith('#overview'))){renderPublic();return;}if(['overview','members','ranks','departments','contracts','settings','profile'].includes(state.route)||state.route==='workspace')await preload();switch(state.route){case'overview':content=await overview();break;case'members':content=await members();break;case'ranks':content=await ranks();break;case'departments':content=await departments();break;case'workspace':content=await departmentWorkspace();break;case'leadership':content=await leadershipDashboard();break;case'tasks':content=await renderModule('tasks');break;case'events':content=await renderModule('events');break;case'gallery':content=await galleryManager();break;case'public_news':content=await newsManager();break;case'public_team':content=await teamManager();break;case'public_achievements':content=await achievementsManager();break;case'public_calendar':content=await calendarManager();break;case'contracts':content=await contracts();break;case'capt':content=await captPage();break;case'fleet':content=await fleetPage();break;case'discipline':case'announcements':case'reports':content=await groupPage(state.route);break;case'finance':content=await finance();break;case'applications':content=await applications();break;case'stats':content=await stats();break;case'audit':content=await auditPage();break;case'settings':content=await settingsPage();break;case'profile':content=await profile();break;default:state.route='overview';content=await overview();}shell(content);}catch(e){if(e.status===401){state.user=null;state.route='overview';renderPublic();toast('Сесію завершено. Увійдіть повторно.',true);return;}shell(intro('Помилка завантаження',e.message)+`<button class="btn mt" data-action="refresh">Повторити</button>`);toast(e.message,true);}}
+async function render(){state.menu=false;let content='';try{if(!state.user||(location.pathname!=='/'&&Object.values(grPublicPaths).includes(location.pathname)&&!location.hash.startsWith('#overview'))){renderPublic();return;}if(['overview','members','ranks','departments','contracts','settings','profile'].includes(state.route)||state.route==='workspace')await preload();switch(state.route){case'overview':content=await overview();break;case'members':content=await members();break;case'ranks':content=await ranks();break;case'departments':content=await departments();break;case'workspace':content=await departmentWorkspace();break;case'leadership':content=await leadershipDashboard();break;case'activity':content=await activityPage();break;case'absences':content=await absencesPage();break;case'tasks':content=await renderModule('tasks');break;case'events':content=await renderModule('events');break;case'gallery':content=await galleryManager();break;case'public_news':content=await newsManager();break;case'public_team':content=await teamManager();break;case'public_achievements':content=await achievementsManager();break;case'public_calendar':content=await calendarManager();break;case'contracts':content=await contracts();break;case'capt':content=await captPage();break;case'fleet':content=await fleetPage();break;case'discipline':case'announcements':case'reports':content=await groupPage(state.route);break;case'finance':content=await finance();break;case'applications':content=await applications();break;case'stats':content=await stats();break;case'audit':content=await auditPage();break;case'settings':content=await settingsPage();break;case'profile':content=await profile();break;default:state.route='overview';content=await overview();}shell(content);}catch(e){if(e.status===401){state.user=null;state.route='overview';renderPublic();toast('Сесію завершено. Увійдіть повторно.',true);return;}shell(intro('Помилка завантаження',e.message)+`<button class="btn mt" data-action="refresh">Повторити</button>`);toast(e.message,true);}}
 async function navigate(route){const url=new URL(location.href);if(url.searchParams.has('view')||url.pathname!=='/'){url.searchParams.delete('view');history.replaceState(history.state,'','/'+url.search+url.hash);}state.route=route;state.search='';state.sort='new';state.filter='';state.menu=false;location.hash=route;await render();}
 async function initial(){try{state.public=await api('/public');}catch(e){state.public={settings:{tagline:'Сила в єдності.'},gallery:[]};toast('Не вдалося отримати публічні дані. Перевірте D1 та міграції.',true);}try{state.user=(await api('/auth/me')).user;}catch{state.user=null;}if(state.user){try{state.notifications=(await api('/notifications')).items;await preload();}catch(e){toast(e.message,true);}state.route=location.hash.replace('#','')||'overview';}if(new URL(location.href).searchParams.get('view')==='public'){renderPublic();return;}await render();}
 const lines=s=>String(s||'').split(/\n/).map(x=>x.trim()).filter(Boolean);
@@ -1540,6 +1597,14 @@ async function handleSubmit(e){const f=e.target;if(!f.id)return;e.preventDefault
     const result=await api(id?`/users/${id}`:'/users',id?'PATCH':'POST',payload);if(!id){closeModal();await preload();await render();credentialReceipt(result.item.username,b.password,result.item.nickname);return;}await afterSaved('Особову справу оновлено');return;}
   case 'rank-form':{const r=state.ranks.find(x=>x.id===Number(f.dataset.id));await api(`/ranks/${r.id}`,'PATCH',{title:b.title,requirements:b.requirements,checklist:lines(b.checklist),version:r.version});await afterSaved('Ранг оновлено');return;}
   case 'department-form':{const d=state.departments.find(x=>x.id===f.dataset.id);await api(`/departments/${d.id}`,'PATCH',{...b,version:d.version});await afterSaved();return;}
+  case 'absence-request-form':{
+    await api('/absences','POST',{type:b.type,starts_at:b.starts_at,ends_at:b.ends_at,details:b.details});
+    await afterSaved('Заявку подано на перевірку');return;
+  }
+  case 'absence-review-form':{
+    await api('/absences/'+encodeURIComponent(f.dataset.id),'PATCH',{version:Number(f.dataset.version),status:f.dataset.decision,comment:b.comment||''});
+    await afterSaved('Рішення щодо відсутності збережено');return;
+  }
   case 'weekly-report-submit-form':{
     const id=f.dataset.department,week=f.dataset.week;
     await api('/department-weekly-report','POST',{department_id:id,week_start:week,comment:b.comment||''});
@@ -1619,7 +1684,7 @@ async function handleSubmit(e){const f=e.target;if(!f.id)return;e.preventDefault
 } }catch(err){toast(err.message,true);if(err.status===409)toast('Оновіть сторінку перед повторним редагуванням.',true);}finally{if(submit)submit.disabled=false;}}
 document.addEventListener('submit',handleSubmit);
 document.addEventListener('input',e=>{if(e.target.closest('#contract-correction-form')){const f=e.target.closest('form');f.dataset.previewAmount='';f.dataset.previewReason='';const btn=f.querySelector('[data-action="contract-correction-save"]');if(btn)btn.disabled=true;const box=f.querySelector('#contract-correction-preview');if(box)box.textContent='Дані змінено. Повторіть попередній розрахунок.';}if(e.target.name==='photo_url'&&e.target.closest('#gallery-form'))updateGalleryFormPreview();if(e.target.name==='photo_url'&&e.target.closest('#team-form'))updateTeamFormPreview();if(e.target.name==='photo_url'&&e.target.closest('#achievement-form'))updateAchievementPreview();if(e.target.id==='search-input'){state.search=e.target.value;const start=e.target.selectionStart;render().then(()=>{const v=$('#search-input');if(v){v.focus();try{v.setSelectionRange(start,start);}catch{}}});}});
-document.addEventListener('change',e=>{if(e.target.id==='workspace-department-select'){state.workspaceDepartment=e.target.value;state.workspaceSection='personnel';void render();return;}if(e.target.id==='gr-gallery-sort'){state.gallerySort=e.target.value;const node=$('#gr-gallery-content');if(node)node.innerHTML=renderPublicGallery();return;}if(e.target.id==='gr-achievement-sort'){state.achievementSort=e.target.value;const node=$('#gr-achievements-content');if(node)node.innerHTML=renderPublicAchievements();return;}if(e.target.matches('#record-form[data-module="promotions"] [name="extra_requested_rank_id"]')){const form=e.target.form,box=form.querySelector('#promotion-requirement-box');if(box){box.innerHTML=promotionChecklistView(e.target.value,[]);syncPromotionChecklist();}return;}if(e.target.matches('.promotion-requirement')){syncPromotionChecklist();return;}if(state.route==='members'&&['members-role-filter','members-status-filter','members-department-filter','members-sort-filter'].includes(e.target.id)){const key={'members-role-filter':'membersRole','members-status-filter':'membersStatus','members-department-filter':'membersDepartment','members-sort-filter':'membersSort'}[e.target.id];state[key]=e.target.value;render();return;}if(e.target.id==='contract-department-filter'){state.contractDepartment=e.target.value;render();return;}if(e.target.id==='status-filter'){state.filter=e.target.value;render();}if(e.target.id==='sort-select'){state.sort=e.target.value;render();}if(e.target.id==='period-filter'){state.period=e.target.value;render();}});
+document.addEventListener('change',e=>{if(e.target.id==='activity-department-filter'){state.activityDepartment=e.target.value;void render();return;}if(e.target.id==='workspace-department-select'){state.workspaceDepartment=e.target.value;state.workspaceSection='personnel';void render();return;}if(e.target.id==='gr-gallery-sort'){state.gallerySort=e.target.value;const node=$('#gr-gallery-content');if(node)node.innerHTML=renderPublicGallery();return;}if(e.target.id==='gr-achievement-sort'){state.achievementSort=e.target.value;const node=$('#gr-achievements-content');if(node)node.innerHTML=renderPublicAchievements();return;}if(e.target.matches('#record-form[data-module="promotions"] [name="extra_requested_rank_id"]')){const form=e.target.form,box=form.querySelector('#promotion-requirement-box');if(box){box.innerHTML=promotionChecklistView(e.target.value,[]);syncPromotionChecklist();}return;}if(e.target.matches('.promotion-requirement')){syncPromotionChecklist();return;}if(state.route==='members'&&['members-role-filter','members-status-filter','members-department-filter','members-sort-filter'].includes(e.target.id)){const key={'members-role-filter':'membersRole','members-status-filter':'membersStatus','members-department-filter':'membersDepartment','members-sort-filter':'membersSort'}[e.target.id];state[key]=e.target.value;render();return;}if(e.target.id==='contract-department-filter'){state.contractDepartment=e.target.value;render();return;}if(e.target.id==='status-filter'){state.filter=e.target.value;render();}if(e.target.id==='sort-select'){state.sort=e.target.value;render();}if(e.target.id==='period-filter'){state.period=e.target.value;render();}});
 document.addEventListener('click',async e=>{const back=e.target.closest('[data-backdrop]');if(back&&e.target===back){closeModal();return;}const t=e.target.closest('[data-action],[data-route]');if(!t)return;e.preventDefault();try{if(t.dataset.route){await navigate(t.dataset.route);return;}const act=t.dataset.action,id=t.dataset.id,mod=t.dataset.module;switch(act){
   case 'show-login':loginModal();break;
   case 'close-modal':closeModal();break;
@@ -1690,6 +1755,25 @@ document.addEventListener('click',async e=>{const back=e.target.closest('[data-b
       '<p class="muted small full">Показники система додасть автоматично. За цей тиждень можна подати лише один звіт.</p>'+
       '<div class="field full"><label>Коментар керівника (необов’язково)</label><textarea class="textarea" name="comment" maxlength="800" rows="4" placeholder="Що вдалося, які виникли труднощі?"></textarea></div>'+
       '<div class="full form-actions"><button class="btn ghost" type="button" data-action="close-modal">Скасувати</button><button class="btn" type="submit">Подати на перевірку</button></div></form>');
+    break;
+  }
+  case 'absence-new':{
+    const today=new Date().toISOString().slice(0,10);
+    modal('Нова заявка на відсутність','<form id="absence-request-form" class="formgrid">'+
+      '<div class="field"><label>Тип відсутності</label><select class="select" name="type" required><option value="vacation">Відпустка</option><option value="inactive">Тимчасовий неактив</option></select></div>'+
+      '<div class="field"><label>Початок</label><input class="input" type="date" name="starts_at" min="'+today+'" required></div>'+
+      '<div class="field"><label>Завершення</label><input class="input" type="date" name="ends_at" min="'+today+'" required></div>'+
+      '<div class="field full"><label>Причина</label><textarea class="textarea" name="details" maxlength="700" minlength="5" required placeholder="Коротко поясніть причину"></textarea></div>'+
+      '<p class="muted small full">Не більше 90 днів. Поки заявка не погоджена, відсутність не враховується як відпустка.</p>'+
+      '<div class="full form-actions"><button type="button" class="btn ghost" data-action="close-modal">Скасувати</button><button type="submit" class="btn">Подати заявку</button></div></form>');
+    break;
+  }
+  case 'absence-review':{
+    const decision=t.dataset.decision;
+    if(!['Погоджено','Відхилено','Скасовано'].includes(decision))throw new Error('Невідоме рішення');
+    modal('Рішення: '+decision,'<form id="absence-review-form" class="formgrid" data-id="'+esc(t.dataset.id)+'" data-version="'+Number(t.dataset.version)+'" data-decision="'+esc(decision)+'">'+
+      '<div class="field full"><label>Коментар (необов’язково)</label><textarea class="textarea" name="comment" maxlength="400"></textarea></div>'+
+      '<div class="full form-actions"><button type="button" class="btn ghost" data-action="close-modal">Назад</button><button class="btn" type="submit">Підтвердити</button></div></form>');
     break;
   }
   case 'workspace-section':state.workspaceSection=t.dataset.value||'weekly';await render();break;
