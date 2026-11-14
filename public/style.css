@@ -1004,3 +1004,12 @@
 .gr-dossier-filters label{display:grid;gap:5px;min-width:130px;flex:1;font-size:.82rem}
 .gr-dossier-filters input,.gr-dossier-filters select{width:100%;min-width:0}
 @media(max-width:600px){.gr-dossier-picker{grid-template-columns:1fr}.gr-dossier-filters label{min-width:calc(50% - 8px)}}
+
+/* v13.8: readable career progress and manual discipline review in dossier. */
+.gr-dossier-career-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px}
+.gr-dossier-career-grid>div{display:flex;flex-direction:column;gap:5px;min-width:0;padding:12px;background:var(--panel,#1a1d26);border:1px solid var(--border);border-radius:10px}
+.gr-dossier-career-grid strong{overflow-wrap:anywhere}
+.gr-dossier-career details{margin-top:12px}
+.gr-dossier-career details summary{cursor:pointer;font-weight:650}
+.gr-dossier-career details ul{margin:10px 0;padding-left:22px}
+@media(max-width:560px){.gr-dossier-career-grid{grid-template-columns:1fr}}
