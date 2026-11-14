@@ -1039,3 +1039,25 @@
  .gr-dossier-filters label{flex-basis:100%}
  .gr-leader-summary{grid-template-columns:minmax(0,1fr)}
 }
+
+
+/* v15.2: mobile drawer scrim and compact member search tools */
+.gr-menu-scrim{display:none}
+.gr-member-searchbar{flex-wrap:wrap;justify-content:flex-start}
+.gr-member-searchbar #search-input{flex:1 1 230px;min-width:0}
+.gr-member-searchbar [data-action="members-clear-search"]{min-height:40px;white-space:nowrap}
+.gr-member-searchbar .muted{margin-left:auto}
+@media(max-width:780px){
+ .gr-menu-scrim{display:block;position:fixed;inset:0;z-index:59;opacity:0;visibility:hidden;pointer-events:none;border:0;background:rgba(0,0,0,.62);transition:opacity .2s,visibility .2s}
+ .shell.menu-open .gr-menu-scrim{opacity:1;visibility:visible;pointer-events:auto}
+ .shell.menu-open .sidebar{z-index:60}
+ .gr-member-searchbar{gap:8px}
+ .gr-member-searchbar #search-input{flex-basis:100%;max-width:none;min-height:44px}
+ .gr-member-searchbar [data-action="members-clear-search"]{flex:1 1 auto}
+ .gr-member-searchbar .muted{margin-left:0}
+ .member-mobile-card .btn{min-height:44px;white-space:normal}
+ .member-mobile-card .row{flex-wrap:wrap;gap:8px}
+}
+@media(prefers-reduced-motion:reduce){
+ .gr-menu-scrim{transition:none}
+}
