@@ -854,3 +854,36 @@
 @media(max-width:650px){
  .gr-public .gr-logo-image{width:36px;height:36px;flex-basis:36px}
 }
+
+/* Department manager workspaces — scoped and responsive. */
+.gr-workspace-head{padding:20px 22px;border:1px solid #634050;background:linear-gradient(115deg,#27202c,#1a1e28)}
+.gr-workspace-head h2{font-size:clamp(1.2rem,2.4vw,1.8rem);margin:6px 0}
+.gr-workspace-select-label{display:flex;align-items:center;gap:10px;font-size:.82rem;color:#ccd0db}
+.gr-workspace-select-label select{min-width:180px;max-width:270px}
+.gr-workspace-stats{gap:10px}
+.gr-workspace-stats .stat{min-width:0;min-height:94px}
+.gr-workspace-stats .number{font-variant-numeric:tabular-nums}
+.gr-workspace-layout{display:grid;grid-template-columns:minmax(205px,245px) minmax(0,1fr);align-items:start;gap:15px}
+.gr-workspace-nav{padding:16px;display:grid;gap:6px;max-height:72vh;overflow-y:auto}
+.gr-workspace-nav>h3{font-size:1rem;margin-bottom:5px}
+.gr-workspace-nav>p{margin-bottom:9px}
+.gr-workspace-tab{border:1px solid transparent;color:#ced1da;background:transparent;border-radius:9px;padding:10px 11px;text-align:left;display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer;min-height:42px;font:inherit;font-size:.84rem}
+.gr-workspace-tab:hover{background:#292531;border-color:#563a46;color:white}
+.gr-workspace-tab.active{background:#442633;border-color:#a45266;color:white}
+.gr-workspace-tab:focus-visible{outline:2px solid #f697a9;outline-offset:2px}
+.gr-workspace-count{font-size:.75rem;color:#b5b9c7;font-variant-numeric:tabular-nums}
+.gr-workspace-content{min-width:0;padding:18px}
+.gr-workspace-content .table-wrap{overflow-x:auto}
+.gr-workspace-content td{vertical-align:middle}
+@media(max-width:880px){
+ .gr-workspace-layout{grid-template-columns:minmax(0,1fr)}
+ .gr-workspace-nav{max-height:none;display:flex;align-items:center;gap:8px;overflow-x:auto}
+ .gr-workspace-nav>h3,.gr-workspace-nav>p{display:none}
+ .gr-workspace-tab{white-space:nowrap;min-height:37px;flex:0 0 auto}
+}
+@media(max-width:580px){
+ .gr-workspace-head{padding:15px}
+ .gr-workspace-select-label{flex-direction:column;align-items:stretch;width:100%}
+ .gr-workspace-select-label select{max-width:100%;width:100%}
+ .gr-workspace-content{padding:14px}
+}
