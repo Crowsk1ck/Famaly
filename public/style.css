@@ -1092,3 +1092,29 @@ form[aria-busy="true"] [type="submit"]{cursor:progress;opacity:.65}
  .gr-notif-foot .btn{min-height:44px}
  .gr-notification-filters .btn{min-height:42px;flex:1}
 }
+
+
+/* v15.5: personal priority hub in the overview; no new data queries */
+.gr-overview-focus{min-width:0;padding:20px}
+.gr-overview-focus .card-head{margin-bottom:14px}
+.gr-overview-focus .card-head p{margin-top:5px}
+.gr-overview-focus-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.gr-overview-focus-column{display:flex;flex-direction:column;min-width:0;gap:8px;border:1px solid var(--border);
+ border-radius:12px;padding:14px;background:#1b1e28}
+.gr-focus-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px}
+.gr-focus-head h4{font-size:.92rem;margin:0;overflow-wrap:anywhere}
+.gr-focus-item{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;min-width:0;
+ padding:10px 0;border-top:1px solid var(--border)}
+.gr-focus-copy{display:flex;flex-direction:column;gap:5px;min-width:0;overflow-wrap:anywhere}
+.gr-focus-copy strong{font-size:.83rem;line-height:1.35}
+.gr-focus-copy .small{font-size:.74rem;line-height:1.5}
+.gr-focus-item .btn{flex:none;min-height:38px;white-space:normal}
+.gr-focus-empty{margin:8px 0}
+.gr-focus-all{margin-top:auto;align-self:flex-start;min-height:40px}
+@media(max-width:1050px){.gr-overview-focus-grid{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:560px){
+ .gr-overview-focus{padding:14px}
+ .gr-overview-focus-column{padding:12px}
+ .gr-focus-item .btn{min-height:44px}
+ .gr-focus-all{min-height:44px;width:100%;text-align:center}
+}
