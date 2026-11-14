@@ -877,6 +877,11 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
       'Чинне',user.id,person.id,person.department_id||null,0,'','','[]',JSON.stringify({kind}),t,t).run();
     await audit(db,user,'create','personnel_actions',id,kind+' · '+person.id);
     await notify(db,person.id,'Запис в особовій справі',PERSONNEL_ACTION_KINDS[kind]);
+    // Announce only the decision type, never the private reason or dossier contents.
+    queueDiscord(ctx,db,env,'announcements',{
+      event:'🛡️ Кадрове рішення · '+PERSONNEL_ACTION_KINDS[kind],
+      message:'Учасник: '+person.nickname+'\nРішення: '+PERSONNEL_ACTION_KINDS[kind]+'\nОформлено керівництвом GRIZZLY.'
+    });
     return json({item:personnelRecord(await db.prepare('SELECT * FROM records WHERE id=?').bind(id).first())},201);
   }
   m=path.match(/^\/api\/personnel-actions\/([\w-]+)$/);
@@ -895,6 +900,10 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
     if(changed.meta.changes!==1)fail(409,'Запис змінено, оновіть дані');
     await audit(db,user,'review','personnel_actions',record.id,'Знято');
     await notify(db,person.id,'Рішення знято',record.title);
+    queueDiscord(ctx,db,env,'announcements',{
+      event:'🛡️ Кадрове рішення · знято',
+      message:'Раніше оформлене кадрове рішення знято керівництвом GRIZZLY.'
+    });
     return json({ok:true});
   }
   if(path==='/api/inactivity'&&method==='GET'){
@@ -960,6 +969,14 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
     if(result.meta.changes!==1)fail(409,'Заявку вже змінив інший користувач');
     await audit(db,user,'review',ABSENCE_MODULE,old.id,decision);
     if(user.id!==old.owner_id)await notify(db,old.owner_id,'Рішення щодо відсутності',decision);
+    if(decision==='Погоджено'){
+      const person=await db.prepare('SELECT nickname FROM users WHERE id=?').bind(old.owner_id).first();
+      const absenceType=ABSENCE_TYPES[parseJson(old.extra,{}).type]||'Відсутність';
+      queueDiscord(ctx,db,env,'announcements',{
+        event:'🏖️ Погоджена відсутність · '+absenceType,
+        message:'Учасник: '+(person?.nickname||'Учасник сім’ї')+'\nПеріод: '+old.starts_at+' — '+old.ends_at+'\nПогоджено керівництвом GRIZZLY.'
+      });
+    }
     return json({ok:true});
   }
   if(path==='/api/department-workspace'&&method==='GET'){
@@ -1194,7 +1211,16 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
           const newRank=Number(extra.requested_rank_id);if(!Number.isInteger(newRank)||newRank<1||newRank>15||!await db.prepare('SELECT id FROM ranks WHERE id=?').bind(newRank).first())fail(400,'У заявці не вибрано чинний цільовий ранг');
           statements.push(db.prepare("UPDATE users SET rank_id=?,version=version+1,updated_at=? WHERE id=? AND EXISTS (SELECT 1 FROM records WHERE id=? AND json_extract(extra,'$.review_nonce')=?)").bind(newRank,now(),old.owner_id,id,nonce));
         }
-        const results=await db.batch(statements);if(results[0].meta.changes!==1)fail(409,'Запис змінено іншим користувачем');await audit(db,user,'review',mod,id,b.status);await notify(db,old.owner_id,`Рішення за ${mod}`,`${old.title}: ${b.status}`);return json({ok:true});
+        const results=await db.batch(statements);if(results[0].meta.changes!==1)fail(409,'Запис змінено іншим користувачем');await audit(db,user,'review',mod,id,b.status);await notify(db,old.owner_id,`Рішення за ${mod}`,`${old.title}: ${b.status}`);
+        if(mod==='promotions'&&b.status==='Погоджено'){
+          const promoted=await db.prepare('SELECT nickname FROM users WHERE id=?').bind(old.owner_id).first();
+          const rank=await db.prepare('SELECT name FROM ranks WHERE id=?').bind(Number(extra.requested_rank_id)).first();
+          queueDiscord(ctx,db,env,'announcements',{
+            event:'🎖️ Підвищення учасника',
+            message:'Учасник: '+(promoted?.nickname||'Учасник сім’ї')+'\nНовий ранг: '+(rank?.name||String(extra.requested_rank_id))+'\nПідвищення погоджено керівництвом GRIZZLY.'
+          });
+        }
+        return json({ok:true});
       }
       if(!review&&method==='PATCH'){
         if(mod==='reports'&&parseJson(old.extra,{}).kind==='department_weekly')fail(403,'Автоматичний звіт незмінний; скористайтеся перевіркою');
