@@ -60,7 +60,7 @@ function validApplicationStatus(value){
   return value;
 }
 function applicationView(record){return {...record,status:applicationStatus(record.status)};}
-function dateInput(v){const s=str(v,40);if(s && !/^\d{4}-\d\d-\d\d(?:T\d\d:\d\d(?::\d\d)?)?$/.test(s))fail(400,'Невірний формат дати');return s;}
+function dateInput(v){const s=str(v,40);if(!s)return '';if(!/^\d{4}-\d\d-\d\d(?:T\d\d:\d\d(?::\d\d)?)?$/.test(s))fail(400,'Невірний формат дати');const [year,month,day,hour='0',minute='0',second='0']=s.split(/[-T:]/).map(Number);const t=new Date(Date.UTC(year,month-1,day,hour,minute,second));if(t.getUTCFullYear()!==year||t.getUTCMonth()!==month-1||t.getUTCDate()!==day||t.getUTCHours()!==hour||t.getUTCMinutes()!==minute||t.getUTCSeconds()!==second)fail(400,'Некоректна календарна дата');return s;}
 function tokenValue(){const b=new Uint8Array(32);crypto.getRandomValues(b);return [...b].map(x=>x.toString(16).padStart(2,'0')).join('');}
 async function sha256(s){const d=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s));return [...new Uint8Array(d)].map(x=>x.toString(16).padStart(2,'0')).join('');}
 function fromHex(s){return new Uint8Array(s.match(/.{2}/g)?.map(v=>parseInt(v,16))||[]);}
@@ -957,7 +957,7 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
   if(path==='/api/stats'&&method==='GET'){
     const users=await allRows(db,"SELECT COUNT(*) count FROM users WHERE status='active'");const all=await allRows(db,'SELECT * FROM records WHERE deleted_at IS NULL');const available=all.filter(r=>permittedRecord(user,r.module,r));const reports=available.filter(x=>x.module==='reports');const tasks=available.filter(x=>x.module==='tasks');const events=available.filter(x=>x.module==='events');const weekAgo=Date.now()-7*86400000,monthAgo=Date.now()-30*86400000;
     const recent=(from)=>available.filter(x=>new Date(x.updated_at).getTime()>=from);const countMod=(items,mod)=>items.filter(x=>x.module===mod).length;
-    const participation=can(user,'stats:read')?await allRows(db,"SELECT r.user_id,r.updated_at FROM event_rsvps r JOIN records e ON e.id=r.event_id WHERE r.response='Так' AND e.deleted_at IS NULL"):[];
+    const participation=can(user,'stats:read')?(await allRows(db,"SELECT r.user_id,r.updated_at,e.department_id,e.owner_id,e.assignee_id,e.module,e.status FROM event_rsvps r JOIN records e ON e.id=r.event_id WHERE r.response='Так' AND e.deleted_at IS NULL")).filter(e=>user.role!=='head'||(!e.department_id||e.department_id===user.department_id)):[];
     const rankFor=(from)=>{
       if(!can(user,'stats:read'))return [];
       const scores=new Map();const add=(id,points)=>{if(!id)return;const x=scores.get(id)||{user_id:id,points:0,completed:0};x.points+=points;x.completed++;scores.set(id,x);};
