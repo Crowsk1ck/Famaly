@@ -308,6 +308,8 @@ const PERSONNEL_DISCORD_ROUTES=Object.freeze({
  personnel:'DISCORD_WEBHOOK_PERSONNEL',
  absences:'DISCORD_WEBHOOK_ABSENCES'
 });
+const DISCORD_PERSONNEL_KINDS=Object.keys(PERSONNEL_DISCORD_ROUTES);
+const DISCORD_PREFERENCE_KINDS=[...DISCORD_NOTIFY_KINDS,...DISCORD_PERSONNEL_KINDS];
 const APPLICATION_WEBHOOK_ROUTES={
   application_waiting:'DISCORD_WEBHOOK_APPLICATIONS_WAITING',
   application_accepted:'DISCORD_WEBHOOK_APPLICATIONS_ACCEPTED',
@@ -382,20 +384,22 @@ function discordEnvAllowed(env,kind){
   return env['DISCORD_NOTIFY_'+String(kind).toUpperCase()]!=='false';
 }
 async function discordPreferences(db,env){
-  const keys=DISCORD_NOTIFY_KINDS.map(k=>'discord_notify_'+k);
-  const rows=await allRows(db,'SELECT key,value,version FROM settings WHERE key IN ('+keys.map(()=>'?').join(',')+')',...keys);
-  const map=Object.fromEntries(rows.map(r=>[r.key,r]));
-  const enabled=Object.fromEntries(DISCORD_NOTIFY_KINDS.map(k=>[k,map['discord_notify_'+k]?.value!=='false']));
-  return {enabled,
-    versions:Object.fromEntries(DISCORD_NOTIFY_KINDS.map(k=>[k,Number(map['discord_notify_'+k]?.version||0)])),
-    categories:Object.fromEntries(DISCORD_NOTIFY_KINDS.map(k=>[k,enabled[k]&&discordEnvAllowed(env,k)])),
-    lockedByEnvironment:Object.fromEntries(DISCORD_NOTIFY_KINDS.map(k=>[k,!discordEnvAllowed(env,k)])),
-    migrationRequired:rows.length!==keys.length};
+ const keys=DISCORD_PREFERENCE_KINDS.map(k=>'discord_notify_'+k);
+ const rows=await allRows(db,'SELECT key,value,version FROM settings WHERE key IN ('+keys.map(()=>'?').join(',')+')',...keys);
+ const map=Object.fromEntries(rows.map(r=>[r.key,r]));
+ const enabled=Object.fromEntries(DISCORD_PREFERENCE_KINDS.map(k=>[k,map['discord_notify_'+k]?.value!=='false']));
+ return {enabled,
+  versions:Object.fromEntries(DISCORD_PREFERENCE_KINDS.map(k=>[k,Number(map['discord_notify_'+k]?.version||0)])),
+  categories:Object.fromEntries(DISCORD_PREFERENCE_KINDS.map(k=>[k,enabled[k]&&discordEnvAllowed(env,k)])),
+  lockedByEnvironment:Object.fromEntries(DISCORD_PREFERENCE_KINDS.map(k=>[k,!discordEnvAllowed(env,k)])),
+  // The original six database keys are created by migrations 0003–0005.
+  // v12 personnel keys are initialized on their first preference save without a schema migration.
+  migrationRequired:DISCORD_NOTIFY_KINDS.some(k=>!map['discord_notify_'+k])};
 }
 async function discordEnabled(db,env,kind){
-  if(!DISCORD_NOTIFY_KINDS.includes(kind)||!discordEnvAllowed(env,kind))return false;
-  const row=await db.prepare('SELECT value FROM settings WHERE key=?').bind('discord_notify_'+kind).first();
-  return !row||row.value==='true';
+ if(!DISCORD_PREFERENCE_KINDS.includes(kind)||!discordEnvAllowed(env,kind))return false;
+ const row=await db.prepare('SELECT value FROM settings WHERE key=?').bind('discord_notify_'+kind).first();
+ return !row||row.value==='true';
 }
 async function recordDiscordDelivery(db,kind,error=null){
   const match=error?String(error.message).match(/\(HTTP (\d{3})\)$/):null;
@@ -427,7 +431,7 @@ export function discordMentionRole(env,targetKind){
 const GRIZZLY_DISCORD_TITLES=Object.freeze({
  applications:'📝 Нова заявка',decisions:'📋 Рішення за заявкою',
  events:'📅 Календар заходів',capt:'🎯 CAPT',news:'📰 Новина сім’ї',
- announcements:'📢 Оголошення',test:'🐻 Перевірка зв’язку'
+ announcements:'📢 Оголошення',promotions:'🎖️ Підвищення',personnel:'🛡️ Дисципліна та нагороди',absences:'🏖️ Відпустки та неактив',test:'🐻 Перевірка зв’язку'
 });
 const GRIZZLY_DISCORD_DESCRIPTIONS=Object.freeze({
  applications:'Отримано нову заявку на вступ. Перегляньте її в закритій панелі рекрутингу.',
@@ -436,6 +440,7 @@ const GRIZZLY_DISCORD_DESCRIPTIONS=Object.freeze({
  capt:'Опубліковано нове CAPT-оголошення.',
  news:'На сайті опубліковано новину сім’ї.',
  announcements:'',
+ promotions:'Кадрова зміна в сім’ї GRIZZLY.',personnel:'Офіційне кадрове рішення.',absences:'Погоджена заявка на відсутність.',
  test:'З’єднання із сайтом працює. Повідомлення надходитимуть після відповідних дій.'
 });
 // Format structured announcements without changing the author's wording or ping permissions.
@@ -498,7 +503,7 @@ export function buildDiscordNotification(kind,info={},roleId=GRIZZLY_DISCORD_PIN
  add(kind==='capt'?'🎯 CAPT-оголошення':kind==='news'?'📰 Заголовок новини':kind==='announcements'?'📌 Тема оголошення':'📌 Подія',info.event,150);
  // Discord allows at most 1024 characters per field. Keep paragraphs readable
  // without cutting off the entire announcement at the former 950-char limit.
- if(kind==='announcements'&&info.message)appendDiscordAnnouncementFields(fields,info.message);
+ if(['announcements','promotions','personnel','absences'].includes(kind)&&info.message)appendDiscordAnnouncementFields(fields,info.message);
  if(info.startsAt)add('🕒 Час за Києвом',String(info.startsAt).replace('T',' · '),28,true);
  add('📍 Місце',info.location,120,true);
  return {
@@ -543,12 +548,12 @@ async function sendDiscordWebhook(env,kind,info,targetKind=kind){
   return true;
 }
 function queueDiscord(ctx,db,env,kind,info,targetKind=kind){
-  if(!DISCORD_NOTIFY_KINDS.includes(kind))return;
+  if(!DISCORD_PREFERENCE_KINDS.includes(kind))return;
   const task=(async()=>{
     if(!await discordEnabled(db,env,kind))return;
     let failure=null;
     try{await sendDiscordWebhook(env,kind,info,targetKind);}catch(e){failure=e;}
-    await recordDiscordDelivery(db,kind,failure);
+    await recordDiscordDelivery(db,DISCORD_NOTIFY_KINDS.includes(kind)?kind:'announcements',failure);
     if(failure)console.error('GRIZZLY Discord delivery failed:',String(failure.message).slice(0,90));
   })().catch(()=>console.error('GRIZZLY Discord dispatch failed'));
   if(ctx&&typeof ctx.waitUntil==='function')ctx.waitUntil(task);
@@ -898,7 +903,7 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
     await audit(db,user,'create','personnel_actions',id,kind+' · '+person.id);
     await notify(db,person.id,'Запис в особовій справі',PERSONNEL_ACTION_KINDS[kind]);
     // Announce only the decision type, never the private reason or dossier contents.
-    queueDiscord(ctx,db,env,'announcements',{
+    queueDiscord(ctx,db,env,'personnel',{
       event:'🛡️ Кадрове рішення · '+PERSONNEL_ACTION_KINDS[kind],
       message:'Учасник: '+person.nickname+'\nРішення: '+PERSONNEL_ACTION_KINDS[kind]+'\nОформлено керівництвом GRIZZLY.'
     },'personnel');
@@ -920,7 +925,7 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
     if(changed.meta.changes!==1)fail(409,'Запис змінено, оновіть дані');
     await audit(db,user,'review','personnel_actions',record.id,'Знято');
     await notify(db,person.id,'Рішення знято',record.title);
-    queueDiscord(ctx,db,env,'announcements',{
+    queueDiscord(ctx,db,env,'personnel',{
       event:'🛡️ Кадрове рішення · знято',
       message:'Раніше оформлене кадрове рішення знято керівництвом GRIZZLY.'
     },'personnel');
@@ -992,7 +997,7 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
     if(decision==='Погоджено'){
       const person=await db.prepare('SELECT nickname FROM users WHERE id=?').bind(old.owner_id).first();
       const absenceType=ABSENCE_TYPES[parseJson(old.extra,{}).type]||'Відсутність';
-      queueDiscord(ctx,db,env,'announcements',{
+      queueDiscord(ctx,db,env,'absences',{
         event:'🏖️ Погоджена відсутність · '+absenceType,
         message:'Учасник: '+(person?.nickname||'Учасник сім’ї')+'\nПеріод: '+old.starts_at+' — '+old.ends_at+'\nПогоджено керівництвом GRIZZLY.'
       },'absences');
@@ -1235,7 +1240,7 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
         if(mod==='promotions'&&b.status==='Погоджено'){
           const promoted=await db.prepare('SELECT nickname FROM users WHERE id=?').bind(old.owner_id).first();
           const rank=await db.prepare('SELECT title FROM ranks WHERE id=?').bind(Number(extra.requested_rank_id)).first();
-          queueDiscord(ctx,db,env,'announcements',{
+          queueDiscord(ctx,db,env,'promotions',{
             event:'🎖️ Підвищення учасника',
             message:'Учасник: '+(promoted?.nickname||'Учасник сім’ї')+'\nНовий ранг: '+(rank?.title||String(extra.requested_rank_id))+'\nПідвищення погоджено керівництвом GRIZZLY.'
           },'promotions');
