@@ -2121,6 +2121,68 @@ test('v14.3 member cannot escalate role or mutate another account',async()=>{
  assert.equal(current.nickname,'Profile guard');
 });
 
+test('v14.4 exports require authentication and scope member accounts to self',async()=>{
+ const anon=await req('/api/export?module=users');
+ assert.equal(anon.status,401);
+ const memberAccounts=await req('/api/export?module=users',{token:member});
+ assert.equal(memberAccounts.status,200,JSON.stringify(memberAccounts.data));
+ assert.equal(memberAccounts.data.module,'users');
+ assert.deepEqual(memberAccounts.data.items.map(x=>x.id),[memberId]);
+ for(const item of memberAccounts.data.items){
+  for(const privateField of ['password_hash','token_hash','session_token']){
+   assert.equal(Object.hasOwn(item,privateField),false,privateField);
+  }
+ }
+ const leaderAccounts=await req('/api/export?module=users',{token:leader});
+ assert.equal(leaderAccounts.status,200);
+ assert.ok(leaderAccounts.data.items.some(x=>x.id===memberId));
+ assert.ok(leaderAccounts.data.items.length>memberAccounts.data.items.length);
+ for(const item of leaderAccounts.data.items)assert.equal(Object.hasOwn(item,'password_hash'),false);
+ assert.match(memberAccounts.header.get('content-disposition')||'',/attachment; filename="grizzly-users\.json"/);
+ assert.equal((await req('/api/export?module=not-a-module',{token:member})).status,400);
+});
+
+test('v14.4 record export and personnel dossier do not expose unrelated member reports',async()=>{
+ const other=await req('/api/users',{method:'POST',token:leader,data:{
+  username:'v144exportmember',password:'v144-export-strong-password',
+  nickname:'Export privacy member',role:'member',department_id:'events'
+ }});
+ assert.equal(other.status,201,JSON.stringify(other.data));
+ const signed=await req('/api/auth/login',{method:'POST',data:{
+  username:'v144exportmember',password:'v144-export-strong-password'
+ }});
+ assert.equal(signed.status,200);
+ const token=signed.cookie.match(/grizzly_session=([a-f0-9]+)/)[1];
+ const mine=await req('/api/records/reports',{method:'POST',token:member,data:{
+  title:'Own privacy report v14.4',details:'Member scoped export',evidence:['https://ibb.co/abcDEF1']
+ }});
+ const theirs=await req('/api/records/reports',{method:'POST',token,data:{
+  title:'Other privacy report v14.4',details:'Must not leak to first member',evidence:['https://ibb.co/abcDEF1']
+ }});
+ assert.equal(mine.status,201,JSON.stringify(mine.data));
+ assert.equal(theirs.status,201,JSON.stringify(theirs.data));
+ const exported=await req('/api/export?module=reports',{token:member});
+ assert.equal(exported.status,200,JSON.stringify(exported.data));
+ assert.ok(exported.data.items.some(x=>x.id===mine.data.item.id));
+ assert.ok(!exported.data.items.some(x=>x.id===theirs.data.item.id));
+ const full=await req('/api/export?module=reports',{token:leader});
+ assert.equal(full.status,200);
+ assert.ok(full.data.items.some(x=>x.id===mine.data.item.id));
+ assert.ok(full.data.items.some(x=>x.id===theirs.data.item.id));
+ assert.equal((await req('/api/personnel-dossier?user='+other.data.item.id,{token:member})).status,403);
+ assert.equal((await req('/api/personnel-dossier?user='+other.data.item.id,{token:leader})).status,200);
+});
+
+test('v14.4 audit, recruitment export and leadership weekly report reject member access',async()=>{
+ assert.equal((await req('/api/audit',{token:member})).status,403);
+ assert.equal((await req('/api/export?module=applications',{token:member})).status,403);
+ assert.equal((await req('/api/export?module=applications')).status,401);
+ assert.equal((await req('/api/leadership-overview',{token:member})).status,403);
+ assert.equal((await req('/api/department-weekly-report?department=capt',{token:member})).status,403);
+ assert.equal((await req('/api/department-weekly-report?department=capt')).status,401);
+ assert.equal((await req('/api/audit',{token:leader})).status,200);
+});
+
 // Run destructive session-revocation coverage last: other integration tests use this member's active session.
 test('blocking user revokes sessions and stops access',async()=>{const u=(await req('/api/users',{token:leader})).data.items.find(x=>x.id===memberId);const r=await req(`/api/users/${memberId}`,{method:'PATCH',token:leader,data:{...u,status:'blocked'}});assert.equal(r.status,200,JSON.stringify(r.data));assert.equal((await req('/api/auth/me',{token:member})).status,401);});
 
