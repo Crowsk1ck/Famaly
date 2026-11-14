@@ -406,13 +406,22 @@ async function discordEnabled(db,env,kind){
  const row=await db.prepare('SELECT value FROM settings WHERE key=?').bind('discord_notify_'+kind).first();
  return !row||row.value==='true';
 }
-async function recordDiscordDelivery(db,kind,error=null){
+const DISCORD_LOG_ROUTE_KINDS=new Set([...DISCORD_PREFERENCE_KINDS,...Object.keys(APPLICATION_WEBHOOK_ROUTES),'test']);
+export function discordDeliveryView(row){
+  // Keep legacy kinds in D1, and recover the actual destination from a safe tag.
+  const raw=String(row.error_code||'');
+  const match=/^route:([a-z_]+)\|([a-z_]*)$/.exec(raw);
+  const routed=match&&DISCORD_LOG_ROUTE_KINDS.has(match[1])?match[1]:null;
+  return {...row,kind:routed||row.kind,stored_kind:row.kind,error_code:routed?match[2]:raw};
+}
+async function recordDiscordDelivery(db,kind,error=null,route=kind){
   const match=error?String(error.message).match(/\(HTTP (\d{3})\)$/):null;
   const httpStatus=match?Number(match[1]):null;
   const code=error?(httpStatus?'http_error':String(error.message).includes('з’єднання')?'network_error':'configuration_error'):'';
+  const tag=route!==kind&&DISCORD_LOG_ROUTE_KINDS.has(route)?'route:'+route+'|'+code:code;
   try{
     await db.prepare('INSERT INTO discord_delivery_log(id,kind,status,http_status,error_code,created_at) VALUES(?,?,?,?,?,?)')
-      .bind(uuid(),kind,error?'failed':'sent',httpStatus,code,now()).run();
+      .bind(uuid(),kind,error?'failed':'sent',httpStatus,tag,now()).run();
     await db.prepare('DELETE FROM discord_delivery_log WHERE id IN (SELECT id FROM discord_delivery_log ORDER BY created_at DESC LIMIT -1 OFFSET 300)').run();
   }catch{
     // Delivery remains functional until migration 0003 is applied; never log credentials.
@@ -565,7 +574,7 @@ function queueDiscord(ctx,db,env,kind,info,targetKind=kind){
     if(!await discordEnabled(db,env,kind))return;
     let failure=null;
     try{await sendDiscordWebhook(env,kind,info,targetKind);}catch(e){failure=e;}
-    await recordDiscordDelivery(db,DISCORD_NOTIFY_KINDS.includes(kind)?kind:'announcements',failure);
+    await recordDiscordDelivery(db,DISCORD_NOTIFY_KINDS.includes(kind)?kind:'announcements',failure,targetKind);
     if(failure)console.error('GRIZZLY Discord delivery failed:',String(failure.message).slice(0,90));
   })().catch(()=>console.error('GRIZZLY Discord dispatch failed'));
   if(ctx&&typeof ctx.waitUntil==='function')ctx.waitUntil(task);
@@ -1139,8 +1148,8 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
     if(user.role!=='leader')fail(403,'Лише лідер переглядає журнал Discord');
     if((await discordPreferences(db,env)).migrationRequired)
       fail(503,'Для журналу доставки застосуйте міграції D1 0003–0005');
-    return json({items:await allRows(db,
-      'SELECT id,kind,status,http_status,error_code,created_at FROM discord_delivery_log ORDER BY created_at DESC LIMIT 100')});
+    return json({items:(await allRows(db,
+      'SELECT id,kind,status,http_status,error_code,created_at FROM discord_delivery_log ORDER BY created_at DESC LIMIT 100')).map(discordDeliveryView)});
   }
   if(path==='/api/discord/test'&&method==='POST'){
     if(user.role!=='leader')fail(403,'Лише лідер може перевіряти Discord');
