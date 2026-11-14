@@ -995,6 +995,8 @@ async function publicHtml(req,env){
           .replace(/(<link rel="canonical" href=")[^"]*(" \/>)/,'$1'+canonical+'$2');
  swap('description',page.description);swap('og:title',page.title);swap('og:description',page.description);swap('og:url',canonical);
  html=html.replace('<div id="app">','<div id="app"><main class="gr-prerender"><h1>'+seoSafe(page.heading)+'</h1><p>'+seoSafe(page.intro)+'</p><a href="/">GRIZZLY Family — Головна</a></main>');
+ // Remove the root-only loading emblem: the public SEO shell is already visible until hydration.
+ html=html.replace('<div class="boot"><div class="brand-mark big">🐻</div><span>GRIZZLY</span></div>','');
  const headers=new Headers(res.headers);headers.delete('content-length');headers.set('Content-Type','text/html; charset=utf-8');headers.set('Cache-Control','no-store');headers.set('X-Grizzly-Seo-Route',url.pathname);
  return new Response(html,{status:res.status,headers});
 }
