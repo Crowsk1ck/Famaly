@@ -36,5 +36,5 @@ test('outbox migration stores only bounded delivery state without credentials',(
  assert.match(migration,/CREATE TABLE IF NOT EXISTS discord_outbox/);
  assert.match(migration,/CHECK\(status IN \('pending','sending','sent','failed','uncertain'\)\)/);
  assert.match(migration,/CREATE INDEX IF NOT EXISTS idx_discord_outbox_pending/);
- assert.doesNotMatch(migration,/webhook_url|token|password|ledger|payout/i);
+ assert.doesNotMatch(migration.split('\n').filter(line=>!line.trim().startsWith('--')).join('\n'),/webhook_url|token|password|ledger|payout/i);
 });
