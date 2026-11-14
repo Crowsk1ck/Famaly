@@ -638,3 +638,30 @@
 .contract-mobile-list{display:none}
 .contract-mobile-card{margin-bottom:12px}
 @media(max-width:720px){.contract-desktop-table{display:none}.contract-mobile-list{display:block}.contract-mobile-card .btn{min-height:40px}}
+
+
+/* Overview v4: compact empty states and role-scoped analytics */
+.gr-overview-v4 .grid2 > .card:has(.empty){min-height:0}
+.gr-overview-v4 .empty{min-height:92px;padding:12px;gap:3px}
+.gr-overview-v4 .empty .empty-icon{font-size:1.35rem}
+.gr-overview-v4 .card-head{margin-bottom:12px}
+.gr-overview-v4 .stat{min-height:100px}
+.gr-overview-v4 .stat .number{margin-top:7px}
+.overview-finance-totals{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:15px 0}
+.overview-finance-totals>div{background:#171A23;border:1px solid var(--border);border-radius:10px;padding:12px}
+.overview-finance-totals strong{display:block;margin-top:7px;font-size:1.15rem}
+.overview-periods{gap:7px}
+.overview-periods [aria-pressed="true"]{border-color:#a74c56;color:#fff;background:#4a2830}
+.overview-trend-row{display:grid;grid-template-columns:92px minmax(0,1fr) 140px;gap:12px;align-items:center;margin:11px 0}
+.overview-trend-bars{display:grid;gap:4px}
+.overview-trend-bars span{display:block;height:9px;border-radius:5px}
+.overview-trend-income{background:#3d9c86}
+.overview-trend-expense{background:#db4d5d}
+.overview-audit-row{display:flex;justify-content:space-between;gap:16px;border-top:1px solid var(--border);padding:11px 0;font-size:.86rem}
+.overview-dept{background:#171A23;border:1px solid var(--border);border-radius:10px;padding:14px;display:grid;gap:9px}
+@media(max-width:680px){
+ .overview-trend-row{grid-template-columns:75px minmax(0,1fr);gap:8px}
+ .overview-trend-row>.mono{grid-column:2}
+ .overview-finance-totals{grid-template-columns:1fr}
+ .overview-audit-row{flex-direction:column;gap:4px}
+}
