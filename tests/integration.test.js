@@ -1776,3 +1776,36 @@ test('v10 personal dossiers, disciplinary actions and inactivity enforce departm
 });
 // Run destructive session-revocation coverage last: other integration tests use this member's active session.
 test('blocking user revokes sessions and stops access',async()=>{const u=(await req('/api/users',{token:leader})).data.items.find(x=>x.id===memberId);const r=await req(`/api/users/${memberId}`,{method:'PATCH',token:leader,data:{...u,status:'blocked'}});assert.equal(r.status,200,JSON.stringify(r.data));assert.equal((await req('/api/auth/me',{token:member})).status,401);});
+
+test('v12 personnel Discord preferences persist independently and reject stale versions',async()=>{
+ const originalResult=await req('/api/discord/status',{token:leader});
+ assert.equal(originalResult.status,200);
+ const original=originalResult.data;
+ assert.equal(original.migrationRequired,false);
+ const keys=['promotions','personnel','absences'];
+ for(const kind of keys){
+  assert.equal(typeof original.enabled[kind],'boolean');
+  assert.ok(Number.isInteger(original.versions[kind]));
+ }
+ const update=await req('/api/discord/preferences',{method:'PATCH',token:leader,data:{
+  enabled:{...original.enabled,promotions:false,personnel:true,absences:false},
+  versions:original.versions
+ }});
+ assert.equal(update.status,200,JSON.stringify(update.data));
+ const current=(await req('/api/discord/status',{token:leader})).data;
+ assert.equal(current.enabled.promotions,false);
+ assert.equal(current.enabled.personnel,true);
+ assert.equal(current.enabled.absences,false);
+ assert.equal(current.enabled.announcements,original.enabled.announcements);
+ assert.ok(current.versions.promotions>original.versions.promotions);
+ const stale=await req('/api/discord/preferences',{method:'PATCH',token:leader,data:{
+  enabled:{...original.enabled,promotions:true},
+  versions:original.versions
+ }});
+ assert.equal(stale.status,409);
+ const restore=await req('/api/discord/preferences',{method:'PATCH',token:leader,data:{
+  enabled:original.enabled,versions:current.versions
+ }});
+ assert.equal(restore.status,200,JSON.stringify(restore.data));
+ for(const kind of keys)assert.equal(restore.data.enabled[kind],original.enabled[kind]);
+});
