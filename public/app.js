@@ -75,6 +75,9 @@ function badge(s){const cls=['Погоджено','Прийнято','Завер
 function intro(title,description='',right=''){return `<div class="page-intro"><div><div class="overline">GRIZZLY / FAMILY PANEL</div><h1>${esc(title)}</h1><p>${esc(description)}</p></div>${right}</div>`;}
 function empty(label='Тут поки немає записів',desc='Створіть перший запис або змініть параметри пошуку.'){return `<div class="empty"><div><div class="empty-icon">◇</div><strong>${esc(label)}</strong>${esc(desc)}</div></div>`;}
 function itemText(obj){return esc(JSON.stringify(obj));}
+function kyivNowLocal(){const p=new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/Kyiv',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(new Date());const v=Object.fromEntries(p.map(x=>[x.type,x.value]));return v.year+'-'+v.month+'-'+v.day+'T'+v.hour+':'+v.minute;}
+function kyivWallDate(value){return String(value||'').slice(0,16).replace(' ','T');}
+function kyivDueStatus(value,status){if(!value||['Завершено','Відхилено'].includes(status))return '';return kyivWallDate(value)<kyivNowLocal()?'Прострочено':'До '+kyivWallDate(value).replace('T',' ');}
 const galleryCategories=[['all','Усі фото'],['capt','CAPT'],['cars','Автомобілі'],['meetings','Збори'],['events','Івенти'],['other','Інше']];
 function galleryPhoto(record){
   const urls=Array.isArray(record?.evidence)?record.evidence:[];
@@ -424,9 +427,6 @@ function selectOptions(items,val,emptyName='Не призначено'){return `
 function field(label,name,value='',type='text',full=false,other=''){return `<div class="field ${full?'full':''}"><label>${esc(label)}</label>${type==='textarea'?`<textarea class="textarea" name="${name}" ${other}>${esc(value)}</textarea>`:`<input class="input" type="${type}" name="${name}" value="${esc(value)}" ${other}>`}</div>`;}
 function selectField(label,name,items,value='',full=false){return `<div class="field ${full?'full':''}"><label>${esc(label)}</label><select name="${name}" class="select">${selectOptions(items,value)}</select></div>`;}
 function statusField(value){return `<div class="field"><label>Статус</label><select class="select" name="status">${statuses.map(s=>`<option ${s===value?'selected':''}>${s}</option>`).join('')}</select></div>`;}
-function kyivNowLocal(){const p=new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/Kyiv',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(new Date());const v=Object.fromEntries(p.map(x=>[x.type,x.value]));return v.year+'-'+v.month+'-'+v.day+'T'+v.hour+':'+v.minute;}
-function kyivWallDate(value){return String(value||'').slice(0,16).replace(' ','T');}
-function kyivDueStatus(value,status){if(!value||['Завершено','Відхилено'].includes(status))return '';return kyivWallDate(value)<kyivNowLocal()?'Прострочено':'До '+kyivWallDate(value).replace('T',' ');}
 function formatDateField(v){return (v||'').slice(0,16);}
 async function overview(){
  const mayViewFinance=can('finance:read')||can('finance:manage');
