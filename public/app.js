@@ -569,7 +569,8 @@ async function departments(){
     ['До скарбниці з контрактів',fmt(financial.treasury_contract_income)],
     ['Нараховано учасникам',fmt(financial.payouts.accrued)],
     ['Видано учасникам',fmt(financial.payouts.handed_over)],
-    ['CAPT-записи',fmt(financial.capt.records)]
+    ['CAPT-записи',fmt(financial.capt.records)],
+    ['CAPT-виплати',fmt(financial.capt.paid_total)]
    ].map(([label,value])=>'<div class="card flat"><div class="muted small">'+esc(label)+'</div><h3 class="mono">'+value+'</h3></div>').join('')+'</div><div class="notice mt">Статистика тільки цього підрозділу. Внески та витрати загальної казни не розподіляються автоматично між напрямками.</div>':'')+
    '<h3 class="mt">Особовий склад</h3>'+(members.length?table(['Нікнейм','Ігровий ранг','Роль','Статус'],memberRows):empty('Учасників немає','Лідер може призначити напрямок в особовій справі учасника.'))+
    '<h3 class="mt">Завдання напрямку</h3>'+(dtasks.length?table(['Завдання','Виконавець','Статус','Дія'],taskRows):empty('Немає доступних завдань'))+
