@@ -914,3 +914,20 @@
  .gr-workspace-stats>.stat{min-height:86px;padding:11px}
  .gr-workspace-stats>.stat .number{font-size:1.4rem}
 }
+
+/* Department goals: factual 7-day operational KPIs, not payout calculations. */
+.gr-weekly-layout{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(230px,.8fr);gap:20px;align-items:start}
+.gr-weekly-layout h4{font-size:.96rem;margin:2px 0 10px}
+.gr-weekly-layout p{line-height:1.5;margin-bottom:16px}
+.gr-weekly-metrics{display:grid;gap:14px;margin-bottom:20px}
+.gr-weekly-metric{border:1px solid #383d4c;background:#191d27;padding:13px 15px;border-radius:10px;display:grid;gap:10px}
+.gr-weekly-metric strong{font-size:.82rem}
+.gr-weekly-metric .mono{font-variant-numeric:tabular-nums}
+.gr-weekly-progress{width:100%;height:8px;border-radius:999px;overflow:hidden;background:#30343e}
+.gr-weekly-progress span{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,#ad465e,#f27d91);transition:width .18s ease}
+.gr-weekly-duties{background:#1a1d27;border:1px solid #353746;border-radius:12px;padding:17px}
+.gr-weekly-duties ol{padding-left:20px;margin:10px 0 0;display:grid;gap:11px}
+.gr-weekly-duties li{line-height:1.5;color:#e1dfe6;font-size:.85rem;padding-left:2px}
+@media(max-width:950px){.gr-weekly-layout{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:560px){.gr-weekly-duties{padding:13px}.gr-weekly-metric{padding:11px}}
+@media(prefers-reduced-motion:reduce){.gr-weekly-progress span{transition:none}}

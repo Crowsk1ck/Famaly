@@ -692,8 +692,16 @@ const workspaceDepartmentSections=Object.freeze({
 });
 function workspaceTabs(departmentId,sections){
  const allowed=workspaceDepartmentSections[departmentId]||['personnel','tasks','reports','contracts','finance'];
- return allowed.map(id=>sections.find(section=>section.id===id)).filter(Boolean);
+ return ['weekly',...allowed].map(id=>sections.find(section=>section.id===id)).filter(Boolean);
 }
+const workspaceDuties=Object.freeze({
+ capt:['Координувати склад перед CAPT-боями','Проводити тренування та підтверджувати участь','Фіксувати підсумки боїв і звіти'],
+ farm:['Розподіляти фарм-завдання між учасниками','Контролювати підтверджені звіти','Слідкувати за контрактами та результатами роботи'],
+ fleet:['Перевіряти стан і доступність транспорту','Контролювати видачу та повернення автомобілів','Оформлювати звіти про пошкодження'],
+ discipline:['Розглядати дисциплінарні випадки','Контролювати виконання рішень','Вести службові записи й звіти'],
+ recruitment:['Розглядати заявки кандидатів','Організовувати набір і співбесіди','Готувати звіти про результати набору'],
+ events:['Планувати збори та заходи','Контролювати проведення і підсумкові звіти','Публікувати відповідні оголошення']
+});
 async function departmentWorkspace(){
  const user=state.user;
  if(!['leader','deputy','head'].includes(user.role))return intro('Доступ до підрозділу','Тільки призначені керівники та вище керівництво.');
@@ -710,8 +718,11 @@ async function departmentWorkspace(){
  const dept=data.department,sections=data.sections||[],members=data.members||[],contracts=data.contracts||[];
  const financeSummary=await api('/departments/'+encodeURIComponent(dept.id)+'/finance-summary');
  const recruitmentItems=dept.id==='recruitment'&&can('recruitment:manage')?(await api('/applications')).items:[];
- const id=state.workspaceSection||'tasks';
- const allSections=[{id:'personnel',title:'Особовий склад',group:'Керування',count:members.length},
+ const weekly=data.weekly||{metrics:[],version:0,can_edit:false,period_days:7};
+ state.workspaceGoals={department:dept.id,weekly};
+ const id=state.workspaceSection||'weekly';
+ const allSections=[{id:'weekly',title:'План на тиждень',group:'Керування',count:weekly.metrics?.length||0},
+  {id:'personnel',title:'Особовий склад',group:'Керування',count:members.length},
   {id:'contracts',title:'Контракти',group:'Керування',count:contracts.length},
   {id:'finance',title:'Фінанси підрозділу',group:'Керування',count:financeSummary.contracts.count},
   ...(dept.id==='recruitment'&&can('recruitment:manage')?[{id:'applications',title:'Заявки на вступ',group:'Рекрутинг',count:recruitmentItems.length}]:[]),...sections];
@@ -733,7 +744,26 @@ async function departmentWorkspace(){
  const membersRows=members.map(m=>'<tr><td class="table-title">'+esc(m.nickname)+'</td><td>'+esc(rankName(m.rank_id))+'</td><td>'+esc(roles[m.role]||m.role)+'</td><td>'+badge(m.status)+'</td></tr>');
  const contractRows=contracts.map(c=>'<tr><td class="table-title">'+esc(c.title)+'</td><td class="mono">'+fmt(c.amount)+'</td><td>'+badge(c.settled_at?'Нараховано':c.status)+'</td><td><button class="btn tiny secondary" data-action="view-contract" data-id="'+esc(c.id)+'">Переглянути ↗</button></td></tr>');
  let content='';
- if(active.id==='personnel')content=members.length?table(['Учасник','Ранг','Роль','Статус'],membersRows):empty('Учасників ще немає','Лідер може призначити учасників до цього напрямку.');
+ if(active.id==='weekly'){
+  const duties=workspaceDuties[dept.id]||workspaceDuties.farm;
+  const metrics=weekly.metrics||[];
+  const progress=metrics.map(m=>{
+    const target=Number(m.target)||0,actual=Number(m.actual)||0;
+    const percent=target?Math.min(100,Math.round(actual*100/target)):0;
+    return '<div class="gr-weekly-metric"><div class="row space wrap"><strong>'+esc(m.title)+'</strong>'+
+      '<span class="mono small">'+fmt(actual)+(target?' / '+fmt(target):' · без плану')+'</span></div>'+
+      (target?'<div class="gr-weekly-progress" role="progressbar" aria-label="'+esc(m.title)+'" aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+percent+'"><span style="width:'+percent+'%"></span></div>':
+       '<div class="muted small">Лідер ще не встановив числову ціль.</div>')+'</div>';
+  }).join('');
+  content='<div class="gr-weekly-layout"><div><h4>Результати за останні 7 днів</h4>'+
+    '<p class="muted small">Показники беруться з фактично завершених або погоджених записів у межах підрозділу. Це не нарахування коштів.</p>'+
+    '<div class="gr-weekly-metrics">'+progress+'</div>'+
+    (weekly.can_edit?'<button class="btn secondary" data-action="workspace-edit-goals">Налаштувати цілі ↗</button>':'')+'</div>'+
+    '<div class="gr-weekly-duties"><h4>Обов’язки керівника</h4>'+
+    '<p class="muted small">Робочий орієнтир; виконання підтверджується записами, а не ручними відмітками.</p>'+
+    '<ol>'+duties.map(d=>'<li>'+esc(d)+'</li>').join('')+'</ol></div></div>';
+ }
+ else if(active.id==='personnel')content=members.length?table(['Учасник','Ранг','Роль','Статус'],membersRows):empty('Учасників ще немає','Лідер може призначити учасників до цього напрямку.');
  else if(active.id==='contracts')content=(contracts.length?table(['Контракт','Сума','Статус','Дія'],contractRows):empty('Контрактів немає'))+
    '<p class="muted small mt">Фінансові нарахування й видача коштів виконуються тільки уповноваженим керівництвом.</p>';
  else if(active.id==='applications'){
@@ -1465,6 +1495,15 @@ async function handleSubmit(e){const f=e.target;if(!f.id)return;e.preventDefault
     const result=await api(id?`/users/${id}`:'/users',id?'PATCH':'POST',payload);if(!id){closeModal();await preload();await render();credentialReceipt(result.item.username,b.password,result.item.nickname);return;}await afterSaved('Особову справу оновлено');return;}
   case 'rank-form':{const r=state.ranks.find(x=>x.id===Number(f.dataset.id));await api(`/ranks/${r.id}`,'PATCH',{title:b.title,requirements:b.requirements,checklist:lines(b.checklist),version:r.version});await afterSaved('Ранг оновлено');return;}
   case 'department-form':{const d=state.departments.find(x=>x.id===f.dataset.id);await api(`/departments/${d.id}`,'PATCH',{...b,version:d.version});await afterSaved();return;}
+  case 'department-goals-form':{
+    if(state.user.role!=='leader')throw new Error('Тільки лідер керує тижневими цілями');
+    const id=f.dataset.department,version=Number(f.dataset.version);
+    const snapshot=state.workspaceGoals;
+    if(!id||snapshot?.department!==id||!Number.isInteger(version))throw new Error('Оновіть дані підрозділу');
+    const targets=Object.fromEntries(snapshot.weekly.metrics.map(m=>[m.id,Number(b[m.id])]));
+    await api('/department-goals/'+encodeURIComponent(id),'PATCH',{targets,version});
+    await afterSaved('Тижневі цілі підрозділу збережено');return;
+  }
   case 'calendar-form':{
     if(!can('content:manage'))throw new Error('Недостатньо прав');
     const id=f.dataset.id,old=id?(await api('/records/public_calendar')).items.find(x=>x.id===id):null;
@@ -1591,7 +1630,21 @@ document.addEventListener('click',async e=>{const back=e.target.closest('[data-b
     break;
   }
   case 'edit-rank':rankForm(id);break;
-  case 'workspace-section':state.workspaceSection=t.dataset.value||'personnel';await render();break;
+  case 'workspace-section':state.workspaceSection=t.dataset.value||'weekly';await render();break;
+  case 'workspace-edit-goals':{
+    if(state.user.role!=='leader')throw new Error('Лише лідер може встановлювати цілі');
+    const snapshot=state.workspaceGoals;
+    if(!snapshot?.department||!snapshot.weekly)throw new Error('Оновіть робочий простір');
+    const inputs=snapshot.weekly.metrics.map(m=>'<label class="field"><span>'+esc(m.title)+'</span>'+
+      '<input class="input" type="number" name="'+esc(m.id)+'" min="0" max="100" step="1" required value="'+Number(m.target||0)+'">'+
+      '<small>0 — план не задано</small></label>').join('');
+    modal('Тижневі цілі · '+departmentName(snapshot.department),
+      '<form id="department-goals-form" class="formgrid" data-department="'+esc(snapshot.department)+'" data-version="'+Number(snapshot.weekly.version||0)+'">'+
+      '<p class="muted small full">Встановіть цілі на 7 днів. Результати рахуються автоматично за записами. Виплати це не змінює.</p>'+
+      inputs+'<div class="full form-actions"><button type="button" class="btn ghost" data-action="close-modal">Скасувати</button>'+
+      '<button class="btn" type="submit">Зберегти цілі</button></div></form>');
+    break;
+  }
   case 'workspace-new-record':{
     const module=t.dataset.module;
     if(!module||!moduleInfo[module])throw new Error('Невідомий розділ');

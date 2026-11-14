@@ -51,6 +51,39 @@ const DEPARTMENT_WORKSPACE_MODULES = [
  ['public_news','Новини сайту','Контент'],['public_team','Керівництво сайту','Контент'],
  ['public_achievements','Досягнення сайту','Контент'],['public_calendar','Календар сайту','Контент']
 ];
+// Operational goals are editable only by the family leader; they never trigger payouts.
+// A goal of zero means "no target" and is excluded from progress percentages.
+const DEPARTMENT_WEEKLY_METRICS=Object.freeze({
+ capt:[['capt_matches_done','Завершені CAPT-бої','capt_matches'],['capt_training_done','Проведені тренування','capt_training'],['capt_attendance_approved','Підтверджені участі','capt_attendance']],
+ farm:[['tasks_done','Виконані завдання','tasks'],['reports_approved','Погоджені звіти','reports'],['contracts_settled','Нараховані контракти','contracts']],
+ fleet:[['vehicle_loans_done','Повернення транспорту','vehicle_loans'],['tasks_done','Виконані завдання','tasks'],['reports_approved','Погоджені звіти','reports']],
+ discipline:[['discipline_resolved','Завершені перевірки','discipline'],['tasks_done','Виконані завдання','tasks'],['reports_approved','Погоджені звіти','reports']],
+ recruitment:[['applications_accepted','Прийняті кандидати','applications'],['tasks_done','Виконані завдання','tasks'],['reports_approved','Погоджені звіти','reports']],
+ events:[['events_done','Проведені заходи','events'],['notices_published','Опубліковані оголошення','notices'],['tasks_done','Виконані завдання','tasks']]
+});
+function weeklyGoalKey(departmentId){return 'department_goals_'+departmentId;}
+function weeklyMetrics(departmentId,visibleRecords,contracts,applications,goals){
+ const rows=DEPARTMENT_WEEKLY_METRICS[departmentId]||[['tasks_done','Виконані завдання','tasks'],['reports_approved','Погоджені звіти','reports']];
+ const since=Date.now()-7*86400000;
+ const isRecent=(date)=>!!date&&Number.isFinite(Date.parse(date))&&Date.parse(date)>=since;
+ const countRecords=(module,statuses)=>visibleRecords.filter(r=>r.module===module&&statuses.includes(r.status)&&isRecent(r.updated_at||r.created_at)).length;
+ return rows.map(([id,title,source])=>{
+  let actual=0;
+  if(id==='tasks_done')actual=countRecords('tasks',['Завершено']);
+  else if(id==='reports_approved')actual=countRecords('reports',['Погоджено','Завершено']);
+  else if(id==='capt_matches_done')actual=countRecords('capt_matches',['Завершено']);
+  else if(id==='capt_training_done')actual=countRecords('capt_training',['Завершено']);
+  else if(id==='capt_attendance_approved')actual=countRecords('capt_attendance',['Погоджено','Завершено']);
+  else if(id==='vehicle_loans_done')actual=countRecords('vehicle_loans',['Завершено']);
+  else if(id==='discipline_resolved')actual=countRecords('discipline',['Завершено']);
+  else if(id==='events_done')actual=countRecords('events',['Завершено']);
+  else if(id==='notices_published')actual=countRecords('notices',['Погоджено','Завершено']);
+  else if(id==='contracts_settled')actual=contracts.filter(c=>isRecent(c.settled_at)).length;
+  else if(id==='applications_accepted')actual=applications.filter(a=>applicationStatus(a.status)==='Прийнято'&&isRecent(a.updated_at)).length;
+  const target=Number.isInteger(goals?.[id])&&goals[id]>=0&&goals[id]<=100?goals[id]:0;
+  return {id,title,source,actual,target};
+ });
+}
 const PUBLIC_SETTINGS = ['family_name','tagline','history','discord_url','rules','requirements'];
 const ALL_SETTINGS = [...PUBLIC_SETTINGS,'treasury_percent','capt_afk_rate','capt_battle_rate'];
 
@@ -565,10 +598,12 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
     if(!dept)fail(404,'Підрозділ не знайдено');
     // Role "head" alone does not grant access. The leader must appoint this exact active head.
     if(user.role==='head'&&dept.head_id!==user.id)fail(403,'Лідер ще не призначив вас керівником цього підрозділу');
-    const [allRecords,members,contracts]=await Promise.all([
+    const [allRecords,members,contracts,goalRow,recruitment]=await Promise.all([
       allRows(db,'SELECT * FROM records WHERE department_id=? AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 1500',dept.id),
       allRows(db,"SELECT id,nickname,role,rank_id,status,joined_at FROM users WHERE department_id=? ORDER BY created_at DESC",dept.id),
-      allRows(db,'SELECT * FROM contracts WHERE department_id=? ORDER BY created_at DESC LIMIT 500',dept.id)
+      allRows(db,'SELECT * FROM contracts WHERE department_id=? ORDER BY created_at DESC LIMIT 500',dept.id),
+      db.prepare('SELECT value,version FROM settings WHERE key=?').bind(weeklyGoalKey(dept.id)).first(),
+      dept.id==='recruitment'?allRows(db,"SELECT status,updated_at FROM applications ORDER BY created_at DESC LIMIT 1000"):Promise.resolve([])
     ]);
     const sections=DEPARTMENT_WORKSPACE_MODULES.map(([mod,title,group])=>{
       const cfg=MODULES[mod];
@@ -580,8 +615,12 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
         attention:items.filter(r=>r.status==='На перевірці').length,
         active:items.filter(r=>!['Завершено','Відхилено','Погоджено'].includes(r.status)).length};
     });
+    const visibleRecords=allRecords.filter(r=>permittedRecord(user,r.module,r));
+    const currentGoals=parseJson(goalRow?.value||'{}',{});
+    const weekly=weeklyMetrics(dept.id,visibleRecords,contracts,recruitment,currentGoals);
     return json({
       department:dept,sections,
+      weekly:{metrics:weekly,version:goalRow?.version||0,period_days:7,can_edit:user.role==='leader'},
       members:members.map(m=>({id:m.id,nickname:m.nickname||'Учасник',role:m.role,rank_id:m.rank_id,status:m.status,joined_at:m.joined_at})),
       contracts:contracts.map(contractView),
       summary:{
@@ -592,6 +631,34 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
         contracts_settled:contracts.filter(c=>!!c.settled_at).length
       }
     });
+  }
+  m=path.match(/^\/api\/department-goals\/([\w-]+)$/);
+  if(m&&method==='PATCH'){
+    if(user.role!=='leader')fail(403,'Тільки лідер встановлює цілі підрозділів');
+    const departmentId=m[1];
+    const metricDefs=DEPARTMENT_WEEKLY_METRICS[departmentId];
+    if(!metricDefs)fail(404,'Невідомий підрозділ');
+    const dept=await db.prepare('SELECT id FROM departments WHERE id=?').bind(departmentId).first();
+    if(!dept)fail(404,'Підрозділ не знайдено');
+    const input=await body(req);
+    if(!Number.isInteger(input.version)||input.version<0)fail(428,'Необхідно оновити цілі перед збереженням');
+    const targets=input.targets;
+    if(!targets||typeof targets!=='object'||Array.isArray(targets)||Object.keys(targets).length!==metricDefs.length)fail(400,'Вкажіть усі показники підрозділу');
+    const clean={};
+    for(const [id] of metricDefs){
+      if(!Number.isInteger(targets[id])||targets[id]<0||targets[id]>100)fail(400,'Ціль має бути цілим числом від 0 до 100');
+      clean[id]=targets[id];
+    }
+    const key=weeklyGoalKey(departmentId),value=JSON.stringify(clean);
+    let result;
+    if(input.version===0){
+      result=await db.prepare('INSERT INTO settings(key,value,version,updated_at) VALUES(?,?,1,?) ON CONFLICT(key) DO NOTHING').bind(key,value,now()).run();
+    }else{
+      result=await db.prepare('UPDATE settings SET value=?,version=version+1,updated_at=? WHERE key=? AND version=?').bind(value,now(),key,input.version).run();
+    }
+    if(result.meta.changes!==1)fail(409,'Цілі вже змінив інший керівник. Оновіть сторінку');
+    await audit(db,user,'update','department_goals',departmentId,JSON.stringify(clean));
+    return json({ok:true,version:input.version+1,targets:clean});
   }
   if(path==='/api/departments'&&method==='GET')return json({items:await allRows(db,'SELECT * FROM departments ORDER BY rowid')});
   m=path.match(/^\/api\/departments\/([\w-]+)$/);if(m&&method==='PATCH'){
