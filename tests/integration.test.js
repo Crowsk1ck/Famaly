@@ -1344,6 +1344,18 @@ test('department contract finances remain scoped to the assigned head and track 
   assert.equal(invalid.status,400);
   const contract=await req('/api/contracts',{method:'POST',token:leader,data:{title:'Фарм контракт',amount:1000,treasury_percent:20,participant_ids:[memberId],department_id:'farm',status:'Погоджено'}});
   assert.equal(contract.status,201,JSON.stringify(contract.data));
+  const ownContracts=await req('/api/contracts',{token:headToken});
+  assert.equal(ownContracts.status,200,JSON.stringify(ownContracts.data));
+  assert.ok(ownContracts.data.items.some(x=>x.id===contract.data.item.id));
+  assert.ok(ownContracts.data.items.every(x=>x.department_id==='farm'));
+  const foreignContract=(await req('/api/contracts',{token:leader})).data.items.find(x=>x.department_id==='capt');
+  if(foreignContract){
+    assert.equal((await req('/api/contracts/'+foreignContract.id+'/preview',{token:headToken})).status,403);
+    const exported=await req('/api/export?module=contracts',{token:headToken});
+    assert.ok(exported.data.items.every(x=>x.department_id==='farm'));
+  }
+  const unauthorizedSettle=await req('/api/contracts/'+contract.data.item.id+'/settle',{method:'POST',token:headToken,data:{version:contract.data.item.version}});
+  assert.equal(unauthorizedSettle.status,403,'Department head cannot financially settle contracts');
   const pending=(await req('/api/departments/farm/finance-summary',{token:headToken})).data;
   assert.equal(pending.contracts.count,before.data.contracts.count+1);
   assert.equal(pending.contracts.total,before.data.contracts.total+1000);
