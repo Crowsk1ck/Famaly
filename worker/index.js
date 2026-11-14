@@ -403,7 +403,7 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
       allRows(db,"SELECT id,title,details,starts_at,ends_at,extra FROM records WHERE module='public_calendar' AND deleted_at IS NULL AND status='Погоджено' ORDER BY starts_at ASC LIMIT 240")
     ]);
     return json({settings:s,
-      gallery:gallery.map(mapRecord).sort((a,b)=>Number(!!b.extra?.featured)-Number(!!a.extra?.featured)).slice(0,48).map(r=>({id:r.id,title:r.title,details:r.details,evidence:r.evidence,extra:{gallery_category:r.extra?.gallery_category||'other',featured:r.extra?.featured===true}})),
+      gallery:gallery.map(mapRecord).sort((a,b)=>Number(!!b.extra?.featured)-Number(!!a.extra?.featured)).slice(0,48).map(r=>({id:r.id,title:r.title,details:r.details,evidence:r.evidence,created_at:r.created_at,extra:{gallery_category:r.extra?.gallery_category||'other',featured:r.extra?.featured===true}})),
       news:news.map(r=>({id:r.id,title:r.title,details:r.details,updated_at:r.updated_at,
         category:['news','event','recruitment','achievement','capt','announcement'].includes(parseJson(r.extra,{}).news_category)?parseJson(r.extra,{}).news_category:'news',
         featured:parseJson(r.extra,{}).featured===true})).sort((a,b)=>Number(b.featured)-Number(a.featured)||String(b.updated_at).localeCompare(String(a.updated_at))).slice(0,12),
