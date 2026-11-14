@@ -247,9 +247,9 @@ function grCalendarEvents(){
 }
 function grCalendarDay(ymd){const d=new Date(ymd+'T12:00:00Z');return d.toLocaleDateString('uk-UA',{day:'2-digit',month:'long',year:'numeric',timeZone:'UTC'});}
 function grCalendarCard(event){
-  const day=String(event.starts_at||'').slice(0,10);
-  const start=String(event.starts_at||'').slice(11,16);
-  const end=String(event.ends_at||'').slice(11,16);
+  const day=kyivWallDate(event.starts_at).slice(0,10);
+  const start=kyivWallDate(event.starts_at).slice(11,16);
+  const end=kyivWallDate(event.ends_at).slice(11,16);
   const time=start?start+(end?'–'+end:''):'Час уточнюється';
   return '<article class="gr-cal-event">'+
     '<div class="gr-cal-event-time"><span>'+esc(grCalendarDay(day))+'</span><strong>'+esc(time)+'</strong></div>'+
@@ -268,8 +268,7 @@ function renderPublicCalendar(){
   const monthEvents=calendar.filter(e=>String(e.starts_at||'').startsWith(month));
   const counts=new Map();
   for(const ev of monthEvents){const day=String(ev.starts_at||'').slice(0,10);counts.set(day,(counts.get(day)||0)+1);}
-  const now=new Date();
-  const today=now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0')+'-'+String(now.getDate()).padStart(2,'0');
+  const today=kyivNowLocal().slice(0,10);
   const week=['Пн','Вт','Ср','Чт','Пт','Сб','Нд'].map(x=>'<span class="gr-cal-weekday">'+x+'</span>').join('');
   let cells='';
   for(let i=0;i<firstWeekday;i++)cells+='<span class="gr-cal-pad" aria-hidden="true"></span>';
@@ -413,6 +412,9 @@ function selectOptions(items,val,emptyName='Не призначено'){return `
 function field(label,name,value='',type='text',full=false,other=''){return `<div class="field ${full?'full':''}"><label>${esc(label)}</label>${type==='textarea'?`<textarea class="textarea" name="${name}" ${other}>${esc(value)}</textarea>`:`<input class="input" type="${type}" name="${name}" value="${esc(value)}" ${other}>`}</div>`;}
 function selectField(label,name,items,value='',full=false){return `<div class="field ${full?'full':''}"><label>${esc(label)}</label><select name="${name}" class="select">${selectOptions(items,value)}</select></div>`;}
 function statusField(value){return `<div class="field"><label>Статус</label><select class="select" name="status">${statuses.map(s=>`<option ${s===value?'selected':''}>${s}</option>`).join('')}</select></div>`;}
+function kyivNowLocal(){const p=new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/Kyiv',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(new Date());const v=Object.fromEntries(p.map(x=>[x.type,x.value]));return v.year+'-'+v.month+'-'+v.day+'T'+v.hour+':'+v.minute;}
+function kyivWallDate(value){return String(value||'').slice(0,16).replace(' ','T');}
+function kyivDueStatus(value,status){if(!value||['Завершено','Відхилено'].includes(status))return '';return kyivWallDate(value)<kyivNowLocal()?'Прострочено':'До '+kyivWallDate(value).replace('T',' ');}
 function formatDateField(v){return (v||'').slice(0,16);}
 async function overview(){
  const mayViewFinance=can('finance:read')||can('finance:manage');
@@ -425,8 +427,9 @@ async function overview(){
  const user=state.user||{},leader=user.role==='leader',manager=leader||user.role==='deputy'||user.role==='head';
  const tasks=taskData.items||[],reports=reportData.items||[],events=eventData.items||[],contracts=contractData.items||[];
  const myTasks=tasks.filter(x=>x.assignee_id===user.id&&x.status!=='Завершено'&&x.status!=='Відхилено');
+ const overdueTasks=myTasks.filter(x=>x.ends_at&&kyivWallDate(x.ends_at)<kyivNowLocal());
  const reviewReports=manager?reports.filter(x=>x.status==='На перевірці'):reports.filter(x=>x.owner_id===user.id&&x.status==='На перевірці');
- const upcoming=events.filter(x=>x.starts_at&&new Date(x.starts_at).getTime()>=Date.now()&&x.status!=='Відхилено').sort((a,b)=>String(a.starts_at).localeCompare(String(b.starts_at)));
+ const upcoming=events.filter(x=>x.starts_at&&kyivWallDate(x.starts_at)>=kyivNowLocal()&&x.status!=='Відхилено').sort((a,b)=>String(a.starts_at).localeCompare(String(b.starts_at)));
  const nextEvents=upcoming.slice(0,4);
  const pendingContracts=contracts.filter(x=>x.status==='Погоджено'&&!x.settled_at);
  const ownDepartment=state.departments.find(d=>d.id===user.department_id);
@@ -434,15 +437,17 @@ async function overview(){
  const summary=finance.contract_summary||{};
  const metric=(label,value,note='')=>'<div class="card stat"><div class="muted small">'+esc(label)+'</div><div class="number">'+value+'</div>'+(note?'<div class="muted small overview-stat-note">'+esc(note)+'</div>':'')+'</div>';
  const section=(title,route,label)=>'<div class="card-head"><h3>'+esc(title)+'</h3><button class="btn tiny secondary" data-route="'+route+'">'+esc(label)+' ↗</button></div>';
- const taskRows=myTasks.slice(0,5).map(x=>'<tr><td class="table-title">'+esc(x.title)+'</td><td>'+esc(departmentName(x.department_id))+'</td><td>'+badge(x.status)+'</td><td><button class="btn tiny secondary" data-action="view-record" data-module="tasks" data-id="'+esc(x.id)+'">Відкрити</button></td></tr>');
+ const taskRows=[...myTasks].sort((a,b)=>String(a.ends_at||'9999').localeCompare(String(b.ends_at||'9999'))).slice(0,5).map(x=>'<tr><td class="table-title">'+esc(x.title)+'</td><td>'+esc(departmentName(x.department_id))+'</td><td>'+badge(x.status)+(x.ends_at?'<div class="muted small">'+esc(kyivDueStatus(x.ends_at,x.status))+'</div>':'')+'</td><td><button class="btn tiny secondary" data-action="view-record" data-module="tasks" data-id="'+esc(x.id)+'">Відкрити</button></td></tr>');
  const reviewRows=reviewReports.slice(0,5).map(x=>'<tr><td class="table-title">'+esc(x.title)+'</td><td>'+esc(userName(x.owner_id))+'</td><td>'+badge(x.status)+'</td><td><button class="btn tiny secondary" data-action="view-record" data-module="reports" data-id="'+esc(x.id)+'">Відкрити</button></td></tr>');
  const departmentCards=state.departments.map(d=>{
   const members=state.roster.filter(u=>u.department_id===d.id&&u.status==='active').length;
+  const finished=tasks.filter(t=>t.department_id===d.id&&t.status==='Завершено').length;
+  const pending=tasks.filter(t=>t.department_id===d.id&&!['Завершено','Відхилено'].includes(t.status)).length;
   return '<div class="card flat"><div class="row space"><strong>'+esc(d.title)+'</strong><span class="muted small">'+members+' уч.</span></div>'+
-   '<div class="muted small mt">Керівник: '+esc(d.head_id?userName(d.head_id):'Не призначено')+'</div></div>';
+   '<div class="muted small mt">Керівник: '+esc(d.head_id?userName(d.head_id):'Не призначено')+'</div><div class="muted small mt">Завдання: '+fmt(finished)+' виконано · '+fmt(pending)+' в роботі</div></div>';
  }).join('');
  const recentContracts=[...contracts].sort((a,b)=>String(b.created_at||b.updated_at||'').localeCompare(String(a.created_at||a.updated_at||''))).slice(0,5);
- const contractRows=recentContracts.map(x=>'<tr><td class="table-title"><strong>'+esc(x.title)+'</strong><div class="muted small">'+esc(departmentName(x.department_id))+'</div></td><td class="mono">'+fmt(x.amount||0)+'</td><td>'+badge(x.settled_at?'Нараховано':x.status)+'</td><td><button class="btn tiny secondary" data-action="view-contract" data-id="'+esc(x.id)+'">Відкрити</button></td></tr>');
+ const contractRows=recentContracts.map(x=>'<tr><td class="table-title"><strong>'+esc(x.title)+'</strong><div class="muted small">'+esc(departmentName(x.department_id))+' · '+esc(userName(x.owner_id))+'</div></td><td class="mono">'+fmt(x.amount||0)+'</td><td>'+badge(x.settled_at?'Нараховано':x.status)+'</td><td><button class="btn tiny secondary" data-action="view-contract" data-id="'+esc(x.id)+'">Відкрити</button></td></tr>');
  const recentMembers=[...state.roster].filter(x=>x.status==='active').sort((a,b)=>String(b.joined_at||'').localeCompare(String(a.joined_at||''))).slice(0,5);
  const memberRows=recentMembers.map(x=>'<tr><td class="table-title">'+esc(x.nickname||'Учасник')+'</td><td>'+esc(departmentName(x.department_id))+'</td><td>'+esc(x.joined_at?date(x.joined_at):'—')+'</td><td><button class="btn tiny secondary" data-action="view-member" data-id="'+esc(x.id)+'">Профіль</button></td></tr>');
  const activeMembers=state.roster.filter(x=>x.status==='active');
@@ -504,7 +509,7 @@ async function overview(){
  '<div class="stack gr-overview-v4 gr-overview-design-v5"><div class="dashboard-welcome"><div><div class="overline">GRIZZLY / FAMILY OPERATIONS</div><h2>Вітаємо, '+esc(user.nickname||user.username||'учаснику')+'! 🐻</h2><p>'+(ownDepartment?'Твій підрозділ: '+esc(ownDepartment.title)+' · ':'')+'Слідкуй за завданнями, подіями та роботою сім’ї.</p></div><span class="bear">🐻</span></div>'+
  '<div class="cards">'+
  metric('Учасників сім’ї',fmt(state.roster.filter(u=>u.status==='active').length),'Активні акаунти')+
- metric('Мої активні завдання',fmt(myTasks.length),'Потребують виконання')+
+ metric('Мої активні завдання',fmt(myTasks.length),overdueTasks.length?'Прострочено: '+overdueTasks.length:'Потребують виконання')+
  metric(manager?'Звіти на перевірці':'Мої звіти на перевірці',fmt(reviewReports.length))+
  metric('Майбутні заходи',fmt(upcoming.length),'У доступному розкладі')+
  '</div>'+
