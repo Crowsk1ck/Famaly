@@ -62,6 +62,73 @@ const DEPARTMENT_WEEKLY_METRICS=Object.freeze({
  events:[['events_done','Проведені заходи','events'],['notices_published','Опубліковані оголошення','notices'],['tasks_done','Виконані завдання','tasks']]
 });
 function weeklyGoalKey(departmentId){return 'department_goals_'+departmentId;}
+
+const ABSENCE_MODULE='absence_requests';
+const ABSENCE_TYPES=Object.freeze({vacation:'Відпустка',inactive:'Тимчасовий неактив'});
+function dateOnly(value){
+ return typeof value==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(value)&&
+ !Number.isNaN(Date.parse(value+'T00:00:00Z'))&&
+ new Date(value+'T00:00:00Z').toISOString().slice(0,10)===value;
+}
+function validAbsenceDates(start,end){
+ if(!dateOnly(start)||!dateOnly(end))fail(400,'Введіть коректні дати початку та завершення');
+ const days=Math.round((Date.parse(end+'T00:00:00Z')-Date.parse(start+'T00:00:00Z'))/86400000)+1;
+ if(days<1||days>90)fail(400,'Тривалість відсутності: від 1 до 90 днів');
+ const today=new Date().toISOString().slice(0,10);
+ if(start<today)fail(400,'Не можна подавати нову заявку на минулі дати');
+ if(start>new Date(Date.now()+366*86400000).toISOString().slice(0,10))
+  fail(400,'Заявку можна оформити не більш ніж на рік наперед');
+}
+function canReviewAbsence(user,record){
+ if(user.id===record.owner_id)return false;
+ if(user.role==='leader'||user.role==='deputy')return true;
+ return user.role==='head'&&user.head_appointed&&!!record.department_id&&user.department_id===record.department_id;
+}
+function visibleAbsence(user,record){
+ return user.id===record.owner_id||user.role==='leader'||user.role==='deputy'||
+  (user.role==='head'&&user.head_appointed&&record.department_id===user.department_id);
+}
+function absenceView(row){
+ const x=mapRecord(row);
+ return {id:x.id,title:x.title,details:x.details,status:x.status,owner_id:x.owner_id,
+  department_id:x.department_id,starts_at:x.starts_at,ends_at:x.ends_at,
+  type:x.extra.type,review_comment:x.extra.review_comment||'',
+  reviewer_id:x.extra.reviewer_id||null,created_at:x.created_at,updated_at:x.updated_at,version:x.version};
+}
+async function activitySnapshot(db,viewer,departmentId){
+ if(!['leader','deputy','head','member'].includes(viewer.role))fail(403,'Недостатньо прав');
+ if(viewer.role==='head'&&!viewer.head_appointed)fail(403,'Призначення керівника не підтверджено');
+ if(viewer.role==='head'&&departmentId&&departmentId!==viewer.department_id)fail(403,'Доступ тільки до власного підрозділу');
+ const users=await allRows(db,"SELECT id,nickname,department_id,role,status FROM users WHERE status='active' ORDER BY nickname COLLATE NOCASE");
+ const allowed=users.filter(x=>viewer.role==='leader'||viewer.role==='deputy'?
+  (!departmentId||x.department_id===departmentId):
+  viewer.role==='head'?x.department_id===viewer.department_id:x.id===viewer.id);
+ const day7=new Date(Date.now()-7*86400000).toISOString();
+ const day30=new Date(Date.now()-30*86400000).toISOString();
+ // Only operational actions; logins, profile edits, and money movements do not count as RP activity.
+ const [actions,absences]=await Promise.all([
+  allRows(db,`SELECT actor_id,MAX(created_at) AS last_action,COUNT(*) AS count_30,
+   SUM(CASE WHEN created_at>=? THEN 1 ELSE 0 END) AS count_7 FROM audit
+   WHERE created_at>=? AND action IN ('create','update','review','submit')
+   AND entity IN ('tasks','reports','promotions','events','capt_matches','capt_training',
+    'capt_attendance','vehicles','vehicle_loans','discipline','notices','gallery',
+    'public_news','department_weekly_report')
+   GROUP BY actor_id`,day7,day30),
+  allRows(db,"SELECT owner_id,starts_at,ends_at,extra FROM records WHERE module=? AND status='Погоджено' AND deleted_at IS NULL",ABSENCE_MODULE)
+ ]);
+ const totals=new Map(actions.map(x=>[x.actor_id,x]));
+ const today=new Date().toISOString().slice(0,10);
+ const items=allowed.map(x=>{
+  const a=totals.get(x.id);
+  const leave=absences.find(r=>r.owner_id===x.id&&r.starts_at<=today&&r.ends_at>=today);
+  return {id:x.id,nickname:x.nickname,department_id:x.department_id,role:x.role,
+   actions_7:Number(a?.count_7||0),actions_30:Number(a?.count_30||0),
+   last_action:a?.last_action||null,
+   absence:leave?parseJson(leave.extra,{}).type||'vacation':null};
+ });
+ return {items,periods:[7,30],basis:'Дії у панелі GRIZZLY (не час у GTA 5)'};
+}
+
 function weeklyMetrics(departmentId,visibleRecords,contracts,applications,goals,from=Date.now()-7*86400000,to=Date.now()){
  const rows=DEPARTMENT_WEEKLY_METRICS[departmentId]||[['tasks_done','Виконані завдання','tasks'],['reports_approved','Погоджені звіти','reports']];
  const isRecent=(date)=>!!date&&Number.isFinite(Date.parse(date))&&Date.parse(date)>=from&&Date.parse(date)<to;
@@ -671,6 +738,62 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
     const leaders=await allRows(db,"SELECT id FROM users WHERE role='leader' AND status='active'");
     await Promise.all(leaders.map(x=>notify(db,x.id,'Новий тижневий звіт',dept.title+' · '+week.start)));
     return json({id,status:'На перевірці',week_start:week.start},201);
+  }
+  if(path==='/api/activity'&&method==='GET'){
+    const departmentId=str(url.searchParams.get('department'),80);
+    if(departmentId&&user.role==='member'&&departmentId!==user.department_id)fail(403,'Тільки особиста активність');
+    return json(await activitySnapshot(db,user,departmentId));
+  }
+  if(path==='/api/absences'&&method==='GET'){
+    if(user.role==='head'&&!user.head_appointed)fail(403,'Вас не призначено керівником');
+    const rows=await allRows(db,"SELECT * FROM records WHERE module=? AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 2000",ABSENCE_MODULE);
+    return json({items:rows.filter(r=>visibleAbsence(user,r)).map(absenceView)});
+  }
+  if(path==='/api/absences'&&method==='POST'){
+    const input=await body(req);
+    const type=str(input.type,20),start=str(input.starts_at,20),end=str(input.ends_at,20);
+    if(!ABSENCE_TYPES[type])fail(400,'Оберіть відпустку або тимчасовий неактив');
+    validAbsenceDates(start,end);
+    const comment=str(input.details||'',700);
+    if(comment.length<5)fail(400,'Опишіть причину щонайменше 5 символами');
+    const existing=await db.prepare(`SELECT id FROM records
+      WHERE module=? AND owner_id=? AND deleted_at IS NULL
+      AND status IN ('На перевірці','Погоджено') AND starts_at<=? AND ends_at>=? LIMIT 1`)
+      .bind(ABSENCE_MODULE,user.id,end,start).first();
+    if(existing)fail(409,'У цей період вже є заявка на відсутність');
+    const id=uuid(),t=now(),departmentId=user.department_id||null;
+    await db.prepare(`INSERT INTO records
+      (id,module,title,details,status,owner_id,assignee_id,department_id,amount,starts_at,ends_at,evidence,extra,created_at,updated_at)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
+      id,ABSENCE_MODULE,ABSENCE_TYPES[type]+' · '+user.nickname,comment,
+      'На перевірці',user.id,null,departmentId,0,start,end,'[]',JSON.stringify({type}),t,t).run();
+    await audit(db,user,'submit',ABSENCE_MODULE,id,type);
+    const managers=await allRows(db,"SELECT id,role,department_id FROM users WHERE status='active' AND role IN ('leader','deputy','head')");
+    await Promise.all(managers.filter(m=>m.role!=='head'||
+      (m.department_id===departmentId&&m.id!==user.id)).map(m=>notify(db,m.id,'Заявка на відсутність',user.nickname+' · '+ABSENCE_TYPES[type])));
+    return json({item:absenceView(await db.prepare('SELECT * FROM records WHERE id=?').bind(id).first())},201);
+  }
+  m=path.match(/^\/api\/absences\/([\\w-]+)$/);
+  if(m&&method==='PATCH'){
+    const old=await db.prepare("SELECT * FROM records WHERE id=? AND module=? AND deleted_at IS NULL")
+      .bind(m[1],ABSENCE_MODULE).first();
+    if(!old||!visibleAbsence(user,old))fail(404,'Заявку не знайдено');
+    const input=await body(req);
+    if(!Number.isInteger(input.version))fail(428,'Оновіть заявку перед зміною');
+    const decision=str(input.status,35);
+    const ownCancel=user.id===old.owner_id&&decision==='Скасовано';
+    if(!ownCancel&&!canReviewAbsence(user,old))fail(403,'Немає прав для розгляду');
+    if(ownCancel&&!['На перевірці'].includes(old.status))fail(409,'Погоджену відпустку скасовує керівництво');
+    if(!ownCancel&&!['Погоджено','Відхилено','Скасовано'].includes(decision))fail(400,'Некоректне рішення');
+    if(!['На перевірці','Погоджено'].includes(old.status)||old.status==='Погоджено'&&decision!=='Скасовано')
+      fail(409,'Рішення за заявкою вже ухвалено');
+    const extra={...parseJson(old.extra,{}),review_comment:str(input.comment||'',400),reviewer_id:ownCancel?null:user.id};
+    const result=await db.prepare('UPDATE records SET status=?,extra=?,updated_at=?,version=version+1 WHERE id=? AND version=?')
+      .bind(decision,JSON.stringify(extra),now(),old.id,input.version).run();
+    if(result.meta.changes!==1)fail(409,'Заявку вже змінив інший користувач');
+    await audit(db,user,'review',ABSENCE_MODULE,old.id,decision);
+    if(user.id!==old.owner_id)await notify(db,old.owner_id,'Рішення щодо відсутності',decision);
+    return json({ok:true});
   }
   if(path==='/api/department-workspace'&&method==='GET'){
     if(!['leader','deputy','head'].includes(user.role))fail(403,'Панель доступна керівництву');
