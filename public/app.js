@@ -531,8 +531,58 @@ async function ranks(){
   (recent.length?table(['Учасник','Цільовий ранг','Статус','Прогрес','Дата','Дія'],recentRows):empty('Заявок поки немає','Створіть першу заявку на підвищення.'));
 }
 function rankForm(id){const r=state.ranks.find(x=>x.id===Number(id));modal(`Редагування рангу ${id}`,`<form id="rank-form" data-id="${id}" class="formgrid">${field('Назва рангу','title',r.title,'text',true,'required')}${field('Умови підвищення','requirements',r.requirements,'textarea',true)}${field('Чекліст (кожна вимога з нового рядка)','checklist',JSON.parse(r.checklist||'[]').join('\n'),'textarea',true)}<div class="full form-actions"><button class="btn" type="submit">Зберегти ранг</button></div></form>`);}
-async function departments(){const list=state.departments;return `${intro('Напрямки сім’ї','Керівники напрямків працюють лише зі своїм підрозділом.')}<div class="grid3">${list.map(d=>`<div class="card"><span class="overline">ПІДРОЗДІЛ</span><h3 class="mt">${esc(d.title)}</h3><p class="muted small mt">Відповідальний: ${esc(userName(d.head_id))}</p><p class="muted small">Учасників: ${state.roster.filter(u=>u.department_id===d.id).length}</p>${state.user.role==='leader'?`<button class="btn tiny secondary mt" data-action="edit-department" data-id="${esc(d.id)}">Налаштувати →</button>`:''}</div>`).join('')}</div>`;}
-function departmentForm(id){const d=state.departments.find(x=>x.id===id);modal('Налаштувати напрямок',`<form id="department-form" data-id="${esc(id)}" class="formgrid">${field('Назва напрямку','title',d.title,'text',true,'required')}${selectField('Керівник','head_id',state.users,d.head_id,true)}<div class="full form-actions"><button class="btn" type="submit">Зберегти</button></div></form>`);}
+async function departments(){
+ const all=state.departments;
+ const focus=state.departmentFocus||'all';
+ const dept=all.find(d=>d.id===focus);
+ const [taskRes,reportRes]=await Promise.all([api('/records/tasks'),api('/records/reports')]);
+ const tasks=taskRes.items||[],reports=reportRes.items||[];
+ const roster=state.roster||[];
+ const sectionMembers=id=>roster.filter(u=>u.department_id===id);
+ const headLabel=d=>d.head_id?userName(d.head_id):'Не призначено';
+ const cards=all.map(d=>{
+  const members=sectionMembers(d.id),mine=d.id===state.user.department_id;
+  const taskCount=tasks.filter(x=>x.department_id===d.id&&x.status!=='Завершено').length;
+  const reportCount=reports.filter(x=>x.department_id===d.id&&x.status==='На перевірці').length;
+  return '<article class="card" style="display:flex;flex-direction:column;gap:10px">'+
+   '<div class="row space"><span class="overline">ПІДРОЗДІЛ</span>'+(mine?'<span class="badge green">Мій напрямок</span>':'')+'</div>'+
+   '<h3>'+esc(d.title)+'</h3>'+
+   '<div class="small">Керівник: <strong>'+esc(headLabel(d))+'</strong></div>'+
+   '<div class="row wrap small muted"><span>Учасників: '+members.length+'</span><span>Активних завдань: '+taskCount+'</span><span>Звітів на перевірці: '+reportCount+'</span></div>'+
+   '<div class="row wrap mt" style="margin-top:auto"><button class="btn tiny secondary" data-action="department-select" data-value="'+esc(d.id)+'">Відкрити напрямок</button>'+
+   (state.user.role==='leader'?'<button class="btn tiny secondary" data-action="edit-department" data-id="'+esc(d.id)+'">Налаштувати</button>':'')+'</div></article>';
+ }).join('');
+ let details='';
+ if(dept){
+  const members=sectionMembers(dept.id),dtasks=tasks.filter(x=>x.department_id===dept.id),dreports=reports.filter(x=>x.department_id===dept.id);
+  const memberRows=members.map(u=>'<tr><td><strong>'+esc(u.nickname||'Учасник')+'</strong></td><td>'+esc(rankName(u.rank_id))+'</td><td>'+esc(roles[u.role]||u.role)+'</td><td>'+esc(memberStatusLabel(u.status))+'</td></tr>');
+  const taskRows=dtasks.map(x=>'<tr><td>'+esc(x.title)+'</td><td>'+esc(userName(x.assignee_id))+'</td><td>'+badge(x.status)+'</td><td><button class="btn tiny secondary" data-action="view-record" data-module="tasks" data-id="'+esc(x.id)+'">Відкрити</button></td></tr>');
+  const reportRows=dreports.map(x=>'<tr><td>'+esc(x.title)+'</td><td>'+esc(userName(x.owner_id))+'</td><td>'+badge(x.status)+'</td><td><button class="btn tiny secondary" data-action="view-record" data-module="reports" data-id="'+esc(x.id)+'">Відкрити</button></td></tr>');
+  const allowed=(state.user.role==='leader'||state.user.role==='deputy'||(state.user.role==='head'&&state.user.department_id===dept.id))&&can('tasks:manage');
+  details='<div class="card mt"><div class="row space wrap"><div><h2>'+esc(dept.title)+'</h2><p class="muted small">Керівник: '+esc(headLabel(dept))+' · Учасників: '+members.length+'</p></div>'+
+   '<div class="row wrap"><button class="btn tiny secondary" data-action="department-select" data-value="all">Усі напрямки</button>'+
+   (allowed?'<button class="btn tiny" data-action="department-new-task" data-value="'+esc(dept.id)+'">＋ Завдання підрозділу</button>':'')+'</div></div>'+
+   '<h3 class="mt">Особовий склад</h3>'+(members.length?table(['Нікнейм','Ігровий ранг','Роль','Статус'],memberRows):empty('Учасників немає','Лідер може призначити напрямок в особовій справі учасника.'))+
+   '<h3 class="mt">Завдання напрямку</h3>'+(dtasks.length?table(['Завдання','Виконавець','Статус','Дія'],taskRows):empty('Немає доступних завдань'))+
+   '<h3 class="mt">Звіти напрямку</h3>'+(dreports.length?table(['Звіт','Автор','Статус','Дія'],reportRows):empty('Немає доступних звітів'))+
+   '<p class="muted small mt">Завдання та звіти відображаються відповідно до ваших прав доступу. Керівник іншого напрямку не може керувати ними.</p></div>';
+ }
+ const unassigned=roster.filter(u=>!u.department_id);
+ return intro('Підрозділи GRIZZLY','Кожен напрямок має свого керівника, учасників, завдання та звіти. Призначення складу і керівників виконує лідер.')+
+ '<div class="cards">'+[['Підрозділів',all.length],['Учасників у напрямках',roster.length-unassigned.length],['Без підрозділу',unassigned.length],['Керівників призначено',all.filter(d=>!!d.head_id).length]].map(([label,value])=>'<div class="card stat"><div class="muted small">'+esc(label)+'</div><div class="number">'+value+'</div></div>').join('')+'</div>'+
+ (unassigned.length&&state.user.role==='leader'?'<div class="notice mt">Без підрозділу: '+unassigned.map(x=>esc(x.nickname||'Учасник')).join(', ')+'. Призначте напрямок в розділі «Склад сім’ї».</div>':'')+
+ '<div class="grid3 mt">'+cards+'</div>'+details;
+}
+function departmentForm(id){
+ const d=state.departments.find(x=>x.id===id);
+ if(!d||state.user.role!=='leader')throw new Error('Тільки лідер налаштовує підрозділи');
+ const candidates=state.users.filter(u=>u.role==='head'&&u.status==='active'&&u.department_id===d.id);
+ const options=[{id:'',nickname:'Без керівника'},...candidates].map(u=>'<option value="'+esc(u.id)+'" '+(u.id===(d.head_id||'')?'selected':'')+'>'+esc(u.nickname||u.username)+'</option>').join('');
+ modal('Налаштувати підрозділ','<p class="muted small mb">Спочатку призначте учаснику роль «Голова відділу» та цей напрямок у його особовій справі. Лише після цього призначте керівника нижче.</p>'+
+  '<form id="department-form" data-id="'+esc(id)+'" class="formgrid">'+field('Назва підрозділу','title',d.title,'text',true,'required')+
+  '<div class="field full"><label>Керівник підрозділу</label><select class="select" name="head_id">'+options+'</select></div>'+
+  '<div class="full form-actions"><button class="btn" type="submit">Зберегти</button></div></form>');
+}
 const evidenceText=r=>(r?.evidence||[]).join('\n');
 function links(r){return (r.evidence||[]).length?`<div class="row wrap">${r.evidence.map((v,i)=>`<a class="small gallery-link" href="${esc(v)}" target="_blank" rel="noopener noreferrer">Доказ ${i+1} ↗</a>`).join('')}</div>`:'<span class="muted small">Без доказів</span>';}
 async function renderModule(mod){const cfg=moduleInfo[mod];if(!cfg)return empty('Розділ відсутній');if(mod==='blacklist'&&!can('discipline:manage'))return empty('Недостатньо прав');const data=await api(`/records/${mod}`);const list=applyFilters(data.items.filter(x=>searchMatch(x.title,x.details,x.status,userName(x.assignee_id))));const create=can(cfg[2])||['reports','promotions','capt_attendance','vehicle_loans'].includes(mod);return `${intro(cfg[0],cfg[1],create?`<button class="btn" data-action="new-record" data-module="${mod}">＋ Додати запис</button>`:'')}<div class="toolbar">${searchBar()}${filterControls()}${exportButton(mod)}<span class="muted small">${list.length} записів</span></div>${table(['Назва / опис','Відповідальний','Статус','Дата','Дії'],list.map(x=>`<tr><td class="table-title">${esc(x.title)}<div class="muted wordwrap" style="max-width:330px">${esc(x.details.slice(0,110))}</div></td><td>${esc(userName(x.assignee_id||x.owner_id))}<div class="muted">${esc(departmentName(x.department_id))}</div></td><td>${badge(x.status)}</td><td>${date(x.starts_at||x.created_at)}</td><td><button class="btn tiny secondary" data-action="view-record" data-id="${esc(x.id)}" data-module="${mod}">Відкрити ↗</button></td></tr>`))}`;}
@@ -1283,6 +1333,15 @@ document.addEventListener('click',async e=>{const back=e.target.closest('[data-b
     break;
   }
   case 'edit-rank':rankForm(id);break;
+  case 'department-select':state.departmentFocus=t.dataset.value||'all';await render();break;
+  case 'department-new-task':{
+    const dept=state.departments.find(d=>d.id===t.dataset.value);
+    if(!dept||!can('tasks:manage')||(state.user.role==='head'&&state.user.department_id!==dept.id))throw new Error('Немає прав для створення завдання цього напрямку');
+    await preload();moduleForm('tasks');
+    const input=document.querySelector('#record-form [name="department_id"]');
+    if(input){input.value=dept.id;if(state.user.role==='head'){input.disabled=true;const hidden=document.createElement('input');hidden.type='hidden';hidden.name='department_id';hidden.value=dept.id;input.after(hidden);}}
+    break;
+  }
   case 'edit-department':departmentForm(id);break;
   case 'new-record':await preload();if(mod==='vehicles')fleetVehicleForm();else if(mod==='gallery')galleryForm();else if(mod==='public_news')newsForm();else if(mod==='public_team')teamForm();else if(mod==='public_achievements')achievementForm();else moduleForm(mod);break;
   case 'edit-record':{const r=(await api(`/records/${mod}`)).items.find(x=>x.id===id);await preload();if(mod==='vehicles')fleetVehicleForm(r);else if(mod==='gallery')galleryForm(r);else if(mod==='public_news')newsForm(r);else if(mod==='public_team')teamForm(r);else if(mod==='public_achievements')achievementForm(r);else moduleForm(mod,r);break;}
