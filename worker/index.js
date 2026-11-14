@@ -402,24 +402,58 @@ async function recordDiscordDelivery(db,kind,error=null){
     console.error('GRIZZLY Discord log unavailable; apply D1 migration 0003');
   }
 }
+const GRIZZLY_DISCORD_COLOR=0xDC2626;
+const GRIZZLY_DISCORD_TITLES=Object.freeze({
+ applications:'📝 Нова заявка',decisions:'📋 Рішення за заявкою',
+ events:'📅 Календар заходів',capt:'🎯 CAPT',news:'📰 Новини сім’ї',
+ announcements:'📢 Оголошення',test:'🐻 Перевірка зв’язку'
+});
+const GRIZZLY_DISCORD_DESCRIPTIONS=Object.freeze({
+ applications:'Отримано нову заявку на вступ. Перегляньте її в закритій панелі рекрутингу.',
+ decisions:'Керівництво оновило статус заявки.',
+ events:'У сімейному календарі опубліковано новий захід.',
+ capt:'Опубліковано нове CAPT-оголошення.',
+ news:'На сайті опубліковано новину сім’ї.',
+ announcements:'Офіційне повідомлення для учасників сім’ї.',
+ test:'З’єднання із сайтом працює. Повідомлення надходитимуть після відповідних дій.'
+});
 export function buildDiscordNotification(kind,info={}){
-  const label={applications:'📝 Нова заявка GRIZZLY',decisions:'📋 Рішення за заявкою',events:'📅 Новий захід GRIZZLY',capt:'🎯 CAPT-оголошення GRIZZLY',news:'📰 Новина GRIZZLY',announcements:'📢 Оголошення GRIZZLY',test:'🐻 Перевірка Discord GRIZZLY'}[kind];
-  if(!label)throw new Error('Невідомий тип Discord-сповіщення');
-  const fields=[];
-  if(info.nickname)fields.push({name:'Ігровий нік',value:discordSafe(info.nickname,80),inline:true});
-  if(info.gameId)fields.push({name:'Ігровий ID',value:discordSafe(info.gameId,40),inline:true});
-  if(info.status)fields.push({name:kind==='applications'?'Статус заявки':'Рішення',value:discordSafe(info.status,70),inline:true});
-  if(info.event)fields.push({name:kind==='capt'?'CAPT-оголошення':kind==='news'?'Заголовок новини':kind==='announcements'?'Оголошення':'Подія',value:discordSafe(info.event,150),inline:false});
-  if(info.message&&kind==='announcements')fields.push({name:'Текст оголошення',value:discordSafe(info.message,950),inline:false});
-  if(info.startsAt)fields.push({name:'Час за Києвом',value:discordSafe(info.startsAt,28).replace('T',' · '),inline:true});
-  if(info.location)fields.push({name:'Місце',value:discordSafe(info.location,120),inline:true});
-  return {username:'GRIZZLY FAMILY',allowed_mentions:{parse:[]},
-    embeds:[{title:label,color:kind==='decisions'?0xF0A44F:kind==='events'||kind==='capt'?0xE84255:0x6D8B9E,
-      description:kind==='test'?'З’єднання із сайтом працює. Повідомлення з’являтимуться після відповідних дій.':
-        kind==='applications'?'Створено нову заявку. Перегляньте її в закритій панелі рекрутингу.':
-        kind==='decisions'?'Статус заявки оновлено керівництвом.':kind==='capt'?'Опубліковано CAPT-оголошення. Деталі доступні на сторінці новин сім’ї.':kind==='news'?'На сайті GRIZZLY з’явилася нова публічна новина.':kind==='announcements'?'Керівництво опублікувало оголошення для сім’ї.':'Опубліковано захід у календарі сім’ї.',
-      fields,footer:{text:'GRIZZLY · Автоматичне сповіщення'},timestamp:new Date().toISOString()}]
-  };
+ const title=GRIZZLY_DISCORD_TITLES[kind];
+ if(!title)throw new Error('Невідомий тип Discord-сповіщення');
+ const fields=[];
+ const add=(name,value,limit=200,inline=false)=>{
+  if(value===undefined||value===null||value==='')return;
+  fields.push({name,value:discordSafe(value,limit),inline});
+ };
+ add('👤 Ігровий нік',info.nickname,80,true);
+ add('🆔 Ігровий ID',info.gameId,40,true);
+ add(kind==='applications'?'📋 Статус заявки':'📋 Рішення',info.status,70,true);
+ add(kind==='capt'?'🎯 CAPT-оголошення':kind==='news'?'📰 Заголовок новини':kind==='announcements'?'📌 Тема оголошення':'📌 Подія',info.event,150);
+ // Discord allows at most 1024 characters per field. Keep paragraphs readable
+ // without cutting off the entire announcement at the former 950-char limit.
+ if(kind==='announcements'&&info.message){
+  const message=discordSafe(info.message,3800);
+  const sections=message.match(/[\s\S]{1,950}/g)||[];
+  sections.forEach((section,i)=>fields.push({
+   name:i===0?'📣 Повідомлення':'📣 Продовження '+(i+1),
+   value:section,inline:false
+  }));
+ }
+ if(info.startsAt)add('🕒 Час за Києвом',String(info.startsAt).replace('T',' · '),28,true);
+ add('📍 Місце',info.location,120,true);
+ return {
+  username:'GRIZZLY FAMILY',
+  allowed_mentions:{parse:[]},
+  embeds:[{
+   author:{name:'🐻 GRIZZLY FAMILY • ОФІЦІЙНЕ СПОВІЩЕННЯ'},
+   title,
+   color:GRIZZLY_DISCORD_COLOR,
+   description:GRIZZLY_DISCORD_DESCRIPTIONS[kind],
+   fields,
+   footer:{text:'GRIZZLY FAMILY • СИЛА В ЄДНОСТІ'},
+   timestamp:new Date().toISOString()
+  }]
+ };
 }
 async function sendDiscordWebhook(env,kind,info,targetKind=kind){
   const destinations=Object.hasOwn(APPLICATION_WEBHOOK_ROUTES,targetKind)?
