@@ -462,6 +462,11 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
     if(!manager&&(['role','rank_id','department_id','status','permissions'].some(k=>Object.prototype.hasOwnProperty.call(b,k))))fail(403,'Недостатньо прав на ці поля');
     if(user.role!=='leader'&&old.role==='leader'&&manager)fail(403,'Зміна лідера заборонена');
     if(b.status==='blocked'&&old.id===user.id)fail(400,'Не можна заблокувати себе');if(old.role==='leader' && role!=='leader' && old.id===user.id)fail(400,'Не можна позбавити себе ролі лідера');
+    // A designated head cannot silently lose the role, department or active status.
+    const assignedHead=await db.prepare('SELECT id FROM departments WHERE head_id=?').bind(old.id).first();
+    if(assignedHead&&(role!=='head'||(manager?str(b.department_id??old.department_id,80):old.department_id)!==assignedHead.id||
+      (manager&&b.status==='blocked')))
+      fail(409,'Спочатку призначте іншого керівника або зніміть призначення в налаштуваннях підрозділу');
     const customPerms=user.role==='leader'&&Object.prototype.hasOwnProperty.call(b,'permissions')?JSON.stringify({custom:true,items:uniqueIds(b.permissions,40)}):old.permissions;
     const result=await db.prepare('UPDATE users SET nickname=?,game_id=?,discord=?,role=?,permissions=?,rank_id=?,department_id=?,joined_at=?,status=?,activity=?,version=version+1,updated_at=? WHERE id=? AND version=?').bind(str(b.nickname??old.nickname,80),str(b.game_id??old.game_id,40),str(b.discord??old.discord,120),role,customPerms,manager?(b.rank_id?Number(b.rank_id):null):old.rank_id,manager?(str(b.department_id,80)||null):old.department_id,manager?dateInput(b.joined_at??old.joined_at):old.joined_at,manager&&['active','blocked'].includes(b.status)?b.status:old.status,str(b.activity??old.activity,100),now(),old.id,b.version).run();if(result.meta.changes!==1)fail(409,'Запис змінив інший користувач. Оновіть дані');
     if(b.status==='blocked')await db.prepare('UPDATE sessions SET revoked_at=? WHERE user_id=?').bind(now(),old.id).run();await audit(db,user,'update','users',old.id);return json({item:safeUser(await db.prepare('SELECT * FROM users WHERE id=?').bind(old.id).first())});
