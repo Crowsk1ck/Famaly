@@ -161,7 +161,7 @@ async function dossier(db,viewer,subject){
   history,latest_records:records.slice(0,30).map(r=>({id:r.id,title:r.title,module:r.module,status:r.status,created_at:r.created_at})),
   can_manage:personnelManage(viewer,subject)};
 }
-function inactivityRows(activity,days){
+export function inactivityRows(activity,days){
  const nowMs=Date.now();
  return activity.items.map(r=>{
   // When an account has no audited work yet, use its join date as a grace-period baseline.
