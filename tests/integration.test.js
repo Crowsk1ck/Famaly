@@ -1480,6 +1480,13 @@ test('department head permissions follow specialty and require appointment',asyn
   assert.equal((await req('/api/applications',{token})).status,200);
   assert.equal((await req('/api/records/capt_matches',{token,method:'POST',
     data:{title:'Неавторизований CAPT',department_id:'recruitment'}})).status,403);
+  const updated=(await req('/api/departments',{token:leader})).data.items.find(d=>d.id==='recruitment');
+  assert.equal((await req('/api/departments/recruitment',{method:'PATCH',token:leader,
+    data:{title:updated.title,head_id:'',version:updated.version}})).status,200);
+  assert.equal((await req('/api/applications',{token})).status,403,'Revoked head loses recruitment access immediately');
+  const after=await req('/api/auth/me',{token});
+  assert.equal(after.data.user.head_appointed,false);
+  assert.ok(!after.data.user.permissions.includes('recruitment:manage'));
 });
 // Run destructive session-revocation coverage last: other integration tests use this member's active session.
 test('blocking user revokes sessions and stops access',async()=>{const u=(await req('/api/users',{token:leader})).data.items.find(x=>x.id===memberId);const r=await req(`/api/users/${memberId}`,{method:'PATCH',token:leader,data:{...u,status:'blocked'}});assert.equal(r.status,200,JSON.stringify(r.data));assert.equal((await req('/api/auth/me',{token:member})).status,401);});
