@@ -1148,8 +1148,20 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
     if(user.role!=='leader')fail(403,'Лише лідер переглядає журнал Discord');
     if((await discordPreferences(db,env)).migrationRequired)
       fail(503,'Для журналу доставки застосуйте міграції D1 0003–0005');
-    return json({items:(await allRows(db,
-      'SELECT id,kind,status,http_status,error_code,created_at FROM discord_delivery_log ORDER BY created_at DESC LIMIT 100')).map(discordDeliveryView)});
+    const kindFilter=str(url.searchParams.get('kind')||'',40);
+    const statusFilter=str(url.searchParams.get('status')||'',20);
+    if(kindFilter&&kindFilter!=='all'&&!DISCORD_LOG_ROUTE_KINDS.has(kindFilter))fail(400,'Невідомий тип Discord-сповіщення');
+    if(statusFilter&&!['all','sent','failed'].includes(statusFilter))fail(400,'Невідомий статус доставки');
+    // Bound the query and filter AFTER recovering exact routes from the legacy-safe log tags.
+    const entries=(await allRows(db,
+      'SELECT id,kind,status,http_status,error_code,created_at FROM discord_delivery_log ORDER BY created_at DESC LIMIT 300')).map(discordDeliveryView);
+    const matching=entries.filter(x=>(!kindFilter||kindFilter==='all'||x.kind===kindFilter)&&
+      (!statusFilter||statusFilter==='all'||x.status===statusFilter));
+    const items=matching.slice(0,100);
+    return json({items,totals:{
+      recorded:matching.length,sent:matching.filter(x=>x.status==='sent').length,
+      failed:matching.filter(x=>x.status==='failed').length
+    },has_more:matching.length>items.length,scope:'Останні 300 відправлень'});
   }
   if(path==='/api/discord/test'&&method==='POST'){
     if(user.role!=='leader')fail(403,'Лише лідер може перевіряти Discord');

@@ -13,14 +13,15 @@ function ui(discord,items=[],role='leader'){
     calls.push(path);
     if(path==='/settings')return {items:{family_name:'GRIZZLY'},versions:{}};
     if(path==='/discord/status')return discord;
-    if(path==='/discord/deliveries')return {items};
+    if(path.startsWith('/discord/deliveries?'))return {items,totals:{recorded:items.length,sent:items.filter(x=>x.status==='sent').length,failed:items.filter(x=>x.status==='failed').length},has_more:false};
     throw Error('Unexpected API path '+path);
   };
   const intro=()=>'<section>GRIZZLY settings</section>';
   const field=(_label,name,value='')=>'<input name="'+name+'" value="'+esc(value)+'">';
   const date=v=>v||'';
-  const fn=new Function('api','state','intro','field','esc','date',
-    source.slice(begin,end)+'\nreturn settingsPage;')(api,state,intro,field,esc,date);
+  const fmt=v=>String(v??0);
+  const fn=new Function('api','state','intro','field','esc','date','fmt',
+    source.slice(begin,end)+'\nreturn settingsPage;')(api,state,intro,field,esc,date,fmt);
   return fn().then(html=>({html,state,calls}));
 }
 const ready={
@@ -51,7 +52,7 @@ test('leader sees persistent Discord switches and successful/failed delivery his
   assert.ok(html.includes('Надіслано'));
   assert.ok(html.includes('Помилка'));
   assert.deepEqual(state.discordVersions,ready.versions);
-  assert.deepEqual(calls,['/settings','/discord/status','/discord/deliveries']);
+  assert.deepEqual(calls,['/settings','/discord/status','/discord/deliveries?kind=all&status=all']);
 });
 test('missing migration shows instructions instead of attempting to access nonexistent journal',async()=>{
   const {html,calls}=await ui({...ready,migrationRequired:true});
@@ -59,7 +60,7 @@ test('missing migration shows instructions instead of attempting to access nonex
   assert.ok(html.includes('0003_discord_notifications.sql'));
   assert.ok(html.includes('0004_discord_capt_news.sql'));
   assert.ok(html.includes('0005_discord_announcements.sql'));
-  assert.ok(!calls.includes('/discord/deliveries'));
+  assert.ok(!calls.some(path=>path.startsWith('/discord/deliveries')));
 });
 test('environment-locked notification has disabled switch and reason',async()=>{
   const {html}=await ui({...ready,lockedByEnvironment:{applications:false,decisions:false,events:true,capt:false,news:false,announcements:false}});
