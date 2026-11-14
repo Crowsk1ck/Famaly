@@ -1572,10 +1572,10 @@ const discordHelp=discord?.reason==='missing'?
  discord?.reason==='invalid'?
  'Секрет існує, але адреса неправильна. Потрібен повний URL виду https://discord.com/api/webhooks/ID/TOKEN без зайвих лапок, параметрів або стороннього домену.':
  'Секрет виявлено, але зв’язок ще не перевірений. Натисни «Надіслати тестове повідомлення».';
-const discordNames={applications:'Нові заявки',decisions:'Рішення за заявками',events:'Опубліковані події',capt:'CAPT-оголошення',news:'Новини сім’ї',announcements:'Оголошення',test:'Тест webhook'};
+const discordNames={applications:'Нові заявки',decisions:'Рішення за заявками',events:'Опубліковані події',capt:'CAPT-оголошення',news:'Новини сім’ї',announcements:'Оголошення',promotions:'Підвищення',personnel:'Дисципліна та нагороди',absences:'Погоджені відпустки',test:'Тест webhook'};
 const discordSettingsHtml=discord&&!discord.migrationRequired?
  '<form id="discord-preferences-form" class="gr-discord-settings">'+
- ['applications','decisions','events','capt','news','announcements'].map(k=>
+ ['applications','decisions','events','capt','news','announcements','promotions','personnel','absences'].map(k=>
    '<label class="gr-discord-switch"><span><strong>'+discordNames[k]+'</strong>'+
    '<small>'+(discord.lockedByEnvironment?.[k]?'Вимкнено у змінних Cloudflare.':'Керуй сповіщеннями без зміни Cloudflare.')+'</small></span>'+
    '<input type="checkbox" name="'+k+'" '+(discord.enabled?.[k]?'checked':'')+' '+(discord.lockedByEnvironment?.[k]?'disabled':'')+' aria-label="'+discordNames[k]+'"></label>'
@@ -1640,7 +1640,7 @@ const discordLogsHtml=discord&&!discord.migrationRequired?
  '</tbody></table></div>':'<p class="muted small">Історія порожня. Натисни кнопку тесту або дочекайся нової заявки.</p>')+
  '</div>':'';
 return `${intro('Налаштування Grizzly','Редагування публічного сайту, правил, Discord та фінансових параметрів.')}<div class="card"><form id="settings-form" class="formgrid">${field('Назва сім’ї','family_name',s.family_name)}${field('Гасло','tagline',s.tagline)}${field('Історія сім’ї','history',s.history,'textarea',true)}${field('Посилання Discord','discord_url',s.discord_url,'url',true,'placeholder="https://discord.gg/..."')}${field('Правила','rules',s.rules,'textarea',true)}${field('Вимоги до кандидатів','requirements',s.requirements,'textarea',true)}${field('Відсоток казни від контрактів','treasury_percent',s.treasury_percent,'number',false,'min="0" max="100"')}${field('CAPT — ставка AFK','capt_afk_rate',s.capt_afk_rate,'number',false,'min="0"')}${field('CAPT — ставка за бій','capt_battle_rate',s.capt_battle_rate,'number',false,'min="0"')}<div class="full form-actions"><button class="btn" type="submit">Зберегти налаштування</button></div></form></div>${discord?'<div class="card mt"><div class="card-head"><h3>Discord-сповіщення</h3><span class="pill">'+discordLabel+'</span></div>'+
-    '<p class="muted small mt">Нові заявки, рішення, заходи, CAPT-оголошення, новини та звичайні оголошення. Webhook зберігається як секрет Cloudflare, не в D1.</p>'+ '<div class="notice mt">'+discordHelp+'</div>'+ 
+    '<p class="muted small mt">Усі 9 категорій, включно з підвищеннями, дисципліною та відпустками, мають окремі перемикачі. Webhook-адреси зберігаються лише в Cloudflare Secrets, не в D1.</p>'+ '<div class="notice mt">'+discordHelp+'</div>'+ 
     '<div class="row wrap mt"><span class="pill">Заявки: '+(discord.categories.applications?'увімкнено':'вимкнено')+'</span>'+
     '<span class="pill">Рішення: '+(discord.categories.decisions?'увімкнено':'вимкнено')+'</span>'+
     '<span class="pill">Події: '+(discord.categories.events?'увімкнено':'вимкнено')+'</span>'+ 
@@ -1750,7 +1750,7 @@ async function handleSubmit(e){const f=e.target;if(!f.id)return;e.preventDefault
   case 'ledger-form':await api('/ledger','POST',{...b,amount:Number(b.amount)});await afterSaved('Операцію проведено');return;
   case 'discord-preferences-form':{
     if(state.user?.role!=='leader')throw new Error('Недостатньо прав');
-    const enabled=Object.fromEntries(['applications','decisions','events','capt','news','announcements'].map(k=>[k,!!f.elements.namedItem(k)?.checked]));
+    const enabled=Object.fromEntries(['applications','decisions','events','capt','news','announcements','promotions','personnel','absences'].map(k=>[k,!!f.elements.namedItem(k)?.checked]));
     await api('/discord/preferences','PATCH',{enabled,versions:state.discordVersions});
     await render();toast('Discord-сповіщення оновлено');return;}
   case 'settings-form':await api('/settings','PATCH',{...b,__versions:state.settingsVersions});state.public=await api('/public');await afterSaved('Налаштування оновлено');return;
