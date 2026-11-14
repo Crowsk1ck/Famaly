@@ -405,7 +405,7 @@ async function recordDiscordDelivery(db,kind,error=null){
 const GRIZZLY_DISCORD_COLOR=0xDC2626;
 const GRIZZLY_DISCORD_TITLES=Object.freeze({
  applications:'📝 Нова заявка',decisions:'📋 Рішення за заявкою',
- events:'📅 Календар заходів',capt:'🎯 CAPT',news:'📰 Новини сім’ї',
+ events:'📅 Календар заходів',capt:'🎯 CAPT',news:'📰 Новина сім’ї',
  announcements:'📢 Оголошення',test:'🐻 Перевірка зв’язку'
 });
 const GRIZZLY_DISCORD_DESCRIPTIONS=Object.freeze({
