@@ -66,3 +66,16 @@ test('dedicated SEO routes are intercepted before SPA fallback',()=>{
  for(const route of ['about','news','gallery','achievements','calendar','join'])assert.ok(wrangler.includes('/'+route+'/*'));
  assert.match(app,/history\.replaceState\(history\.state,'','\/'\+url\.search\+url\.hash\)/);
 });
+
+test('SEO route is handled by Worker before assets with no-cache response',async()=>{
+ assert.match(wrangler,/run_worker_first\s*=\s*true/);
+ const env={ASSETS:{fetch:async()=>new Response(html,{headers:{'Content-Type':'text/html'}})}};
+ const res=await worker.fetch(new Request('https://grizzly-family.online/about/'),env,{});
+ assert.equal(res.status,200);
+ assert.equal(res.headers.get('X-Grizzly-Seo-Route'),'/about/');
+ assert.equal(res.headers.get('Cache-Control'),'no-store');
+ const page=await res.text();
+ assert.match(page,/<h1>ІСТОРІЯ GRIZZLY<\/h1>/);
+ assert.match(page,/id="modal-root"/);
+ assert.match(page,/id="toast-root"/);
+});
