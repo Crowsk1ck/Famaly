@@ -985,7 +985,8 @@ function seoSafe(v){return String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').
 async function publicHtml(req,env){
  const url=new URL(req.url),page=PUBLIC_SEO[url.pathname];
  if(!page||req.method!=='GET')return env.ASSETS.fetch(req);
- const res=await env.ASSETS.fetch(new Request(new URL('/index.html',req.url),req));
+ // Cloudflare canonicalizes /index.html to / with a 307; fetch the canonical asset URL to avoid forwarding that redirect.
+ const res=await env.ASSETS.fetch(new Request(new URL('/',req.url),req));
  if(!res.ok)return res;
  let html=await res.text();
  const canonical='https://grizzly-family.online'+url.pathname;
