@@ -1287,5 +1287,36 @@ test('leader corrects settled zero payouts without duplicate credits or falsely 
   assert.match(app,/contract-correction-save/);
   assert.match(app,/Тільки для помилкових нарахувань з нульовими виплатами/);
 });
+test('department leaders must be active heads assigned to the same department',async()=>{
+  const data=(await req('/api/departments',{token:leader})).data.items;
+  const capt=data.find(d=>d.id==='capt');
+  assert.ok(capt);
+  const invalid=await req('/api/departments/capt',{method:'PATCH',token:leader,data:{title:capt.title,head_id:memberId,version:capt.version}});
+  assert.equal(invalid.status,400,'An ordinary member cannot be a department head');
+  const foreign=await req('/api/users',{method:'POST',token:leader,data:{
+    username:'foreignhead',password:'foreign-head-pass-123',nickname:'Foreign Head',role:'head',department_id:'fleet'
+  }});
+  assert.equal(foreign.status,201,JSON.stringify(foreign.data));
+  const wrong=await req('/api/departments/capt',{method:'PATCH',token:leader,data:{title:capt.title,head_id:foreign.data.item.id,version:capt.version}});
+  assert.equal(wrong.status,400,'A head of another department cannot lead capt');
+  const created=await req('/api/users',{method:'POST',token:leader,data:{
+    username:'captleader',password:'capt-leader-pass-123',nickname:'CAPT Leader',role:'head',department_id:'capt'
+  }});
+  assert.equal(created.status,201,JSON.stringify(created.data));
+  const headId=created.data.item.id;
+  const denied=await req('/api/departments/capt',{method:'PATCH',token:member,data:{title:'Hijacked',head_id:headId,version:capt.version}});
+  assert.equal(denied.status,403);
+  const appointed=await req('/api/departments/capt',{method:'PATCH',token:leader,data:{title:capt.title,head_id:headId,version:capt.version}});
+  assert.equal(appointed.status,200,JSON.stringify(appointed.data));
+  const after=(await req('/api/departments',{token:member})).data.items.find(d=>d.id==='capt');
+  assert.equal(after.head_id,headId);
+  const app=readFileSync(resolve('public/app.js'),'utf8');
+  assert.match(app,/async function departments\(\)/);
+  assert.match(app,/state\.departmentFocus/);
+  assert.match(app,/data-action="department-select"/);
+  assert.match(app,/data-action="department-new-task"/);
+  assert.match(app,/Голова відділу/);
+  assert.match(app,/Звіти напрямку/);
+});
 // Run destructive session-revocation coverage last: other integration tests use this member's active session.
 test('blocking user revokes sessions and stops access',async()=>{const u=(await req('/api/users',{token:leader})).data.items.find(x=>x.id===memberId);const r=await req(`/api/users/${memberId}`,{method:'PATCH',token:leader,data:{...u,status:'blocked'}});assert.equal(r.status,200,JSON.stringify(r.data));assert.equal((await req('/api/auth/me',{token:member})).status,401);});
