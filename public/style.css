@@ -1061,3 +1061,12 @@
 @media(prefers-reduced-motion:reduce){
  .gr-menu-scrim{transition:none}
 }
+
+
+/* v15.3: form submission states and persistent, accessible validation feedback */
+.gr-form-save-status{display:flex;align-items:center;gap:8px;margin:10px 0 0;color:var(--muted);font-size:.83rem}
+.gr-form-save-status::before{content:'';width:13px;height:13px;flex:none;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:gr-save-spinner .8s linear infinite}
+.gr-form-save-error{margin:10px 0 0;padding:10px 12px;border:1px solid #8e4552;border-radius:9px;background:#37232b;color:#ffd9df;font-size:.85rem;overflow-wrap:anywhere}
+form[aria-busy="true"] [type="submit"]{cursor:progress;opacity:.65}
+@keyframes gr-save-spinner{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.gr-form-save-status::before{animation:none;border-right-color:currentColor}}
