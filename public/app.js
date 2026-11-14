@@ -465,8 +465,38 @@ function renderPublic(){
   }
 }
 function loginModal(){modal('Вхід до панелі',`<p class="modal-desc">Логін і пароль видає керівник сім’ї. Реєстрація після заявки не відбувається автоматично.</p><form id="login-form" class="stack"><div class="field"><label>Логін</label><input class="input" name="username" autocomplete="username" required autofocus></div><div class="field"><label>Пароль</label><input class="input" type="password" name="password" autocomplete="current-password" required></div><button type="submit" class="btn">Увійти →</button></form>`);}
-function modal(title,html){$('#modal-root').innerHTML=`<div class="modal-backdrop" data-backdrop="1"><div class="modal" role="dialog" aria-modal="true" aria-label="${esc(title)}"><div class="modal-head"><h3>${esc(title)}</h3><button type="button" data-action="close-modal" class="iconbtn">✕</button></div><div class="modal-body">${html}</div></div></div>`;const first=$('#modal-root input:not([type=hidden])');if(first)setTimeout(()=>first.focus(),20);}
-function closeModal(){$('#modal-root').innerHTML='';state.galleryLightboxId=null;}
+// v16.2: modal focus restoration, keyboard navigation and mobile scroll lock.
+let modalRestoreFocus=null;
+function modal(title,html){
+ if(!document.querySelector('#modal-root [role="dialog"]'))modalRestoreFocus=document.activeElement;
+ document.body.classList.add('gr-dialog-open');
+ $('#modal-root').innerHTML=`<div class="modal-backdrop" data-backdrop="1"><div class="modal" role="dialog" aria-modal="true" aria-label="${esc(title)}" tabindex="-1"><div class="modal-head"><h3>${esc(title)}</h3><button type="button" data-action="close-modal" class="iconbtn" aria-label="Закрити вікно">✕</button></div><div class="modal-body">${html}</div></div></div>`;
+ const target=$('#modal-root input:not([type=hidden]),#modal-root select,#modal-root textarea,#modal-root button:not([disabled])')||$('#modal-root [role="dialog"]');
+ if(target)setTimeout(()=>{if(target.isConnected)target.focus({preventScroll:true});},20);
+}
+function closeModal(){
+ $('#modal-root').innerHTML='';
+ document.body.classList.remove('gr-dialog-open');
+ state.galleryLightboxId=null;
+ const previous=modalRestoreFocus;
+ modalRestoreFocus=null;
+ if(previous?.isConnected&&typeof previous.focus==='function')previous.focus({preventScroll:true});
+}
+document.addEventListener('keydown',event=>{
+ const dialog=document.querySelector('#modal-root [role="dialog"]');
+ if(!dialog)return;
+ if(event.key==='Escape'){event.preventDefault();closeModal();return;}
+ if(event.key!=='Tab')return;
+ const focusable=Array.from(dialog.querySelectorAll('a[href],button:not([disabled]),input:not([disabled]):not([type="hidden"]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])'))
+  .filter(el=>el.getClientRects().length>0);
+ if(!focusable.length){event.preventDefault();dialog.focus();return;}
+ const first=focusable[0],last=focusable[focusable.length-1];
+ if(event.shiftKey&&(document.activeElement===first||!dialog.contains(document.activeElement))){
+  event.preventDefault();last.focus();
+ }else if(!event.shiftKey&&(document.activeElement===last||!dialog.contains(document.activeElement))){
+  event.preventDefault();first.focus();
+ }
+});
 function visible(n){if(n.id==='inactivity'&&!['leader','deputy','head'].includes(state.user.role))return false;if(n.id==='leadership'&&!['leader','deputy'].includes(state.user.role))return false;if(n.id==='workspace'&&!['leader','deputy','head'].includes(state.user.role))return false;if(['audit','settings'].includes(n.id)&&state.user.role!=='leader')return false;if(n.id==='applications'&&!can('recruitment:manage'))return false;if(['public_news','public_team','public_achievements','public_calendar'].includes(n.id)&&!can('content:manage'))return false;if(n.id==='discipline'&&!can('discipline:manage'))return false;if(n.id==='contracts'&&!can('finance:read')&&!can('finance:manage'))return true;return true;}
 const COMPACT_NAV_GROUPS=['ПУБЛІЧНИЙ САЙТ','СИСТЕМА'];
 function sidebar(){
