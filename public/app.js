@@ -1573,16 +1573,18 @@ const discordSettingsHtml=discord&&!discord.migrationRequired?
  '<div class="notice mt">Для перемикачів і журналу потрібно застосувати нову міграцію D1: <strong>0003_discord_notifications.sql та 0004_discord_capt_news.sql та 0005_discord_announcements.sql</strong>. Сповіщення продовжать працювати з поточними налаштуваннями до міграції.</div>';
 const discordRouteLabels={
   applications:'Заявки',decisions:'Рішення',events:'Події',
-  capt:'CAPT',news:'Новини',announcements:'Оголошення'
+  capt:'CAPT',news:'Новини',announcements:'Оголошення',
+  promotions:'Підвищення',personnel:'Догани та заохочення',absences:'Відпустки та неактив'
 };
 const discordRouteSecrets={
   applications:'DISCORD_WEBHOOK_APPLICATIONS',decisions:'DISCORD_WEBHOOK_DECISIONS',
   events:'DISCORD_WEBHOOK_EVENTS',capt:'DISCORD_WEBHOOK_CAPT',
-  news:'DISCORD_WEBHOOK_NEWS',announcements:'DISCORD_WEBHOOK_ANNOUNCEMENTS'
+  news:'DISCORD_WEBHOOK_NEWS',announcements:'DISCORD_WEBHOOK_ANNOUNCEMENTS',
+  promotions:'DISCORD_WEBHOOK_PROMOTIONS',personnel:'DISCORD_WEBHOOK_PERSONNEL',absences:'DISCORD_WEBHOOK_ABSENCES'
 };
 const discordRoutesHtml=discord?
  '<div class="gr-discord-routes"><h3>Окремі Discord-канали</h3>'+
- '<p class="muted small">Для CAPT, Новин і Оголошень потрібні три різні webhook. Перші три категорії можуть використовувати чинний основний webhook або власні секрети.</p>'+
+ '<p class="muted small">Підвищення, дисципліна та відпустки мають окремі webhook без перенаправлення в «Оголошення». Створи для кожного Cloudflare Secret і перевір кнопкою «Тест каналу». Для CAPT, Новин і Оголошень також потрібні різні webhook.</p>'+
  Object.keys(discordRouteLabels).map(kind=>{
    const route=discord.routes?.[kind]||{configured:false,reason:'missing'};
    const status=route.reason==='ready'?'Підключено':
