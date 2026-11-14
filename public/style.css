@@ -794,3 +794,20 @@
   .gr-overview-design-v5 > .cards > .stat:hover,
   .gr-overview-design-v5 .overview-dept:hover{border-color:#76505c;transform:translateY(-1px)}
 }
+
+/* Public GRIZZLY history and date-sorted content enhancements */
+.gr-history-timeline{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:15px;margin:24px 0 10px}
+.gr-history-timeline article{border:1px solid #393541;border-radius:14px;background:linear-gradient(135deg,#27202c,#1a1e28);padding:22px 20px;min-width:0}
+.gr-history-timeline article span{font-size:.7rem;letter-spacing:.15em;color:#ed8593;font-weight:800}
+.gr-history-timeline article h3{font-size:1.06rem;letter-spacing:.02em;margin:12px 0 9px;color:#f3e4e8}
+.gr-history-timeline article p{font-size:.88rem;line-height:1.65;color:#b5bac5}
+.gr-gallery-sort{display:flex;align-items:center;justify-content:flex-end;gap:12px;margin:12px 0 20px}
+.gr-gallery-sort label{font-size:.79rem;color:#b4bcc9}
+.gr-gallery-sort .select{width:auto;min-width:170px;padding:7px 10px;min-height:36px}
+.gr-prerender{max-width:900px;margin:10vh auto;padding:32px;color:#eee}
+.gr-prerender h1{font-size:clamp(2rem,7vw,4rem);color:#f28698}
+.gr-prerender p{margin:18px 0;color:#c7c9d1;max-width:56ch}
+.gr-prerender a{color:#f28698;text-decoration:underline}
+.overview-activity-list{display:grid;gap:10px}
+.overview-activity-list>.row{border-bottom:1px solid #373b47;padding:8px 0;flex-wrap:wrap}
+@media(max-width:740px){.gr-history-timeline{grid-template-columns:minmax(0,1fr)}.gr-gallery-sort{justify-content:flex-start;flex-wrap:wrap}}
