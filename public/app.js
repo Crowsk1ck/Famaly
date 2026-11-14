@@ -75,10 +75,10 @@ function badge(s){const cls=['Погоджено','Прийнято','Завер
 function intro(title,description='',right=''){return `<div class="page-intro"><div><div class="overline">GRIZZLY / FAMILY PANEL</div><h1>${esc(title)}</h1><p>${esc(description)}</p></div>${right}</div>`;}
 function empty(label='Тут поки немає записів',desc='Створіть перший запис або змініть параметри пошуку.'){return `<div class="empty"><div><div class="empty-icon">◇</div><strong>${esc(label)}</strong>${esc(desc)}</div></div>`;}
 function itemText(obj){return esc(JSON.stringify(obj));}
+const galleryCategories=[['all','Усі фото'],['capt','CAPT'],['cars','Автомобілі'],['meetings','Збори'],['events','Івенти'],['other','Інше']];
 function kyivNowLocal(){const p=new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/Kyiv',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(new Date());const v=Object.fromEntries(p.map(x=>[x.type,x.value]));return v.year+'-'+v.month+'-'+v.day+'T'+v.hour+':'+v.minute;}
 function kyivWallDate(value){return String(value||'').slice(0,16).replace(' ','T');}
 function kyivDueStatus(value,status){if(!value||['Завершено','Відхилено'].includes(status))return '';return kyivWallDate(value)<kyivNowLocal()?'Прострочено':'До '+kyivWallDate(value).replace('T',' ');}
-const galleryCategories=[['all','Усі фото'],['capt','CAPT'],['cars','Автомобілі'],['meetings','Збори'],['events','Івенти'],['other','Інше']];
 function galleryPhoto(record){
   const urls=Array.isArray(record?.evidence)?record.evidence:[];
   for(const raw of urls){
