@@ -951,3 +951,16 @@
 .gr-report-preview>.gr-leader-metrics{max-width:850px}
 @media(max-width:950px){.gr-leader-grid{grid-template-columns:minmax(0,1fr)}}
 @media(max-width:680px){.gr-leader-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.gr-leader-card{padding:14px}.gr-leader-metric{flex-wrap:wrap}}
+
+/* v9.0/v9.1: activity analytics and scoped absence approvals */
+.gr-activity-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:16px 0}
+.gr-activity-stats>.card{display:flex;flex-direction:column;gap:8px;padding:17px;min-width:0}
+.gr-activity-stats strong{font-size:1.6rem;font-variant-numeric:tabular-nums}
+.gr-activity-table{padding:16px;min-width:0;overflow-x:auto}
+.gr-activity-table .tablewrap{overflow-x:auto;max-width:100%}
+.gr-activity-table td{vertical-align:middle;min-width:68px}
+.gr-activity-table td:nth-child(5){max-width:340px;overflow-wrap:anywhere}
+.gr-activity-filter{display:flex;gap:9px;align-items:center;font-size:.82rem;color:#c4cbd7}
+.gr-activity-filter select{min-width:170px}
+@media(max-width:900px){.gr-activity-stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:580px){.gr-activity-stats{gap:8px}.gr-activity-stats>.card{padding:12px}.gr-activity-stats strong{font-size:1.3rem}.gr-activity-filter{width:100%;justify-content:space-between}}
