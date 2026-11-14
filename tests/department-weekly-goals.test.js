@@ -26,7 +26,7 @@ test('leader-only target editor writes through protected endpoint',()=>{
 });
 
 test('KPI data is calculated using eligible recent records and never mutates payouts',()=>{
- assert.match(worker,/const since=Date\.now\(\)-7\*86400000/);
+ assert.match(worker,/from=Date\.now\(\)-7\*86400000,to=Date\.now\(\)/);
  assert.match(worker,/visibleRecords=allRecords\.filter\(r=>permittedRecord\(user,r\.module,r\)\)/);
  assert.match(worker,/contracts\.filter\(c=>isRecent\(c\.settled_at\)\)\.length/);
  assert.match(worker,/return \{id,title,source,actual,target\}/);
