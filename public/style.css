@@ -1148,3 +1148,22 @@ form[aria-busy="true"] [type="submit"]{cursor:progress;opacity:.65}
  .gr-head-focus-panel>.btn{width:100%;min-height:44px}
  .gr-head-focus-task .btn,.gr-head-focus-person .btn{min-height:44px}
 }
+
+
+/* v15.8: page-wise multi-selection, safe read-only bulk actions */
+.gr-member-bulk-bar{display:flex;align-items:center;flex-wrap:wrap;gap:10px;padding:12px 16px;margin:0 0 14px}
+.gr-member-bulk-check,.gr-member-select{display:inline-flex;align-items:center;gap:7px;cursor:pointer}
+.gr-member-bulk-check{font-size:.85rem;min-height:40px}
+.gr-member-select{font-size:.74rem;margin:0 0 6px}
+.gr-member-select input,.gr-member-bulk-check input{width:17px;height:17px;accent-color:#ce6b7d;flex:none}
+.gr-member-bulk-hint{width:100%;margin:0}
+.gr-member-bulk-bar .btn{min-height:40px}
+.member-desktop-table td:first-child,.member-desktop-table th:first-child{width:66px;white-space:nowrap}
+.member-desktop-table .gr-member-select span{display:none}
+@media(max-width:720px){
+ .gr-member-bulk-bar{padding:12px;gap:8px}
+ .gr-member-bulk-bar .btn{min-height:44px;flex:1 1 auto}
+ .gr-member-bulk-check{flex:1 1 100%;min-height:44px}
+ .gr-member-bulk-bar #members-selected-count{flex:1 1 100%}
+ .member-mobile-card .gr-member-select{min-height:36px;margin:0 0 10px}
+}
