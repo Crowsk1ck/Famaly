@@ -29,3 +29,16 @@ jobs:
           node --check public/credential-generator.js
       - name: Integration and generator tests
         run: npm test
+
+      - name: Inspect production domain routing (read-only)
+        shell: bash
+        run: |
+          set -uo pipefail
+          for u in https://grizzly-family.online/about/ https://famaly.crowskick4133.workers.dev/about/ https://grizzly-family.online/api/health; do
+            echo ">>> $u"
+            curl --silent --show-error --location --max-time 20 --dump-header /tmp/grizzly-headers --output /tmp/grizzly-body --write-out 'HTTP %{http_code}, final=%{url_effective}, content-type=%{content_type}, bytes=%{size_download}\n' "$u" || true
+            grep -iE '^(HTTP/|location:|content-type:|cache-control:|x-grizzly-seo-route:|server:|cf-cache-status:)' /tmp/grizzly-headers || true
+            printf "SEO marker: "; grep -Fq 'ІСТОРІЯ GRIZZLY' /tmp/grizzly-body && echo present || echo absent
+            printf "Title: "; grep -oE '<title>[^<]{0,130}</title>' /tmp/grizzly-body | head -1 || true
+            printf "Body prefix: "; head -c 150 /tmp/grizzly-body | tr '\n' ' '; echo
+          done
