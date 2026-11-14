@@ -415,8 +415,12 @@ function selectField(label,name,items,value='',full=false){return `<div class="f
 function statusField(value){return `<div class="field"><label>Статус</label><select class="select" name="status">${statuses.map(s=>`<option ${s===value?'selected':''}>${s}</option>`).join('')}</select></div>`;}
 function formatDateField(v){return (v||'').slice(0,16);}
 async function overview(){
- const [finance,taskData,reportData,eventData,contractData]=await Promise.all([
-  api('/finance'),api('/records/tasks'),api('/records/reports'),api('/records/events'),api('/contracts')
+ const mayViewFinance=can('finance:read')||can('finance:manage');
+ const trendPeriod=state.overviewTrendPeriod==='30'?'30':'7';
+ const [finance,taskData,reportData,eventData,contractData,trendData,auditData]=await Promise.all([
+  api('/finance'),api('/records/tasks'),api('/records/reports'),api('/records/events'),api('/contracts'),
+  mayViewFinance?api('/finance/trends?period='+trendPeriod):Promise.resolve(null),
+  state.user?.role==='leader'?api('/audit'):Promise.resolve(null)
  ]);
  const user=state.user||{},leader=user.role==='leader',manager=leader||user.role==='deputy'||user.role==='head';
  const tasks=taskData.items||[],reports=reportData.items||[],events=eventData.items||[],contracts=contractData.items||[];
@@ -455,11 +459,49 @@ async function overview(){
  '</div><div class="card">'+section('Нещодавно додані учасники','members','Склад сім’ї')+
  (memberRows.length?table(['Учасник','Підрозділ','Дата вступу','Дія'],memberRows):empty('Учасників поки немає'))+
  '</div></div>';
+ const settledByDepartment=new Map();
+ for(const contract of contracts){
+  if(!contract.settled_at||!contract.department_id)continue;
+  const previous=settledByDepartment.get(contract.department_id)||{count:0,amount:0};
+  previous.count++;previous.amount+=Number(contract.amount)||0;
+  settledByDepartment.set(contract.department_id,previous);
+ }
+ const departmentSummary=state.departments.map(d=>{
+  const activeCount=activeMembers.filter(u=>u.department_id===d.id).length;
+  const done=settledByDepartment.get(d.id)||{count:0,amount:0};
+  return '<div class="overview-dept"><div class="row space"><strong>'+esc(d.title)+'</strong><span class="muted small">'+fmt(activeCount)+' уч.</span></div>'+
+   '<div class="muted small">Нараховано контрактів: '+fmt(done.count)+' · Сума: '+fmt(done.amount)+'</div></div>';
+ }).join('');
+ const weekly=trendData?.weeks||[];
+ const trendEntries=weekly.filter(w=>Number(w.income)||Number(w.expenses));
+ const totalIncome=weekly.reduce((n,w)=>n+(Number(w.income)||0),0);
+ const totalExpense=weekly.reduce((n,w)=>n+(Number(w.expenses)||0),0);
+ const top=Math.max(1,...weekly.flatMap(w=>[Number(w.income)||0,Number(w.expenses)||0]));
+ const trendBars=weekly.map(w=>'<div class="overview-trend-row"><span class="muted small">'+esc(w.week_start||'')+'</span>'+
+  '<div class="overview-trend-bars"><span class="overview-trend-income" style="width:'+Math.max(0,Math.min(100,(Number(w.income)||0)*100/top))+'%"></span>'+
+  '<span class="overview-trend-expense" style="width:'+Math.max(0,Math.min(100,(Number(w.expenses)||0)*100/top))+'%"></span></div>'+
+  '<span class="mono small">'+fmt(w.income)+' / '+fmt(w.expenses)+'</span></div>').join('');
+ const financeOverview=mayViewFinance?'<div class="card overview-finance">'+
+  '<div class="card-head"><div><h3>Динаміка скарбниці</h3><p class="muted small">Надходження та витрати, згруповані за тижнями (UTC)</p></div><button class="btn tiny secondary" data-route="finance">Детальна аналітика ↗</button></div>'+
+  '<div class="row wrap overview-periods"><button class="btn tiny secondary" data-action="overview-trend-period" data-value="7" aria-pressed="'+(trendPeriod==='7')+'">7 днів</button>'+
+  '<button class="btn tiny secondary" data-action="overview-trend-period" data-value="30" aria-pressed="'+(trendPeriod==='30')+'">30 днів</button></div>'+
+  '<div class="overview-finance-totals"><div><span class="muted small">Надходження</span><strong>'+fmt(totalIncome)+'</strong></div>'+
+  '<div><span class="muted small">Витрати</span><strong>'+fmt(totalExpense)+'</strong></div>'+
+  '<div><span class="muted small">Зміна</span><strong>'+fmt(totalIncome-totalExpense)+'</strong></div></div>'+
+  (trendEntries.length?trendBars:'<p class="muted small">За цей період фінансових операцій немає.</p>')+
+  '</div>':'';
+ const auditItems=(auditData?.items||[]).slice(0,6);
+ const auditOverview=leader?'<div class="card overview-audit"><div class="card-head"><h3>Останні дії керівництва</h3>'+
+  '<button class="btn tiny secondary" data-route="audit">Журнал змін ↗</button></div>'+
+  (auditItems.length?auditItems.map(x=>'<div class="overview-audit-row"><div><strong>'+esc(x.actor_name||'Користувач')+'</strong> · '+
+  esc(x.action||'Дія')+'<div class="muted small">'+esc(x.entity||'')+' · '+esc(String(x.detail||'').slice(0,110))+'</div></div>'+
+  '<span class="muted small">'+esc(String(x.created_at||'').replace('T',' ').slice(0,16))+'</span></div>').join(''):
+  '<p class="muted small">У журналі ще немає подій.</p>')+'</div>':'';
  const notices=(state.notifications||[]).filter(x=>!x.read_at).slice(0,4);
  const notifySection=notices.length?'<div class="card mt"><div class="card-head"><h3>Нові сповіщення</h3></div><div class="stack">'+notices.map(n=>'<div class="row space"><div><strong>'+esc(n.title)+'</strong><div class="muted small">'+esc((n.details||'').slice(0,150))+'</div></div><span class="muted small">'+date(n.created_at)+'</span></div>').join('')+'</div></div>':'';
  return intro('Огляд GRIZZLY','Головна панель сім’ї · актуальні показники та швидкий доступ до роботи',
   '<button class="btn secondary" data-action="refresh">↻ Оновити</button>')+
- '<div class="stack"><div class="dashboard-welcome"><div><div class="overline">GRIZZLY / FAMILY OPERATIONS</div><h2>Вітаємо, '+esc(user.nickname||user.username||'учаснику')+'! 🐻</h2><p>'+(ownDepartment?'Твій підрозділ: '+esc(ownDepartment.title)+' · ':'')+'Слідкуй за завданнями, подіями та роботою сім’ї.</p></div><span class="bear">🐻</span></div>'+
+ '<div class="stack gr-overview-v4"><div class="dashboard-welcome"><div><div class="overline">GRIZZLY / FAMILY OPERATIONS</div><h2>Вітаємо, '+esc(user.nickname||user.username||'учаснику')+'! 🐻</h2><p>'+(ownDepartment?'Твій підрозділ: '+esc(ownDepartment.title)+' · ':'')+'Слідкуй за завданнями, подіями та роботою сім’ї.</p></div><span class="bear">🐻</span></div>'+
  '<div class="cards">'+
  metric('Учасників сім’ї',fmt(state.roster.filter(u=>u.status==='active').length),'Активні акаунти')+
  metric('Мої активні завдання',fmt(myTasks.length),'Потребують виконання')+
@@ -492,6 +534,9 @@ async function overview(){
  (can('members:write')?'<button class="btn secondary" data-action="new-user">♟ Додати учасника</button>':'')+
  '</div></div></div>'+
  overviewDetails+
+ financeOverview+
+ auditOverview+
+ (leader?'<div class="card"><div class="card-head"><h3>Контракти за підрозділами</h3></div><div class="grid3 mt">'+departmentSummary+'</div></div>':'')+
  (leader?'<div class="card"><div class="card-head"><h3>Стан підрозділів</h3><button class="btn tiny secondary" data-route="departments">Керувати ↗</button></div><div class="grid3 mt">'+departmentCards+'</div></div>':'')+
  notifySection+'</div>';
 }
@@ -1370,6 +1415,7 @@ document.addEventListener('click',async e=>{const back=e.target.closest('[data-b
   case 'close-modal':closeModal();break;
   case 'toggle-menu':$('.shell')?.classList.toggle('menu-open');break;
   case 'refresh':await render();break;
+  case 'overview-trend-period':state.overviewTrendPeriod=t.dataset.value==='30'?'30':'7';await render();break;
   case 'discord-refresh':{if(state.user?.role!=='leader')throw new Error('Недостатньо прав');await render();toast('Статус Discord оновлено');break;}
   case 'discord-test-route':{if(state.user?.role!=='leader')throw new Error('Недостатньо прав');const kind=t.dataset.kind;const result=await api('/discord/test','POST',{kind});toast(result.message||'Тест надіслано');break;}
   case 'discord-test':{if(state.user?.role!=='leader')throw new Error('Недостатньо прав');const result=await api('/discord/test','POST',{});toast(result.message||'Тест надіслано');break;}
