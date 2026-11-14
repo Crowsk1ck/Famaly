@@ -40,3 +40,23 @@ jobs:
             printf 'First bytes: '; head -c 115 /tmp/gr-body | tr '\n' ' '; echo
             echo "::endgroup::"
           done
+
+      - name: Browser diagnostic on live public tabs
+        shell: bash
+        run: |
+          npm install --no-save --no-audit --no-fund puppeteer-core
+          node --input-type=module <<'NODE'
+          import puppeteer from 'puppeteer-core';
+          const chrome=process.env.CHROME_BIN || '/usr/bin/google-chrome';
+          const browser=await puppeteer.launch({executablePath:chrome,headless:true,args:['--no-sandbox']});
+          const page=await browser.newPage();
+          page.on('pageerror',e=>console.log('PAGE ERROR',e.stack||e.message));
+          page.on('console',m=>{if(m.type()==='error')console.log('CONSOLE ERROR',m.text())});
+          page.on('requestfailed',r=>console.log('FAILED REQUEST',r.url(),r.failure()?.errorText));
+          for(const path of ['/join/','/about/','/gallery/']){
+            const response=await page.goto('https://grizzly-family.online'+path,{waitUntil:'networkidle2',timeout:30000});
+            await new Promise(r=>setTimeout(r,700));
+            console.log('BROWSER',path,'HTTP',response.status(),'APP',await page.$eval('#app',el=>el.textContent.slice(0,250)),'MAIN',await page.$('#gr-main')!==null);
+          }
+          await browser.close();
+          NODE
