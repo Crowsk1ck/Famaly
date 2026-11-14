@@ -412,6 +412,18 @@ async function recordDiscordDelivery(db,kind,error=null){
 }
 const GRIZZLY_DISCORD_COLOR=0xDC2626;
 const GRIZZLY_DISCORD_PING_ROLE='1563285390989987962';
+// Personnel channels are private by default. They never ping the general family role.
+// A leader can set an explicit role ID per destination in Cloudflare secrets.
+function discordMentionRole(env,targetKind){
+ const personnel=Object.hasOwn(PERSONNEL_DISCORD_ROUTES,targetKind);
+ const key='DISCORD_ROLE_'+String(targetKind).toUpperCase();
+ const configured=env?.[key];
+ if(configured===undefined||configured===null||String(configured).trim()===''){
+  return personnel?'':GRIZZLY_DISCORD_PING_ROLE;
+ }
+ const role=String(configured).trim();
+ return /^\d{17,20}$/.test(role)?role:'';
+}
 const GRIZZLY_DISCORD_TITLES=Object.freeze({
  applications:'📝 Нова заявка',decisions:'📋 Рішення за заявкою',
  events:'📅 Календар заходів',capt:'🎯 CAPT',news:'📰 Новина сім’ї',
@@ -472,7 +484,7 @@ function appendDiscordAnnouncementFields(fields,raw){
   }
  }
 }
-export function buildDiscordNotification(kind,info={}){
+export function buildDiscordNotification(kind,info={},roleId=GRIZZLY_DISCORD_PING_ROLE){
  const title=GRIZZLY_DISCORD_TITLES[kind];
  if(!title)throw new Error('Невідомий тип Discord-сповіщення');
  const fields=[];
@@ -493,7 +505,7 @@ export function buildDiscordNotification(kind,info={}){
   username:'GRIZZLY FAMILY',
   // Role ping lives in message content: Discord does not notify for embed-only mentions.
   // Suppress pings in test messages and allow only this explicitly selected role.
-  ...(kind==='test'?{allowed_mentions:{parse:[]}}:{content:`<@&${GRIZZLY_DISCORD_PING_ROLE}>`,allowed_mentions:{parse:[],roles:[GRIZZLY_DISCORD_PING_ROLE]}}),
+  ...(kind==='test'||!roleId?{allowed_mentions:{parse:[]}}:{content:`<@&${roleId}>`,allowed_mentions:{parse:[],roles:[roleId]}}),
   embeds:[{
    author:{name:'🐻 GRIZZLY FAMILY • ОФІЦІЙНЕ СПОВІЩЕННЯ'},
    title,
@@ -517,7 +529,7 @@ async function sendDiscordWebhook(env,kind,info,targetKind=kind){
   try{
     response=await fetch(webhook.trim(),{method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify(buildDiscordNotification(kind,info))
+      body:JSON.stringify(buildDiscordNotification(kind,info,discordMentionRole(env,targetKind)))
     });
   }catch{
     // Transport errors can contain the full URL (including webhook token).
