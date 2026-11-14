@@ -104,7 +104,8 @@ function galleryCategoryLabel(category){
 function publicGalleryFiltered(){
   const gallery=Array.isArray(state.public?.gallery)?state.public.gallery:[];
   const category=state.galleryFilter||'all';
-  return category==='all'?gallery:gallery.filter(r=>galleryCategory(r)===category);
+  const selected=category==='all'?gallery:gallery.filter(r=>galleryCategory(r)===category);
+  return [...selected].sort((a,b)=>state.gallerySort==='name'?String(a.title||'').localeCompare(String(b.title||''),'uk'):String(b.created_at||'').localeCompare(String(a.created_at||'')));
 }
 function publicPhotoCard(record,index){
   const title=String(record.title||'Момент GRIZZLY');
@@ -133,7 +134,8 @@ function renderPublicGallery(){
     if(!count&&id!=='all')return '';
     return '<button type="button" class="gr-gallery-filter'+(active===id?' active':'')+'" data-action="gallery-filter" data-category="'+id+'" aria-pressed="'+(active===id)+'">'+esc(label)+' <span>'+count+'</span></button>';
   }).join('')+'</div>';
-  return filters+(items.length?'<div class="gr-gallery-grid">'+items.map(publicPhotoCard).join('')+'</div>':'<div class="gr-gallery-filter-empty">У цій категорії ще немає фотографій.</div>');
+  const sort='<div class="gr-gallery-sort"><label for="gr-gallery-sort">Сортування</label><select id="gr-gallery-sort" class="select"><option value="new" '+(state.gallerySort==='name'?'':'selected')+'>Нові спочатку</option><option value="name" '+(state.gallerySort==='name'?'selected':'')+'>За назвою</option></select></div>';
+  return filters+sort+(items.length?'<div class="gr-gallery-grid">'+items.map(publicPhotoCard).join('')+'</div>':'<div class="gr-gallery-filter-empty">У цій категорії ще немає фотографій.</div>');
 }
 function publicGalleryLightbox(id){
   const list=publicGalleryFiltered().filter(r=>galleryPhoto(r));
@@ -198,10 +200,12 @@ function renderPublicAchievements(){
   const list=Array.isArray(state.public?.achievements)?state.public.achievements:[];
   if(!list.length)return '<div class="gr-ach-empty"><span>★</span><h3>НАША ІСТОРІЯ ПИШЕТЬСЯ.</h3><p>Підтверджені перемоги, важливі події та нагороди з’являться тут після публікації керівництвом.</p></div>';
   const category=state.achievementFilter||'all';
-  const shown=category==='all'?list:list.filter(a=>a.category===category);
+  const filtered=category==='all'?list:list.filter(a=>a.category===category);
+  const shown=[...filtered].sort((a,b)=>state.achievementSort==='old'?String(a.achieved_on||'').localeCompare(String(b.achieved_on||'')):String(b.achieved_on||'').localeCompare(String(a.achieved_on||'')));
   const counts={all:list.length,capt:list.filter(a=>a.category==='capt').length,milestone:list.filter(a=>a.category==='milestone').length,event:list.filter(a=>a.category==='event').length,award:list.filter(a=>a.category==='award').length};
   const tabs='<div class="gr-ach-filters" role="group" aria-label="Фільтр досягнень">'+achievementTypes.filter(([id])=>id==='all'||counts[id]).map(([id,name])=>
     '<button type="button" class="gr-ach-filter'+(id===category?' active':'')+'" data-action="achievement-filter" data-category="'+id+'" aria-pressed="'+(id===category)+'">'+esc(name)+' <span>'+counts[id]+'</span></button>').join('')+'</div>';
+  const sort='<div class="gr-gallery-sort"><label for="gr-achievement-sort">Порядок</label><select id="gr-achievement-sort" class="select"><option value="new" '+(state.achievementSort==='old'?'':'selected')+'>Нові спочатку</option><option value="old" '+(state.achievementSort==='old'?'selected':'')+'>Старі спочатку</option></select></div>';
   const cards=shown.map((a,index)=>{
     const photo=galleryPhoto({evidence:[a.photo]});
     const label=achievementTypeLabel(a.category);
@@ -216,7 +220,7 @@ function renderPublicAchievements(){
       '<div class="gr-ach-details">'+(a.featured?'<span class="gr-ach-highlight">★ Важливе досягнення</span>':'')+
       '<h3>'+esc(a.title)+'</h3><p>'+esc(details)+'</p></div></article>';
   }).join('');
-  return '<div class="gr-ach-stats"><div><strong>'+counts.all+'</strong><span>Опублікованих досягнень</span></div>'+
+  return sort+'<div class="gr-ach-stats"><div><strong>'+counts.all+'</strong><span>Опублікованих досягнень</span></div>'+
     '<div><strong>'+counts.capt+'</strong><span>Здобутків CAPT</span></div>'+
     '<div><strong>'+counts.award+'</strong><span>Нагород</span></div></div>'+
     tabs+(shown.length?'<div class="gr-ach-grid">'+cards+'</div>':'<div class="gr-ach-empty"><p>У цій категорії поки немає записів.</p></div>');
@@ -1422,7 +1426,7 @@ async function handleSubmit(e){const f=e.target;if(!f.id)return;e.preventDefault
 } }catch(err){toast(err.message,true);if(err.status===409)toast('Оновіть сторінку перед повторним редагуванням.',true);}finally{if(submit)submit.disabled=false;}}
 document.addEventListener('submit',handleSubmit);
 document.addEventListener('input',e=>{if(e.target.closest('#contract-correction-form')){const f=e.target.closest('form');f.dataset.previewAmount='';f.dataset.previewReason='';const btn=f.querySelector('[data-action="contract-correction-save"]');if(btn)btn.disabled=true;const box=f.querySelector('#contract-correction-preview');if(box)box.textContent='Дані змінено. Повторіть попередній розрахунок.';}if(e.target.name==='photo_url'&&e.target.closest('#gallery-form'))updateGalleryFormPreview();if(e.target.name==='photo_url'&&e.target.closest('#team-form'))updateTeamFormPreview();if(e.target.name==='photo_url'&&e.target.closest('#achievement-form'))updateAchievementPreview();if(e.target.id==='search-input'){state.search=e.target.value;const start=e.target.selectionStart;render().then(()=>{const v=$('#search-input');if(v){v.focus();try{v.setSelectionRange(start,start);}catch{}}});}});
-document.addEventListener('change',e=>{if(e.target.matches('#record-form[data-module="promotions"] [name="extra_requested_rank_id"]')){const form=e.target.form,box=form.querySelector('#promotion-requirement-box');if(box){box.innerHTML=promotionChecklistView(e.target.value,[]);syncPromotionChecklist();}return;}if(e.target.matches('.promotion-requirement')){syncPromotionChecklist();return;}if(state.route==='members'&&['members-role-filter','members-status-filter','members-department-filter','members-sort-filter'].includes(e.target.id)){const key={'members-role-filter':'membersRole','members-status-filter':'membersStatus','members-department-filter':'membersDepartment','members-sort-filter':'membersSort'}[e.target.id];state[key]=e.target.value;render();return;}if(e.target.id==='contract-department-filter'){state.contractDepartment=e.target.value;render();return;}if(e.target.id==='status-filter'){state.filter=e.target.value;render();}if(e.target.id==='sort-select'){state.sort=e.target.value;render();}if(e.target.id==='period-filter'){state.period=e.target.value;render();}});
+document.addEventListener('change',e=>{if(e.target.id==='gr-gallery-sort'){state.gallerySort=e.target.value;const node=$('#gr-gallery-content');if(node)node.innerHTML=renderPublicGallery();return;}if(e.target.id==='gr-achievement-sort'){state.achievementSort=e.target.value;const node=$('#gr-achievements-content');if(node)node.innerHTML=renderPublicAchievements();return;}if(e.target.matches('#record-form[data-module="promotions"] [name="extra_requested_rank_id"]')){const form=e.target.form,box=form.querySelector('#promotion-requirement-box');if(box){box.innerHTML=promotionChecklistView(e.target.value,[]);syncPromotionChecklist();}return;}if(e.target.matches('.promotion-requirement')){syncPromotionChecklist();return;}if(state.route==='members'&&['members-role-filter','members-status-filter','members-department-filter','members-sort-filter'].includes(e.target.id)){const key={'members-role-filter':'membersRole','members-status-filter':'membersStatus','members-department-filter':'membersDepartment','members-sort-filter':'membersSort'}[e.target.id];state[key]=e.target.value;render();return;}if(e.target.id==='contract-department-filter'){state.contractDepartment=e.target.value;render();return;}if(e.target.id==='status-filter'){state.filter=e.target.value;render();}if(e.target.id==='sort-select'){state.sort=e.target.value;render();}if(e.target.id==='period-filter'){state.period=e.target.value;render();}});
 document.addEventListener('click',async e=>{const back=e.target.closest('[data-backdrop]');if(back&&e.target===back){closeModal();return;}const t=e.target.closest('[data-action],[data-route]');if(!t)return;e.preventDefault();try{if(t.dataset.route){await navigate(t.dataset.route);return;}const act=t.dataset.action,id=t.dataset.id,mod=t.dataset.module;switch(act){
   case 'show-login':loginModal();break;
   case 'close-modal':closeModal();break;
