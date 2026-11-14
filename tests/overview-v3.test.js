@@ -16,7 +16,7 @@ test('overview v3 contract and member detail actions reuse existing handlers',()
  assert.match(overview,/data-action="view-contract"/);
  assert.match(overview,/data-action="view-member"/);
  assert.match(overview,/data-route="contracts"/);
- assert.match(overview,/data-route="members"/);
+ assert.match(overview,/section\('Нещодавно додані учасники','members','Склад сім’ї'\)/);
 });
 
 test('overview v3 formats user-controlled text safely and keeps finance operations read-only',()=>{
