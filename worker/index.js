@@ -568,10 +568,65 @@ export async function sendDiscordWebhook(env,kind,info,targetKind=kind){
   }
   return true;
 }
+// v13 opt-in outbox. Activate only after D1 migration 0008 is applied.
+// Once an attempt is claimed, an interrupted network exchange is marked uncertain,
+// never automatically retried: Discord webhooks provide no idempotency key.
+export function discordOutboxDecision(error,attempts){
+ if(!error)return {status:'sent',delaySeconds:0,code:''};
+ const message=String(error.message||'');
+ const http=Number(message.match(/\(HTTP (\d{3})\)$/)?.[1]||0);
+ const code=http?'http_error':message.includes('з’єднання')?'network_error':'configuration_error';
+ if(http===429&&attempts<3)return {status:'pending',delaySeconds:Math.min(120,30*attempts),code};
+ return {status:code==='network_error'?'uncertain':'failed',delaySeconds:0,code};
+}
+async function enqueueDiscordOutbox(db,kind,info,targetKind){
+ const created=now(),id=uuid();
+ // Only the already-sanitized notification information is kept; never a webhook secret.
+ await db.prepare(`INSERT INTO discord_outbox
+  (id,kind,route,payload,status,available_at,created_at,updated_at)
+  VALUES(?,?,?,?,'pending',?,?,?)`)
+  .bind(id,kind,targetKind,JSON.stringify(info),created,created,created).run();
+ return id;
+}
+export async function drainDiscordOutbox(db,env,limit=10){
+ const upper=Math.min(20,Math.max(1,Number(limit)||10));
+ const timestamp=now();
+ // An interrupted sending attempt may have been delivered. Quarantine it.
+ await db.prepare("UPDATE discord_outbox SET status='uncertain',last_error='unknown_delivery',updated_at=? WHERE status='sending' AND lease_until<?")
+  .bind(timestamp,timestamp).run();
+ const jobs=await allRows(db,"SELECT id,kind,route,payload,attempts FROM discord_outbox WHERE status='pending' AND available_at<=? ORDER BY created_at LIMIT ?",timestamp,upper);
+ const summary={processed:0,sent:0,retry:0,failed:0,uncertain:0};
+ for(const job of jobs){
+  const at=now(),leaseUntil=new Date(Date.now()+90000).toISOString();
+  const claim=await db.prepare("UPDATE discord_outbox SET status='sending',attempts=attempts+1,lease_until=?,updated_at=? WHERE id=? AND status='pending' AND available_at<=?")
+    .bind(leaseUntil,at,job.id,at).run();
+  if(claim.meta?.changes!==1)continue;
+  const attempts=Number(job.attempts||0)+1;
+  let failure=null;
+  try{await sendDiscordWebhook(env,job.kind,parseJson(job.payload,{}),job.route);}
+  catch(err){failure=err;}
+  const decision=discordOutboxDecision(failure,attempts);
+  const later=new Date(Date.now()+decision.delaySeconds*1000).toISOString();
+  await db.prepare("UPDATE discord_outbox SET status=?,available_at=?,lease_until=NULL,last_error=?,updated_at=? WHERE id=? AND status='sending'")
+   .bind(decision.status,later,decision.code,now(),job.id).run();
+  if(decision.status!=='pending'){
+   await recordDiscordDelivery(db,DISCORD_NOTIFY_KINDS.includes(job.kind)?job.kind:'announcements',failure,job.route);
+  }
+  summary.processed++;
+  if(decision.status==='pending')summary.retry++;
+  else summary[decision.status]++;
+ }
+ return summary;
+}
 function queueDiscord(ctx,db,env,kind,info,targetKind=kind){
   if(!DISCORD_PREFERENCE_KINDS.includes(kind))return;
   const task=(async()=>{
     if(!await discordEnabled(db,env,kind))return;
+    if(env.DISCORD_OUTBOX_ENABLED==='true'){
+      await enqueueDiscordOutbox(db,kind,info,targetKind);
+      await drainDiscordOutbox(db,env,1);
+      return;
+    }
     let failure=null;
     try{await sendDiscordWebhook(env,kind,info,targetKind);}catch(e){failure=e;}
     await recordDiscordDelivery(db,DISCORD_NOTIFY_KINDS.includes(kind)?kind:'announcements',failure,targetKind);
@@ -1110,7 +1165,7 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
   if(path==='/api/discord/status'&&method==='GET'){
     if(user.role!=='leader')fail(403,'Лише лідер переглядає інтеграцію Discord');
     return json({...discordWebhookDiagnostic(env.DISCORD_WEBHOOK_URL),
-      worker:'famaly',routes:discordRouteDiagnostics(env),applicationRoutes:applicationRouteDiagnostics(env),
+      worker:'famaly',outbox_enabled:env.DISCORD_OUTBOX_ENABLED==='true',routes:discordRouteDiagnostics(env),applicationRoutes:applicationRouteDiagnostics(env),
       roleMentions:Object.fromEntries([...DISCORD_PREFERENCE_KINDS,...Object.keys(APPLICATION_WEBHOOK_ROUTES)].map(kind=>{
         const id=discordMentionRole(env,kind);
         return [kind,{enabled:!!id,role_id:id||null}];
@@ -1610,4 +1665,11 @@ async function publicHtml(req,env){
  return new Response(html,{status:res.status,headers});
 }
 const SECURITY_HEADERS={'X-Content-Type-Options':'nosniff','Referrer-Policy':'strict-origin-when-cross-origin','X-Frame-Options':'DENY','Permissions-Policy':'camera=(), microphone=(), geolocation=()'};
-export default {async fetch(req,env,ctx){try{if(!new URL(req.url).pathname.startsWith('/api/'))return publicHtml(req,env);const res=await handleApi(req,env,ctx);const h=new Headers(res.headers);Object.entries(SECURITY_HEADERS).forEach(([k,v])=>h.set(k,v));return new Response(res.body,{status:res.status,headers:h});}catch(err){const code=err instanceof HttpError?err.status:500;if(code===500)console.error('Grizzly API error',err);return json({error:code===500?'Внутрішня помилка сервера':err.message},code,SECURITY_HEADERS);}}};
+export default {
+ async scheduled(_event,env,ctx){
+  if(env.DISCORD_OUTBOX_ENABLED!=='true')return;
+  const task=drainDiscordOutbox(env.DB,env,15);
+  if(ctx?.waitUntil)ctx.waitUntil(task);
+  else await task;
+ },
+ async fetch(req,env,ctx){try{if(!new URL(req.url).pathname.startsWith('/api/'))return publicHtml(req,env);const res=await handleApi(req,env,ctx);const h=new Headers(res.headers);Object.entries(SECURITY_HEADERS).forEach(([k,v])=>h.set(k,v));return new Response(res.body,{status:res.status,headers:h});}catch(err){const code=err instanceof HttpError?err.status:500;if(code===500)console.error('Grizzly API error',err);return json({error:code===500?'Внутрішня помилка сервера':err.message},code,SECURITY_HEADERS);}}};

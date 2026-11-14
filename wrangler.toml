@@ -20,3 +20,7 @@ binding = "DB"
 database_name = "grizzly-db"
 database_id = "22bfd811-aa30-4eba-bc72-2418ef7fedd4"
 migrations_dir = "migrations"
+
+# Safely drains queued Discord notifications only when DISCORD_OUTBOX_ENABLED=true.
+[triggers]
+crons = ["*/2 * * * *"]
