@@ -62,10 +62,9 @@ const DEPARTMENT_WEEKLY_METRICS=Object.freeze({
  events:[['events_done','Проведені заходи','events'],['notices_published','Опубліковані оголошення','notices'],['tasks_done','Виконані завдання','tasks']]
 });
 function weeklyGoalKey(departmentId){return 'department_goals_'+departmentId;}
-function weeklyMetrics(departmentId,visibleRecords,contracts,applications,goals){
+function weeklyMetrics(departmentId,visibleRecords,contracts,applications,goals,from=Date.now()-7*86400000,to=Date.now()){
  const rows=DEPARTMENT_WEEKLY_METRICS[departmentId]||[['tasks_done','Виконані завдання','tasks'],['reports_approved','Погоджені звіти','reports']];
- const since=Date.now()-7*86400000;
- const isRecent=(date)=>!!date&&Number.isFinite(Date.parse(date))&&Date.parse(date)>=since;
+ const isRecent=(date)=>!!date&&Number.isFinite(Date.parse(date))&&Date.parse(date)>=from&&Date.parse(date)<to;
  const countRecords=(module,statuses)=>visibleRecords.filter(r=>r.module===module&&statuses.includes(r.status)&&isRecent(r.updated_at||r.created_at)).length;
  return rows.map(([id,title,source])=>{
   let actual=0;
@@ -83,6 +82,45 @@ function weeklyMetrics(departmentId,visibleRecords,contracts,applications,goals)
   const target=Number.isInteger(goals?.[id])&&goals[id]>=0&&goals[id]<=100?goals[id]:0;
   return {id,title,source,actual,target};
  });
+}
+// Last *completed* UTC Mon–Sun week. Reports are generated from existing records;
+ // they never post ledger entries, send payments or create financial obligations.
+function completedReportWeek(){
+ const nowDate=new Date(),dow=(nowDate.getUTCDay()+6)%7;
+ const currentMonday=Date.UTC(nowDate.getUTCFullYear(),nowDate.getUTCMonth(),nowDate.getUTCDate()-dow);
+ const from=currentMonday-7*86400000;
+ return {from,to:currentMonday,start:new Date(from).toISOString().slice(0,10),
+   end:new Date(currentMonday-86400000).toISOString().slice(0,10)};
+}
+function weeklyReportRecordId(departmentId,start){return 'dept-week-'+departmentId+'-'+start;}
+async function departmentWeekSnapshot(db,department,user,period){
+ const [records,contracts,goals,applications,people,submitted]=await Promise.all([
+  allRows(db,'SELECT module,status,owner_id,assignee_id,department_id,updated_at,created_at FROM records WHERE department_id=? AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 3000',department.id),
+  allRows(db,'SELECT settled_at,department_id FROM contracts WHERE department_id=? ORDER BY created_at DESC LIMIT 1500',department.id),
+  db.prepare('SELECT value FROM settings WHERE key=?').bind(weeklyGoalKey(department.id)).first(),
+  department.id==='recruitment'?allRows(db,'SELECT status,updated_at FROM applications ORDER BY created_at DESC LIMIT 2000'):Promise.resolve([]),
+  db.prepare("SELECT COUNT(*) AS total FROM users WHERE department_id=? AND status='active'").bind(department.id).first(),
+  db.prepare("SELECT id,status,created_at,owner_id,extra FROM records WHERE id=? AND module='reports' AND deleted_at IS NULL").bind(weeklyReportRecordId(department.id,period.start)).first()
+ ]);
+ const scoped=records.filter(r=>permittedRecord(user,r.module,r));
+ const metrics=weeklyMetrics(department.id,scoped,contracts,applications,parseJson(goals?.value||'{}',{}),period.from,period.to);
+ const achieved=metrics.filter(x=>x.target>0&&x.actual>=x.target).length;
+ const targeted=metrics.filter(x=>x.target>0).length;
+ return {department_id:department.id,department_title:department.title,
+   head_id:department.head_id||null,head_name:department.head_name||'',
+   head_active:department.head_status==='active',week_start:period.start,week_end:period.end,
+   members_active:Number(people?.total||0),metrics,goals_met:achieved,goals_set:targeted,
+   report:{id:submitted?.id||null,status:submitted?.status||'Не подано',
+      submitted_at:submitted?.created_at||null,submitted_by:submitted?.owner_id||null}};
+}
+function departmentReportText(snapshot,comment){
+ const lines=['Тижневий звіт · '+snapshot.department_title,
+  'Період (UTC): '+snapshot.week_start+' — '+snapshot.week_end,
+  'Активних учасників: '+snapshot.members_active,
+  'Виконано планів: '+snapshot.goals_met+' / '+snapshot.goals_set,
+  ...snapshot.metrics.map(x=>x.title+': '+x.actual+(x.target?' / '+x.target:' (ціль не задана)'))];
+ if(comment)lines.push('Коментар керівника: '+comment);
+ return lines.join('\n').slice(0,3000);
 }
 const PUBLIC_SETTINGS = ['family_name','tagline','history','discord_url','rules','requirements'];
 const ALL_SETTINGS = [...PUBLIC_SETTINGS,'treasury_percent','capt_afk_rate','capt_battle_rate'];
@@ -587,6 +625,52 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
       treasury_contract_income:num(treasury.amount),
       payouts:{count:num(payout.count),accrued:num(payout.amount),handed_over:num(payout.handed_over)},
       capt:{records:num(capt.count),approved:num(capt.approved),paid_count:num(captPayments.count),paid_total:num(captPayments.total)}});
+  }
+  if(path==='/api/leadership-overview'&&method==='GET'){
+    if(!['leader','deputy'].includes(user.role))fail(403,'Контроль керівників доступний лише керівництву');
+    const departments=await allRows(db,`SELECT d.id,d.title,d.head_id,u.nickname AS head_name,u.status AS head_status
+      FROM departments d LEFT JOIN users u ON u.id=d.head_id ORDER BY d.rowid`);
+    const week=completedReportWeek();
+    const items=await Promise.all(departments.map(d=>departmentWeekSnapshot(db,d,user,week)));
+    return json({week_start:week.start,week_end:week.end,items});
+  }
+  if(path==='/api/department-weekly-report'&&method==='GET'){
+    if(!['leader','deputy','head'].includes(user.role))fail(403,'Тижневий звіт доступний лише керівництву');
+    const departmentId=str(url.searchParams.get('department'),80);
+    if(!departmentId)fail(400,'Оберіть підрозділ');
+    if(user.role==='head'&&(departmentId!==user.department_id||!user.head_appointed))fail(403,'Тільки свій призначений підрозділ');
+    const department=await db.prepare(`SELECT d.id,d.title,d.head_id,u.nickname AS head_name,u.status AS head_status
+      FROM departments d LEFT JOIN users u ON u.id=d.head_id WHERE d.id=?`).bind(departmentId).first();
+    if(!department)fail(404,'Підрозділ не знайдено');
+    return json({item:await departmentWeekSnapshot(db,department,user,completedReportWeek())});
+  }
+  if(path==='/api/department-weekly-report'&&method==='POST'){
+    if(user.role!=='head'||!user.head_appointed)fail(403,'Звіт подає тільки призначений керівник підрозділу');
+    const input=await body(req);
+    const departmentId=str(input.department_id,80);
+    if(departmentId!==user.department_id)fail(403,'Не можна подавати звіти іншого підрозділу');
+    const dept=await db.prepare(`SELECT d.id,d.title,d.head_id,u.nickname AS head_name,u.status AS head_status
+      FROM departments d LEFT JOIN users u ON u.id=d.head_id WHERE d.id=?`).bind(departmentId).first();
+    if(!dept||dept.head_id!==user.id||dept.head_status!=='active')fail(403,'Призначення керівника не підтверджено');
+    const comment=str(input.comment||'',800);
+    const week=completedReportWeek();
+    if(input.week_start!==week.start)fail(409,'Період звіту змінився. Оновіть дані');
+    const snapshot=await departmentWeekSnapshot(db,dept,user,week);
+    const id=weeklyReportRecordId(dept.id,week.start),t=now();
+    const extra={kind:'department_weekly',week_start:week.start,week_end:week.end,
+      metrics:snapshot.metrics,members_active:snapshot.members_active,
+      goals_met:snapshot.goals_met,goals_set:snapshot.goals_set,comment};
+    const result=await db.prepare(`INSERT OR IGNORE INTO records
+      (id,module,title,details,status,owner_id,assignee_id,department_id,amount,starts_at,ends_at,evidence,extra,created_at,updated_at)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(
+       id,'reports','Тижневий звіт · '+dept.title+' · '+week.start,
+       departmentReportText(snapshot,comment),'На перевірці',user.id,null,dept.id,0,
+       week.start,week.end,'[]',JSON.stringify(extra),t,t).run();
+    if(result.meta.changes!==1)fail(409,'За цей тиждень звіт уже подано');
+    await audit(db,user,'submit','department_weekly_report',id,dept.id+' '+week.start);
+    const leaders=await allRows(db,"SELECT id FROM users WHERE role='leader' AND status='active'");
+    await Promise.all(leaders.map(x=>notify(db,x.id,'Новий тижневий звіт',dept.title+' · '+week.start)));
+    return json({id,status:'На перевірці',week_start:week.start},201);
   }
   if(path==='/api/department-workspace'&&method==='GET'){
     if(!['leader','deputy','head'].includes(user.role))fail(403,'Панель доступна керівництву');
