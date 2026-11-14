@@ -1629,7 +1629,8 @@ const discordRouteSecrets={
   promotions:'DISCORD_WEBHOOK_PROMOTIONS',personnel:'DISCORD_WEBHOOK_PERSONNEL',absences:'DISCORD_WEBHOOK_ABSENCES'
 };
 const discordRoutesHtml=discord?
- '<div class="gr-discord-routes"><h3>Окремі Discord-канали</h3>'+
+ '<div class="gr-discord-routes"><h3>Окремі Discord-канали</h3>'+ 
+ '<p class="muted small">Черга доставки: '+(discord.outbox_enabled?'увімкнена':'поточна доставка; нова D1-черга поки вимкнена')+'</p>'+
  '<p class="muted small">Підвищення, дисципліна та відпустки мають окремі webhook без перенаправлення в «Оголошення». Створи для кожного Cloudflare Secret і перевір кнопкою «Тест каналу». Для CAPT, Новин і Оголошень також потрібні різні webhook.</p>'+
  Object.keys(discordRouteLabels).map(kind=>{
    const route=discord.routes?.[kind]||{configured:false,reason:'missing'};
