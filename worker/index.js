@@ -1095,18 +1095,29 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
     if(user.role!=='leader')fail(403,'Лише лідер змінює Discord-сповіщення');
     const b=await body(req),values=b.enabled,versions=b.versions;
     if(!values||typeof values!=='object'||Array.isArray(values)||
-       DISCORD_NOTIFY_KINDS.some(k=>typeof values[k]!=='boolean'))
-      fail(400,'Потрібно обрати стан усіх шести категорій');
+      DISCORD_NOTIFY_KINDS.some(k=>typeof values[k]!=='boolean'))
+      fail(400,'Потрібно обрати стан основних категорій');
     if(!versions||DISCORD_NOTIFY_KINDS.some(k=>!Number.isInteger(versions[k])||versions[k]<1))
       fail(428,'Оновіть налаштування перед збереженням');
     const current=await discordPreferences(db,env);
     if(current.migrationRequired)fail(503,'Застосуйте міграції D1 0003–0005 (Discord-сповіщення)');
-    const keys=DISCORD_NOTIFY_KINDS.map(k=>'discord_notify_'+k);
+    const desired=Object.fromEntries(DISCORD_PREFERENCE_KINDS.map(k=>[k,
+      typeof values[k]==='boolean'?values[k]:current.enabled[k]]));
+    for(const k of DISCORD_PREFERENCE_KINDS){
+      const expected=Number.isInteger(versions[k])?versions[k]:current.versions[k];
+      if(expected!==current.versions[k])fail(409,'Налаштування змінено в іншій сесії. Оновіть сторінку');
+    }
+    // No D1 schema change: new preferences are ordinary settings rows initialized on first save.
+    for(const k of DISCORD_PERSONNEL_KINDS){
+      await db.prepare('INSERT OR IGNORE INTO settings(key,value,updated_at) VALUES(?,?,?)')
+        .bind('discord_notify_'+k,'true',now()).run();
+    }
+    const keys=DISCORD_PREFERENCE_KINDS.map(k=>'discord_notify_'+k);
     const sql='UPDATE settings SET value=CASE key '+keys.map(()=>'WHEN ? THEN ?').join(' ')+
       ' ELSE value END,version=version+1,updated_at=? WHERE key IN ('+keys.map(()=>'?').join(',')+') AND (SELECT COUNT(*) FROM settings WHERE '+
       keys.map(()=>'key=? AND version=?').join(' OR ')+')='+keys.length;
-    const args=[...DISCORD_NOTIFY_KINDS.flatMap((k,i)=>[keys[i],values[k]?'true':'false']),now(),...keys,
-      ...DISCORD_NOTIFY_KINDS.flatMap((k,i)=>[keys[i],versions[k]])];
+    const args=[...DISCORD_PREFERENCE_KINDS.flatMap((k,i)=>[keys[i],desired[k]?'true':'false']),now(),...keys,
+      ...DISCORD_PREFERENCE_KINDS.flatMap((k,i)=>[keys[i],current.versions[k]||1])];
     const outcome=await db.prepare(sql).bind(...args).run();
     if(outcome.meta.changes!==keys.length)fail(409,'Налаштування змінено в іншій сесії. Оновіть сторінку');
     await audit(db,user,'discord_preferences','integrations','discord');
