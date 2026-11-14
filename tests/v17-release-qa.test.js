@@ -20,8 +20,10 @@ test('v16.3 public page, assets and unknown API replies have browser security he
   assert.equal(response.headers.get('Referrer-Policy'),'strict-origin-when-cross-origin',url);
   assert.ok(response.headers.get('Permissions-Policy').includes('camera=()'),url);
  }
+ // D1 is intentionally absent in this fixture, so API correctly fails closed.
+ // Error responses must still carry the same browser protection headers.
  const health=await worker.fetch(new Request('https://grizzly.example/api/health'),env,{});
- assert.equal(health.status,200);
+ assert.equal(health.status,500);
  assert.equal(health.headers.get('X-Frame-Options'),'DENY');
 });
 
