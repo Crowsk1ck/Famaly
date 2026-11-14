@@ -524,6 +524,7 @@ async function overview(){
  return intro('Огляд GRIZZLY','Головна панель сім’ї · актуальні показники та швидкий доступ до роботи',
   '<button class="btn secondary" data-action="refresh">↻ Оновити</button>')+
  '<div class="stack gr-overview-v4 gr-overview-design-v5"><div class="dashboard-welcome"><div><div class="overline">GRIZZLY / FAMILY OPERATIONS</div><h2>Вітаємо, '+esc(user.nickname||user.username||'учаснику')+'! 🐻</h2><p>'+(ownDepartment?'Твій підрозділ: '+esc(ownDepartment.title)+' · ':'')+'Слідкуй за завданнями, подіями та роботою сім’ї.</p></div><span class="bear">🐻</span></div>'+
+ (manager?'<div class="card gr-workspace-entry"><div><div class="overline">GRIZZLY / УПРАВЛІННЯ</div><h3>'+(user.role==='head'?'Мій робочий простір керівника':'Робочі простори керівників')+'</h3><p class="small muted">Особовий склад, завдання, звіти, контракти й інші розділи за підрозділами.</p></div><button class="btn" data-route="workspace">Відкрити підрозділ ↗</button></div>':'')+
  '<div class="cards">'+
  metric('Учасників сім’ї',fmt(state.roster.filter(u=>u.status==='active').length),'Активні акаунти')+
  metric('Мої активні завдання',fmt(myTasks.length),overdueTasks.length?'Прострочено: '+overdueTasks.length:'Потребують виконання')+
@@ -536,7 +537,7 @@ async function overview(){
  metric('Контракти до нарахування',fmt(pendingContracts.length),'Погоджені й не проведені')+
  metric('Мої нарахування',fmt(finance.own_total||0),'Контракти, CAPT і премії')+
  '</div>'+
- (departmentFinance?'<div class="card"><div class="card-head"><h3>Мій підрозділ · '+esc(ownDepartment.title)+'</h3><button class="btn tiny secondary" data-route="departments">Переглянути ↗</button></div><div class="grid3 mt">'+
+ (departmentFinance?'<div class="card"><div class="card-head"><h3>Мій підрозділ · '+esc(ownDepartment.title)+'</h3><button class="btn tiny secondary" data-route="workspace">Керувати ↗</button></div><div class="grid3 mt">'+
  metric('Контракти напряму',fmt(departmentFinance.contracts.total))+
  metric('Нараховано учасникам',fmt(departmentFinance.payouts.accrued))+
  metric('CAPT-виплати',fmt(departmentFinance.capt.paid_total))+
