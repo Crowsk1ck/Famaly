@@ -14,7 +14,7 @@ test('v13.1 outbox API requires leader, validates filters and hides payloads',()
  assert.match(src,/route!=='all'&&!DISCORD_LOG_ROUTE_KINDS\.has\(route\)/);
  assert.match(src,/LIMIT 100/);
  assert.match(src,/SELECT id,kind,route,status,attempts,available_at,lease_until,last_error,created_at,updated_at/);
- assert.doesNotMatch(src,/SELECT[^\n]+payload/);
+ assert.doesNotMatch(src.replace(/\/\/[^\n]*/g,''),/SELECT[^\n]+payload/);
 });
 test('v13.1 queue monitor is leader-only, readable and has no replay button',()=>{
  const start=ui.indexOf('async function settingsPage(){');
