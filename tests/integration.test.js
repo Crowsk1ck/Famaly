@@ -2028,6 +2028,99 @@ test('v14.2 blocking a user revokes all sessions, denies login and preserves oth
  assert.equal((await req('/api/auth/me',{token:fresh})).status,200);
 });
 
+test('v14.3 password change rejects incorrect current password and revokes every prior session',async()=>{
+ const username='v143selfpassword',oldPassword='v143-old-secure-password',newPassword='v143-new-secure-password';
+ const userCreated=await req('/api/users',{method:'POST',token:leader,data:{
+  username,password:oldPassword,nickname:'Password lifecycle',role:'member',department_id:'farm'
+ }});
+ assert.equal(userCreated.status,201,JSON.stringify(userCreated.data));
+ const login=async(password)=>{
+  const r=await req('/api/auth/login',{method:'POST',data:{username,password}});
+  assert.equal(r.status,200,JSON.stringify(r.data));
+  return r.cookie.match(/grizzly_session=([a-f0-9]+)/)[1];
+ };
+ const a=await login(oldPassword),b=await login(oldPassword);
+ const wrong=await req('/api/auth/password',{method:'POST',token:a,data:{
+  old_password:'incorrect-current-password',new_password:newPassword
+ }});
+ assert.equal(wrong.status,403);
+ assert.equal((await req('/api/auth/me',{token:a})).status,200);
+ assert.equal((await req('/api/auth/me',{token:b})).status,200);
+ const changed=await req('/api/auth/password',{method:'POST',token:a,data:{
+  old_password:oldPassword,new_password:newPassword
+ }});
+ assert.equal(changed.status,200,JSON.stringify(changed.data));
+ assert.equal(changed.data.reauth,true);
+ assert.equal((await req('/api/auth/me',{token:a})).status,401);
+ assert.equal((await req('/api/auth/me',{token:b})).status,401);
+ assert.equal((await req('/api/auth/login',{method:'POST',data:{username,password:oldPassword}})).status,401);
+ const newSession=await login(newPassword);
+ assert.equal((await req('/api/auth/me',{token:newSession})).status,200);
+});
+
+test('v14.3 leader-only reset revokes sessions and session deletion is account-scoped',async()=>{
+ const username='v143resetaccount',password='v143-reset-old-password',replacement='v143-reset-new-password';
+ const created=await req('/api/users',{method:'POST',token:leader,data:{
+  username,password,nickname:'Reset lifecycle',role:'member',department_id:'events'
+ }});
+ assert.equal(created.status,201,JSON.stringify(created.data));
+ const authenticate=async(pass)=>{
+  const response=await req('/api/auth/login',{method:'POST',data:{username,password:pass}});
+  assert.equal(response.status,200,JSON.stringify(response.data));
+  return response.cookie.match(/grizzly_session=([a-f0-9]+)/)[1];
+ };
+ const first=await authenticate(password),second=await authenticate(password);
+ const sessions=await req('/api/auth/sessions',{token:first});
+ assert.equal(sessions.status,200);
+ assert.ok(sessions.data.items.length>=2);
+ const target=sessions.data.items.find(s=>!s.revoked_at);
+ assert.ok(target?.id);
+ assert.equal((await req('/api/auth/sessions/'+target.id,{method:'DELETE',token:member})).status,404);
+ assert.equal((await req('/api/auth/me',{token:first})).status,200);
+ assert.equal((await req('/api/users/'+created.data.item.id+'/reset-password',{
+  method:'POST',token:first,data:{password:replacement}
+ })).status,403);
+ const reset=await req('/api/users/'+created.data.item.id+'/reset-password',{
+  method:'POST',token:leader,data:{password:replacement}
+ });
+ assert.equal(reset.status,200,JSON.stringify(reset.data));
+ assert.equal((await req('/api/auth/me',{token:first})).status,401);
+ assert.equal((await req('/api/auth/me',{token:second})).status,401);
+ assert.equal((await req('/api/auth/login',{method:'POST',data:{username,password}})).status,401);
+ const fresh=await authenticate(replacement);
+ const freshSessions=await req('/api/auth/sessions',{token:fresh});
+ assert.equal(freshSessions.status,200);
+ const active=freshSessions.data.items.find(s=>!s.revoked_at);
+ assert.ok(active);
+ const revoked=await req('/api/auth/sessions/'+active.id,{method:'DELETE',token:fresh});
+ assert.equal(revoked.status,200);
+ assert.equal((await req('/api/auth/me',{token:fresh})).status,401);
+ assert.equal((await req('/api/auth/me',{token:leader})).status,200);
+});
+
+test('v14.3 member cannot escalate role or mutate another account',async()=>{
+ const username='v143profileguard',password='v143-profile-strong-password';
+ const created=await req('/api/users',{method:'POST',token:leader,data:{
+  username,password,nickname:'Profile guard',role:'member',department_id:'farm'
+ }});
+ assert.equal(created.status,201,JSON.stringify(created.data));
+ const auth=await req('/api/auth/login',{method:'POST',data:{username,password}});
+ assert.equal(auth.status,200);
+ const token=auth.cookie.match(/grizzly_session=([a-f0-9]+)/)[1];
+ const own=(await req('/api/auth/me',{token})).data.user;
+ const escalate=await req('/api/users/'+own.id,{method:'PATCH',token,data:{
+  version:own.version,role:'leader',nickname:'Unauthorized promotion'
+ }});
+ assert.equal(escalate.status,403);
+ const others=await req('/api/users/'+memberId,{method:'PATCH',token,data:{
+  version:1,nickname:'Unauthorized rewrite'
+ }});
+ assert.equal(others.status,403);
+ const current=(await req('/api/auth/me',{token})).data.user;
+ assert.equal(current.role,'member');
+ assert.equal(current.nickname,'Profile guard');
+});
+
 // Run destructive session-revocation coverage last: other integration tests use this member's active session.
 test('blocking user revokes sessions and stops access',async()=>{const u=(await req('/api/users',{token:leader})).data.items.find(x=>x.id===memberId);const r=await req(`/api/users/${memberId}`,{method:'PATCH',token:leader,data:{...u,status:'blocked'}});assert.equal(r.status,200,JSON.stringify(r.data));assert.equal((await req('/api/auth/me',{token:member})).status,401);});
 
