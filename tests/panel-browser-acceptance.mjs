@@ -63,7 +63,7 @@ try{
     await page.waitForSelector('#members-selected-count',{timeout:15000});
     const before=await page.evaluate(()=>({
      count:document.querySelectorAll('[data-member-select]').length,
-     editIds:Array.from(document.querySelectorAll('[data-action="edit-user"]')).map(x=>x.dataset.id),
+     editIds:[...new Set(Array.from(document.querySelectorAll('[data-action="edit-user"]')).map(x=>x.dataset.id))],
      scroll:document.documentElement.scrollWidth,
      width:innerWidth,
      title:document.querySelector('.page-intro h1')?.textContent
