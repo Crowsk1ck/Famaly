@@ -19,8 +19,9 @@ function ui(discord,items=[],role='leader'){
   const intro=()=>'<section>GRIZZLY settings</section>';
   const field=(_label,name,value='')=>'<input name="'+name+'" value="'+esc(value)+'">';
   const date=v=>v||'';
-  const fn=new Function('api','state','intro','field','esc','date',
-    source.slice(begin,end)+'\nreturn settingsPage;')(api,state,intro,field,esc,date);
+  const fmt=v=>String(v??0);
+  const fn=new Function('api','state','intro','field','esc','date','fmt',
+    source.slice(begin,end)+'\nreturn settingsPage;')(api,state,intro,field,esc,date,fmt);
   return fn().then(html=>({html,state,calls}));
 }
 const ready={
