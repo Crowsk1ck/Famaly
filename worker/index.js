@@ -1670,4 +1670,6 @@ export default {
   const code=err instanceof HttpError?err.status:500;
   if(code===500)console.error('Grizzly API error',err);
   return json({error:code===500?'Внутрішня помилка сервера':err.message},code,SECURITY_HEADERS);
- }};
+ }
+ }
+};
