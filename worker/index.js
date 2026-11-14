@@ -632,7 +632,7 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
       }
     });
   }
-  m=path.match(/^\/api\/department-goals\/([\\w-]+)$/);
+  m=path.match(/^\/api\/department-goals\/([\w-]+)$/);
   if(m&&method==='PATCH'){
     if(user.role!=='leader')fail(403,'Тільки лідер встановлює цілі підрозділів');
     const departmentId=m[1];
