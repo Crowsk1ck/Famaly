@@ -1214,10 +1214,10 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
         const results=await db.batch(statements);if(results[0].meta.changes!==1)fail(409,'Запис змінено іншим користувачем');await audit(db,user,'review',mod,id,b.status);await notify(db,old.owner_id,`Рішення за ${mod}`,`${old.title}: ${b.status}`);
         if(mod==='promotions'&&b.status==='Погоджено'){
           const promoted=await db.prepare('SELECT nickname FROM users WHERE id=?').bind(old.owner_id).first();
-          const rank=await db.prepare('SELECT name FROM ranks WHERE id=?').bind(Number(extra.requested_rank_id)).first();
+          const rank=await db.prepare('SELECT title FROM ranks WHERE id=?').bind(Number(extra.requested_rank_id)).first();
           queueDiscord(ctx,db,env,'announcements',{
             event:'🎖️ Підвищення учасника',
-            message:'Учасник: '+(promoted?.nickname||'Учасник сім’ї')+'\nНовий ранг: '+(rank?.name||String(extra.requested_rank_id))+'\nПідвищення погоджено керівництвом GRIZZLY.'
+            message:'Учасник: '+(promoted?.nickname||'Учасник сім’ї')+'\nНовий ранг: '+(rank?.title||String(extra.requested_rank_id))+'\nПідвищення погоджено керівництвом GRIZZLY.'
           });
         }
         return json({ok:true});
