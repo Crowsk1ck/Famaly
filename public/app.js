@@ -1574,7 +1574,7 @@ const discordHelp=discord?.reason==='missing'?
  discord?.reason==='invalid'?
  'Секрет існує, але адреса неправильна. Потрібен повний URL виду https://discord.com/api/webhooks/ID/TOKEN без зайвих лапок, параметрів або стороннього домену.':
  'Секрет виявлено, але зв’язок ще не перевірений. Натисни «Надіслати тестове повідомлення».';
-const discordNames={applications:'Нові заявки',decisions:'Рішення за заявками',events:'Опубліковані події',capt:'CAPT-оголошення',news:'Новини сім’ї',announcements:'Оголошення',promotions:'Підвищення',personnel:'Дисципліна та нагороди',absences:'Погоджені відпустки',test:'Тест webhook'};
+const discordNames={applications:'Нові заявки',decisions:'Рішення за заявками',events:'Опубліковані події',capt:'CAPT-оголошення',news:'Новини сім’ї',announcements:'Оголошення',promotions:'Підвищення',personnel:'Дисципліна та нагороди',absences:'Погоджені відпустки',application_waiting:'Заявка очікує',application_accepted:'Заявку прийнято',application_rejected:'Заявку відхилено',test:'Тест webhook'};
 const discordSettingsHtml=discord&&!discord.migrationRequired?
  '<form id="discord-preferences-form" class="gr-discord-settings">'+
  ['applications','decisions','events','capt','news','announcements','promotions','personnel','absences'].map(k=>
