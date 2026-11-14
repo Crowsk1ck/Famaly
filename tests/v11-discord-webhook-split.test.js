@@ -35,7 +35,7 @@ test('duplicate or invalid personnel webhooks cannot masquerade as separate chan
  assert.equal(result.personnel.reason,'invalid');
  assert.equal(result.absences.configured,true);
 });
-test('personnel events point to distinct routes but retain the existing announcements preference and journal',()=>{
+test('personnel events point to distinct routes and use independent preferences',()=>{
  for(const [marker,route] of [
   ['🎖️ Підвищення учасника','promotions'],
   ['🛡️ Кадрове рішення · знято','personnel'],
@@ -45,8 +45,8 @@ test('personnel events point to distinct routes but retain the existing announce
   assert.ok(index>0,marker);
   assert.ok(worker.slice(index,index+450).includes("},'"+route+"');"),marker);
  }
- assert.match(worker,/queueDiscord\(ctx,db,env,'announcements'/);
- assert.match(worker,/if\(!DISCORD_NOTIFY_KINDS\.includes\(kind\)\)return/);
+ assert.match(worker,/queueDiscord\(ctx,db,env,'promotions'/);
+ assert.match(worker,/if\(!DISCORD_PREFERENCE_KINDS\.includes\(kind\)\)return/);
 });
 test('leader can see and test all three dedicated destinations from settings',()=>{
  for(const name of ['DISCORD_WEBHOOK_PROMOTIONS','DISCORD_WEBHOOK_PERSONNEL','DISCORD_WEBHOOK_ABSENCES'])
