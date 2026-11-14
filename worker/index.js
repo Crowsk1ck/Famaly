@@ -1443,6 +1443,15 @@ const PUBLIC_SEO={
 function seoSafe(v){return String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 async function publicHtml(req,env){
  const url=new URL(req.url),page=PUBLIC_SEO[url.pathname];
+ // An SPA fallback can return HTTP 200 with HTML for a missing image.
+ // Never expose that HTML as the Discord social-preview PNG.
+ if(req.method==='GET'&&url.pathname==='/grizzly-social-v2.png'){
+  const image=await env.ASSETS.fetch(req);
+  if(image.ok&&(image.headers.get('Content-Type')||'').toLowerCase().startsWith('image/png'))return image;
+  const fallback=await env.ASSETS.fetch(new Request(new URL('/grizzly-social.png',req.url),req));
+  if(fallback.ok&&(fallback.headers.get('Content-Type')||'').toLowerCase().startsWith('image/png'))return fallback;
+  return new Response('GRIZZLY preview unavailable',{status:503,headers:{'Content-Type':'text/plain; charset=utf-8','Cache-Control':'no-store'}});
+ }
  if(!page||req.method!=='GET')return env.ASSETS.fetch(req);
  // Cloudflare canonicalizes /index.html to / with a 307; fetch the canonical asset URL to avoid forwarding that redirect.
  const res=await env.ASSETS.fetch(new Request(new URL('/',req.url),req));
