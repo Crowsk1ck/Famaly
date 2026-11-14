@@ -415,14 +415,15 @@ function selectField(label,name,items,value='',full=false){return `<div class="f
 function statusField(value){return `<div class="field"><label>Статус</label><select class="select" name="status">${statuses.map(s=>`<option ${s===value?'selected':''}>${s}</option>`).join('')}</select></div>`;}
 function formatDateField(v){return (v||'').slice(0,16);}
 async function overview(){
- const [stats,finance,taskData,reportData,eventData,contractData]=await Promise.all([
-  api('/stats'),api('/finance'),api('/records/tasks'),api('/records/reports'),api('/records/events'),api('/contracts')
+ const [finance,taskData,reportData,eventData,contractData]=await Promise.all([
+  api('/finance'),api('/records/tasks'),api('/records/reports'),api('/records/events'),api('/contracts')
  ]);
  const user=state.user||{},leader=user.role==='leader',manager=leader||user.role==='deputy'||user.role==='head';
  const tasks=taskData.items||[],reports=reportData.items||[],events=eventData.items||[],contracts=contractData.items||[];
  const myTasks=tasks.filter(x=>x.assignee_id===user.id&&x.status!=='Завершено'&&x.status!=='Відхилено');
  const reviewReports=manager?reports.filter(x=>x.status==='На перевірці'):reports.filter(x=>x.owner_id===user.id&&x.status==='На перевірці');
- const upcoming=events.filter(x=>x.starts_at&&new Date(x.starts_at).getTime()>=Date.now()&&x.status!=='Відхилено').sort((a,b)=>String(a.starts_at).localeCompare(String(b.starts_at))).slice(0,4);
+ const upcoming=events.filter(x=>x.starts_at&&new Date(x.starts_at).getTime()>=Date.now()&&x.status!=='Відхилено').sort((a,b)=>String(a.starts_at).localeCompare(String(b.starts_at)));
+ const nextEvents=upcoming.slice(0,4);
  const pendingContracts=contracts.filter(x=>x.status==='Погоджено'&&!x.settled_at);
  const ownDepartment=state.departments.find(d=>d.id===user.department_id);
  const departmentFinance=user.role==='head'&&ownDepartment?await api('/departments/'+encodeURIComponent(ownDepartment.id)+'/finance-summary'):null;
@@ -464,7 +465,7 @@ async function overview(){
  (reviewReports.length?table(['Звіт','Автор','Статус','Дія'],reviewRows):empty('Звітів на перевірці немає'))+
  '</div></div>'+
  '<div class="grid2"><div class="card">'+section('Найближчі заходи','events','Календар')+
- (upcoming.length?upcoming.map(x=>'<div class="row space mb"><div><strong>'+esc(x.title)+'</strong><div class="muted small">'+esc(String(x.starts_at).replace('T',' '))+' · '+esc(departmentName(x.department_id))+'</div></div>'+badge(x.status)+'</div>').join(''):empty('Заходів поки немає'))+
+ (nextEvents.length?nextEvents.map(x=>'<div class="row space mb"><div><strong>'+esc(x.title)+'</strong><div class="muted small">'+esc(String(x.starts_at).replace('T',' '))+' · '+esc(departmentName(x.department_id))+'</div></div>'+badge(x.status)+'</div>').join(''):empty('Заходів поки немає'))+
  '</div><div class="card"><div class="card-head"><h3>Швидкі дії</h3></div><div class="stack">'+
  '<button class="btn secondary" data-action="new-record" data-module="reports">＋ Подати звіт</button>'+
  '<button class="btn secondary" data-route="contracts">▤ Контракти сім’ї</button>'+
