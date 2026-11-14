@@ -1945,6 +1945,89 @@ test('v14.1 promotion review rejects unauthorized or stale approval without chan
  assert.equal((await req('/api/auth/me',{token:member})).data.user.rank_id,originalRank);
 });
 
+test('v14.2 appointed head loses dossier access immediately after leadership reassignment',async()=>{
+ const deps=(await req('/api/departments',{token:leader})).data.items;
+ const dept=deps.find(d=>d.id==='recruiting')||deps.find(d=>d.id==='farm')||deps[0];
+ const foreign=deps.find(d=>d.id!==dept.id);
+ assert.ok(dept&&foreign);
+ const password='v142-head-strong-password';
+ const created=await req('/api/users',{method:'POST',token:leader,data:{
+  username:'v142headlifecycle',password,nickname:'Lifecycle head',role:'head',department_id:dept.id
+ }});
+ assert.equal(created.status,201,JSON.stringify(created.data));
+ const headId=created.data.item.id;
+ const logged=await req('/api/auth/login',{method:'POST',data:{username:'v142headlifecycle',password}});
+ assert.equal(logged.status,200);
+ const token=logged.cookie.match(/grizzly_session=([a-f0-9]+)/)[1];
+ const target=await req('/api/users',{method:'POST',token:leader,data:{
+  username:'v142targetlifecycle',password:'v142-target-strong-password',
+  nickname:'Lifecycle target',role:'member',department_id:dept.id
+ }});
+ assert.equal(target.status,201,JSON.stringify(target.data));
+ const subject=target.data.item.id;
+ assert.equal((await req('/api/personnel-dossier?user='+subject,{token})).status,403);
+ const assigned=await req('/api/departments/'+dept.id,{method:'PATCH',token:leader,data:{
+  title:dept.title,head_id:headId,version:dept.version
+ }});
+ assert.equal(assigned.status,200,JSON.stringify(assigned.data));
+ assert.equal((await req('/api/personnel-dossier?user='+subject,{token})).status,200);
+ assert.equal((await req('/api/personnel-dossier?user='+memberId,{token})).status,403);
+ const departmentNow=(await req('/api/departments',{token:leader})).data.items.find(d=>d.id===dept.id);
+ const removed=await req('/api/departments/'+dept.id,{method:'PATCH',token:leader,data:{
+  title:dept.title,head_id:dept.head_id||'',version:departmentNow.version
+ }});
+ assert.equal(removed.status,200,JSON.stringify(removed.data));
+ assert.equal((await req('/api/personnel-dossier?user='+subject,{token})).status,403,
+  'Previously valid session must not retain manager appointment');
+ assert.equal((await req('/api/inactivity?department='+dept.id,{token})).status,403);
+ const own=(await req('/api/auth/me',{token})).data.user;
+ assert.equal(own.head_appointed,false);
+ const forbidden=await req('/api/personnel-actions',{method:'POST',token,data:{
+  user_id:subject,kind:'warning',details:'Attempt after appointment removal'
+ }});
+ assert.equal(forbidden.status,403);
+});
+
+test('v14.2 blocking a user revokes all sessions, denies login and preserves others',async()=>{
+ const username='v142blocksession',password='v142-block-strong-password';
+ const created=await req('/api/users',{method:'POST',token:leader,data:{
+  username,password,nickname:'Session lifecycle',role:'member',department_id:'capt'
+ }});
+ assert.equal(created.status,201,JSON.stringify(created.data));
+ const login=async()=>{
+  const response=await req('/api/auth/login',{method:'POST',data:{username,password}});
+  assert.equal(response.status,200,JSON.stringify(response.data));
+  return response.cookie.match(/grizzly_session=([a-f0-9]+)/)[1];
+ };
+ const first=await login(),second=await login();
+ const before=await req('/api/auth/sessions',{token:first});
+ assert.equal(before.status,200);
+ assert.ok(before.data.items.filter(s=>!s.revoked_at).length>=2);
+ const original=(await req('/api/users',{token:leader})).data.items.find(u=>u.id===created.data.item.id);
+ const blocked=await req('/api/users/'+created.data.item.id,{method:'PATCH',token:leader,data:{
+  ...original,status:'blocked'
+ }});
+ assert.equal(blocked.status,200,JSON.stringify(blocked.data));
+ assert.equal((await req('/api/auth/me',{token:first})).status,401);
+ assert.equal((await req('/api/auth/me',{token:second})).status,401);
+ assert.equal((await req('/api/auth/login',{method:'POST',data:{username,password}})).status,401);
+ assert.equal((await req('/api/auth/me',{token:leader})).status,200);
+ const stale=await req('/api/users/'+created.data.item.id,{method:'PATCH',token:leader,data:{
+  ...original,status:'active'
+ }});
+ assert.equal(stale.status,409,'Stale version must not reverse a block');
+ const stored=(await req('/api/users',{token:leader})).data.items.find(u=>u.id===created.data.item.id);
+ const unblocked=await req('/api/users/'+created.data.item.id,{method:'PATCH',token:leader,data:{
+  ...stored,status:'active'
+ }});
+ assert.equal(unblocked.status,200,JSON.stringify(unblocked.data));
+ assert.equal((await req('/api/auth/me',{token:first})).status,401,
+  'Unblocking must never resurrect a revoked session');
+ assert.equal((await req('/api/auth/me',{token:second})).status,401);
+ const fresh=await login();
+ assert.equal((await req('/api/auth/me',{token:fresh})).status,200);
+});
+
 // Run destructive session-revocation coverage last: other integration tests use this member's active session.
 test('blocking user revokes sessions and stops access',async()=>{const u=(await req('/api/users',{token:leader})).data.items.find(x=>x.id===memberId);const r=await req(`/api/users/${memberId}`,{method:'PATCH',token:leader,data:{...u,status:'blocked'}});assert.equal(r.status,200,JSON.stringify(r.data));assert.equal((await req('/api/auth/me',{token:member})).status,401);});
 
