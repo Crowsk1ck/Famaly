@@ -47,8 +47,18 @@ jobs:
           npm test
       - name: Deploy production Worker (no D1 migration)
         run: npx wrangler deploy
-      - name: Public health check
+      - name: Public health check (Worker and custom domain)
         run: |
+          set -euo pipefail
           curl --fail --silent --show-error --retry 5 --retry-delay 4 \
             https://famaly.crowskick4133.workers.dev/api/health \
             | grep -q '"ok":true'
+          curl --fail --silent --show-error --retry 5 --retry-delay 4 \
+            https://grizzly-family.online/api/health \
+            | grep -q '"ok":true'
+          curl --fail --silent --show-error --retry 5 --retry-delay 4 \
+            https://grizzly-family.online/about/ \
+            | grep -q 'ІСТОРІЯ GRIZZLY'
+          curl --fail --silent --show-error --retry 5 --retry-delay 4 \
+            -o /dev/null https://grizzly-family.online/grizzly-social.png
+          echo 'GRIZZLY Worker and public custom domain serve v8 content.'
