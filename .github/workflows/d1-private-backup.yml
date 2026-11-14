@@ -23,6 +23,7 @@ jobs:
       AWS_ACCESS_KEY_ID: ${{ secrets.GRIZZLY_BACKUP_R2_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.GRIZZLY_BACKUP_R2_SECRET_ACCESS_KEY }}
       BACKUP_BUCKET: ${{ vars.GRIZZLY_BACKUP_BUCKET }}
+      BACKUP_PASSPHRASE: ${{ secrets.GRIZZLY_BACKUP_PASSPHRASE }}
       WRANGLER_SEND_METRICS: 'false'
     steps:
       - uses: actions/checkout@v4
@@ -31,7 +32,7 @@ jobs:
           node-version: '22'
       - name: Fail closed if private backup storage is not configured
         run: |
-          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY BACKUP_BUCKET; do
+          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY BACKUP_BUCKET BACKUP_PASSPHRASE; do
             test -n "${!name}" || { echo "::error::Missing backup configuration: $name"; exit 1; }
           done
           grep -Fxq 'database_name = "grizzly-db"' wrangler.toml
@@ -46,10 +47,13 @@ jobs:
           umask 077
           mkdir -p "$RUNNER_TEMP/grizzly-backup"
           BACKUP="$RUNNER_TEMP/grizzly-backup/grizzly-$(date -u +%Y%m%dT%H%M%SZ).sql"
-          trap 'rm -f "$BACKUP"' EXIT
+          trap 'rm -f "$BACKUP" "$BACKUP.enc"' EXIT
           npx wrangler d1 export grizzly-db --remote --output "$BACKUP"
           test -s "$BACKUP"
+          openssl enc -aes-256-cbc -salt -pbkdf2 -iter 310000 \
+            -in "$BACKUP" -out "$BACKUP.enc" -pass env:BACKUP_PASSPHRASE
+          rm -f "$BACKUP"
           aws --endpoint-url "https://${CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com" \
-            s3 cp "$BACKUP" "s3://${BACKUP_BUCKET}/d1/$(basename "$BACKUP")" \
+            s3 cp "$BACKUP.enc" "s3://${BACKUP_BUCKET}/d1/$(basename "$BACKUP").enc" \
             --no-progress
-          echo 'Private D1 export uploaded to configured R2 bucket. Verify restore procedure separately.'
+          echo 'Encrypted private D1 export uploaded to configured R2 bucket. Verify restore procedure separately.'
