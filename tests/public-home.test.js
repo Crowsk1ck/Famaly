@@ -174,7 +174,7 @@ test('canonical metadata points at the public GRIZZLY domain',()=>{
 
 test('calendar is an independent page, not extra content on compact homepage',()=>{
   const home=publicHtml({hash:'#home'}),calendar=publicHtml({hash:'#calendar'});
-  assert.ok(home.includes('href="#calendar"'));
+  assert.ok(home.includes('href="/calendar/"')||home.includes('href="#calendar"'));
   assert.ok(!home.includes('id="calendar"'));
   assert.ok(calendar.includes('id="calendar"'));
   assert.ok(calendar.includes('data-action="public-calendar-prev"'));

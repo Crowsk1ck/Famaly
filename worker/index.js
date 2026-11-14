@@ -60,7 +60,7 @@ function validApplicationStatus(value){
   return value;
 }
 function applicationView(record){return {...record,status:applicationStatus(record.status)};}
-function dateInput(v){const s=str(v,40);if(s && !/^\d{4}-\d\d-\d\d(?:T\d\d:\d\d(?::\d\d)?)?$/.test(s))fail(400,'Невірний формат дати');return s;}
+function dateInput(v){const s=str(v,40);if(!s)return '';if(!/^\d{4}-\d\d-\d\d(?:T\d\d:\d\d(?::\d\d)?)?$/.test(s))fail(400,'Невірний формат дати');const [year,month,day,hour=0,minute=0,second=0]=s.split(/[-T:]/).map(Number);const t=new Date(Date.UTC(year,month-1,day,hour,minute,second));if(t.getUTCFullYear()!==year||t.getUTCMonth()!==month-1||t.getUTCDate()!==day||t.getUTCHours()!==hour||t.getUTCMinutes()!==minute||t.getUTCSeconds()!==second)fail(400,'Некоректна календарна дата');return s;}
 function tokenValue(){const b=new Uint8Array(32);crypto.getRandomValues(b);return [...b].map(x=>x.toString(16).padStart(2,'0')).join('');}
 async function sha256(s){const d=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s));return [...new Uint8Array(d)].map(x=>x.toString(16).padStart(2,'0')).join('');}
 function fromHex(s){return new Uint8Array(s.match(/.{2}/g)?.map(v=>parseInt(v,16))||[]);}
@@ -403,7 +403,7 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
       allRows(db,"SELECT id,title,details,starts_at,ends_at,extra FROM records WHERE module='public_calendar' AND deleted_at IS NULL AND status='Погоджено' ORDER BY starts_at ASC LIMIT 240")
     ]);
     return json({settings:s,
-      gallery:gallery.map(mapRecord).sort((a,b)=>Number(!!b.extra?.featured)-Number(!!a.extra?.featured)).slice(0,48).map(r=>({id:r.id,title:r.title,details:r.details,evidence:r.evidence,extra:{gallery_category:r.extra?.gallery_category||'other',featured:r.extra?.featured===true}})),
+      gallery:gallery.map(mapRecord).sort((a,b)=>Number(!!b.extra?.featured)-Number(!!a.extra?.featured)).slice(0,48).map(r=>({id:r.id,title:r.title,details:r.details,evidence:r.evidence,created_at:r.created_at,extra:{gallery_category:r.extra?.gallery_category||'other',featured:r.extra?.featured===true}})),
       news:news.map(r=>({id:r.id,title:r.title,details:r.details,updated_at:r.updated_at,
         category:['news','event','recruitment','achievement','capt','announcement'].includes(parseJson(r.extra,{}).news_category)?parseJson(r.extra,{}).news_category:'news',
         featured:parseJson(r.extra,{}).featured===true})).sort((a,b)=>Number(b.featured)-Number(a.featured)||String(b.updated_at).localeCompare(String(a.updated_at))).slice(0,12),
@@ -957,7 +957,7 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
   if(path==='/api/stats'&&method==='GET'){
     const users=await allRows(db,"SELECT COUNT(*) count FROM users WHERE status='active'");const all=await allRows(db,'SELECT * FROM records WHERE deleted_at IS NULL');const available=all.filter(r=>permittedRecord(user,r.module,r));const reports=available.filter(x=>x.module==='reports');const tasks=available.filter(x=>x.module==='tasks');const events=available.filter(x=>x.module==='events');const weekAgo=Date.now()-7*86400000,monthAgo=Date.now()-30*86400000;
     const recent=(from)=>available.filter(x=>new Date(x.updated_at).getTime()>=from);const countMod=(items,mod)=>items.filter(x=>x.module===mod).length;
-    const participation=can(user,'stats:read')?await allRows(db,"SELECT r.user_id,r.updated_at FROM event_rsvps r JOIN records e ON e.id=r.event_id WHERE r.response='Так' AND e.deleted_at IS NULL"):[];
+    const participation=can(user,'stats:read')?(await allRows(db,"SELECT r.user_id,r.updated_at,e.department_id,e.owner_id,e.assignee_id,e.module,e.status FROM event_rsvps r JOIN records e ON e.id=r.event_id WHERE r.response='Так' AND e.deleted_at IS NULL")).filter(e=>user.role!=='head'||(!e.department_id||e.department_id===user.department_id)):[];
     const rankFor=(from)=>{
       if(!can(user,'stats:read'))return [];
       const scores=new Map();const add=(id,points)=>{if(!id)return;const x=scores.get(id)||{user_id:id,points:0,completed:0};x.points+=points;x.completed++;scores.set(id,x);};
@@ -972,5 +972,31 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
   }
   fail(404,'Маршрут не знайдено');
 }
+// Server-rendered public landing metadata and crawlable summary; private API content is never embedded.
+const PUBLIC_SEO={
+ '/about/':{title:'Історія та напрямки — GRIZZLY Family',description:'Історія сім’ї Grizzly, її принципи, керівництво та напрямки у GTA 5 Roleplay.',heading:'ІСТОРІЯ GRIZZLY',intro:'Сім’я Grizzly об’єднує гравців, для яких важливі повага, дисципліна й командна робота.'},
+ '/news/':{title:'Новини сім’ї — GRIZZLY Family',description:'Оголошення, новини та важливі події сім’ї GRIZZLY у GTA 5 RP.',heading:'НОВИНИ GRIZZLY',intro:'Офіційні новини та оголошення сім’ї. Актуальні записи з’являються після публікації.'},
+ '/achievements/':{title:'Досягнення — GRIZZLY Family',description:'Перемоги CAPT, нагороди та важливі досягнення GRIZZLY Family.',heading:'ДОСЯГНЕННЯ GRIZZLY',intro:'Здобутки сім’ї, результати спільних подій і підтверджені перемоги.'},
+ '/gallery/':{title:'Галерея — GRIZZLY Family',description:'Фотографії сім’ї GRIZZLY: CAPT, автомобілі, збори та події GTA 5 RP.',heading:'ГАЛЕРЕЯ GRIZZLY',intro:'Світлини та найкращі моменти спільного життя сім’ї GRIZZLY.'},
+ '/calendar/':{title:'Календар заходів — GRIZZLY Family',description:'Збори, тренування, CAPT та інші публічні заходи сім’ї GRIZZLY.',heading:'КАЛЕНДАР GRIZZLY',intro:'Публічний розклад зборів, тренувань та інших заходів сім’ї.'},
+ '/join/':{title:'Вступити до сім’ї — GRIZZLY Family',description:'Подайте заявку на вступ до GRIZZLY Family у GTA 5 Roleplay.',heading:'ВСТУП ДО GRIZZLY',intro:'Познайомтеся з правилами вступу й подайте заявку до сім’ї.'}
+};
+function seoSafe(v){return String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+async function publicHtml(req,env){
+ const url=new URL(req.url),page=PUBLIC_SEO[url.pathname];
+ if(!page||req.method!=='GET')return env.ASSETS.fetch(req);
+ const res=await env.ASSETS.fetch(new Request(new URL('/index.html',req.url),req));
+ if(!res.ok)return res;
+ let html=await res.text();
+ const canonical='https://grizzly-family.online'+url.pathname;
+ const swap=(key,value)=>{const re=new RegExp('(<meta (?:name|property)="'+key+'" content=")[^"]*(" />)');html=html.replace(re,(_,a,b)=>a+seoSafe(value)+b);};
+ html=html.replace(/<title>[^<]*<\/title>/,'<title>'+seoSafe(page.title)+'</title>')
+          .replace(/(<link rel="canonical" href=")[^"]*(" \/>)/,'$1'+canonical+'$2');
+ swap('description',page.description);swap('og:title',page.title);swap('og:description',page.description);swap('og:url',canonical);
+ html=html.replace(/<div id="app">[\s\S]*?<\/div><\/div>/,
+  '<div id="app"><main class="gr-prerender"><h1>'+seoSafe(page.heading)+'</h1><p>'+seoSafe(page.intro)+'</p><a href="/">GRIZZLY Family — Головна</a></main></div>');
+ const headers=new Headers(res.headers);headers.delete('content-length');headers.set('Content-Type','text/html; charset=utf-8');
+ return new Response(html,{status:res.status,headers});
+}
 const SECURITY_HEADERS={'X-Content-Type-Options':'nosniff','Referrer-Policy':'strict-origin-when-cross-origin','X-Frame-Options':'DENY','Permissions-Policy':'camera=(), microphone=(), geolocation=()'};
-export default {async fetch(req,env,ctx){try{if(!new URL(req.url).pathname.startsWith('/api/'))return env.ASSETS.fetch(req);const res=await handleApi(req,env,ctx);const h=new Headers(res.headers);Object.entries(SECURITY_HEADERS).forEach(([k,v])=>h.set(k,v));return new Response(res.body,{status:res.status,headers:h});}catch(err){const code=err instanceof HttpError?err.status:500;if(code===500)console.error('Grizzly API error',err);return json({error:code===500?'Внутрішня помилка сервера':err.message},code,SECURITY_HEADERS);}}};
+export default {async fetch(req,env,ctx){try{if(!new URL(req.url).pathname.startsWith('/api/'))return publicHtml(req,env);const res=await handleApi(req,env,ctx);const h=new Headers(res.headers);Object.entries(SECURITY_HEADERS).forEach(([k,v])=>h.set(k,v));return new Response(res.body,{status:res.status,headers:h});}catch(err){const code=err instanceof HttpError?err.status:500;if(code===500)console.error('Grizzly API error',err);return json({error:code===500?'Внутрішня помилка сервера':err.message},code,SECURITY_HEADERS);}}};
