@@ -2481,6 +2481,102 @@ test('v14.8 department leadership audit records approved appointment and rejects
  assert.equal(restored.status,200,JSON.stringify(restored.data));
 });
 
+test('v14.9 dossier access tracks member transfers and head demotion without re-login',async()=>{
+ const departments=(await req('/api/departments',{token:leader})).data.items;
+ const own=departments.find(d=>d.id==='farm')||departments[0];
+ const foreign=departments.find(d=>d.id!==own.id);
+ assert.ok(own&&foreign);
+ const headUser=await req('/api/users',{method:'POST',token:leader,data:{
+  username:'v149dossierhead',password:'v149-head-strong-password',
+  nickname:'Dossier Head',role:'head',department_id:own.id
+ }});
+ const person=await req('/api/users',{method:'POST',token:leader,data:{
+  username:'v149dossiersubject',password:'v149-subject-strong-password',
+  nickname:'Dossier Subject',role:'member',department_id:own.id
+ }});
+ assert.equal(headUser.status,201,JSON.stringify(headUser.data));
+ assert.equal(person.status,201,JSON.stringify(person.data));
+ const headId=headUser.data.item.id,subjectId=person.data.item.id;
+ const login=await req('/api/auth/login',{method:'POST',data:{
+  username:'v149dossierhead',password:'v149-head-strong-password'
+ }});
+ assert.equal(login.status,200);
+ const headToken=login.cookie.match(/grizzly_session=([a-f0-9]+)/)[1];
+ const dossierPath='/api/personnel-dossier?user='+subjectId;
+ assert.equal((await req(dossierPath,{token:headToken})).status,403);
+ const appointed=await req('/api/departments/'+own.id,{method:'PATCH',token:leader,data:{
+  title:own.title,head_id:headId,version:own.version
+ }});
+ assert.equal(appointed.status,200,JSON.stringify(appointed.data));
+ assert.equal((await req(dossierPath,{token:headToken})).status,200);
+ const moved=await req('/api/users/'+subjectId,{method:'PATCH',token:leader,data:{
+  ...person.data.item,department_id:foreign.id
+ }});
+ assert.equal(moved.status,200,JSON.stringify(moved.data));
+ assert.equal((await req(dossierPath,{token:headToken})).status,403,
+  'Head must immediately lose access when member transfers to another department');
+ assert.equal((await req(dossierPath,{token:leader})).status,200);
+ const forbidden=await req('/api/personnel-actions',{method:'POST',token:headToken,data:{
+  user_id:subjectId,kind:'warning',details:'Attempt on transferred member'
+ }});
+ assert.equal(forbidden.status,403);
+ const clearedDepartment=(await req('/api/departments',{token:leader})).data.items.find(x=>x.id===own.id);
+ const cleared=await req('/api/departments/'+own.id,{method:'PATCH',token:leader,data:{
+  title:own.title,head_id:'',version:clearedDepartment.version
+ }});
+ assert.equal(cleared.status,200,JSON.stringify(cleared.data));
+ const currentHead=(await req('/api/users',{token:leader})).data.items.find(x=>x.id===headId);
+ const demoted=await req('/api/users/'+headId,{method:'PATCH',token:leader,data:{
+  ...currentHead,role:'member'
+ }});
+ assert.equal(demoted.status,200,JSON.stringify(demoted.data));
+ const headMe=await req('/api/auth/me',{token:headToken});
+ assert.equal(headMe.status,200);
+ assert.equal(headMe.data.user.role,'member',
+  'Previously established sessions must observe current role from the database');
+ assert.equal((await req(dossierPath,{token:headToken})).status,403);
+ assert.equal((await req('/api/inactivity?days=7',{token:headToken})).status,403);
+});
+
+test('v14.9 blocked dossier owner loses all API access, leadership retains authorized view',async()=>{
+ const username='v149blockedsubject',password='v149-blocked-strong-password';
+ const created=await req('/api/users',{method:'POST',token:leader,data:{
+  username,password,nickname:'Blocked Dossier Subject',role:'member',department_id:'fleet'
+ }});
+ assert.equal(created.status,201,JSON.stringify(created.data));
+ const firstLogin=await req('/api/auth/login',{method:'POST',data:{username,password}});
+ const secondLogin=await req('/api/auth/login',{method:'POST',data:{username,password}});
+ assert.equal(firstLogin.status,200);
+ assert.equal(secondLogin.status,200);
+ const first=firstLogin.cookie.match(/grizzly_session=([a-f0-9]+)/)[1];
+ const second=secondLogin.cookie.match(/grizzly_session=([a-f0-9]+)/)[1];
+ const url='/api/personnel-dossier?user='+created.data.item.id;
+ assert.equal((await req(url,{token:first})).status,200);
+ assert.equal((await req(url,{token:second})).status,200);
+ const block=await req('/api/users/'+created.data.item.id,{method:'PATCH',token:leader,data:{
+  ...created.data.item,status:'blocked'
+ }});
+ assert.equal(block.status,200,JSON.stringify(block.data));
+ for(const token of [first,second]){
+  assert.equal((await req(url,{token})).status,401);
+  assert.equal((await req('/api/personnel-actions',{method:'POST',token,data:{
+   user_id:created.data.item.id,kind:'warning',details:'Revoked session attempt'
+  }})).status,401);
+  assert.equal((await req('/api/export?module=users',{token})).status,401);
+ }
+ const leadershipView=await req(url,{token:leader});
+ assert.equal(leadershipView.status,200,JSON.stringify(leadershipView.data));
+ assert.equal(leadershipView.data.item.person.status,'blocked');
+ assert.equal(Object.hasOwn(leadershipView.data.item.person,'password_hash'),false);
+ const current=(await req('/api/users',{token:leader})).data.items.find(x=>x.id===created.data.item.id);
+ const unblocked=await req('/api/users/'+created.data.item.id,{method:'PATCH',token:leader,data:{
+  ...current,status:'active'
+ }});
+ assert.equal(unblocked.status,200,JSON.stringify(unblocked.data));
+ assert.equal((await req(url,{token:first})).status,401);
+ assert.equal((await req(url,{token:second})).status,401);
+});
+
 // Run destructive session-revocation coverage last: other integration tests use this member's active session.
 test('blocking user revokes sessions and stops access',async()=>{const u=(await req('/api/users',{token:leader})).data.items.find(x=>x.id===memberId);const r=await req(`/api/users/${memberId}`,{method:'PATCH',token:leader,data:{...u,status:'blocked'}});assert.equal(r.status,200,JSON.stringify(r.data));assert.equal((await req('/api/auth/me',{token:member})).status,401);});
 
