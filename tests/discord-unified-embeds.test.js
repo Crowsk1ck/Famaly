@@ -20,7 +20,7 @@ test('all supported Discord categories share GRIZZLY branding and security setti
   assert.match(embed.author.name,/GRIZZLY FAMILY/);
   assert.match(embed.footer.text,/СИЛА В ЄДНОСТІ/);
   assert.ok(embed.title.length>0);
-  assert.ok(embed.description.length>0);
+  if(kind!=='announcements')assert.ok(embed.description.length>0);
   assert.ok(!Number.isNaN(Date.parse(embed.timestamp)));
  }
 });
@@ -48,4 +48,23 @@ test('user supplied mentions cannot notify users or roles',()=>{
  assert.equal((serialized.match(/<@&/g)||[]).length,1);
  assert.ok(!serialized.includes('<@&123456789012345678>'));
  assert.ok(!serialized.includes('<@123'));
+});
+
+test('department announcements display separate intro, bold departments and action',()=>{
+ const message='📢Дорога сім’я GRIZZLY! Прошу обрати підрозділ. 📋 Доступні підрозділи: 🔫 CAPT-склад – участь у каптах. 💰 Фарм – заробіток ресурсів. 🚗 Автопарк – контроль транспорту. ⚖️ Дисципліна – порядок. 👥 Рекрутинг – набір. 🎉 Івенти – заходи. ❗ Прошу всіх обов’язково відписати! Нам важливо розподілити обов’язки.';
+ const p=buildDiscordNotification('announcements',{event:'Розподіл по підрозділах',message});
+ const fields=p.embeds[0].fields;
+ assert.equal(p.embeds[0].description,'');
+ assert.equal(fields.find(x=>x.name==='📣 Звернення')?.value,'📢Дорога сім’я GRIZZLY! Прошу обрати підрозділ.');
+ const departments=fields.find(x=>x.name==='📋 Доступні підрозділи')?.value||'';
+ assert.match(departments,/\*\*🔫 CAPT-склад\*\*/);
+ assert.match(departments,/\*\*💰 Фарм\*\*/);
+ assert.match(departments,/\n\n/);
+ assert.match(fields.find(x=>x.name==='❗ Що потрібно зробити')?.value||'',/Прошу всіх/);
+ assert.equal(p.content,'<@&1563285390989987962>');
+ assert.deepEqual(p.allowed_mentions,{parse:[],roles:['1563285390989987962']});
+});
+test('unstructured messages retain original text without forced department formatting',()=>{
+ const p=buildDiscordNotification('announcements',{message:'Терміновий збір біля офісу о 20:00'});
+ assert.equal(p.embeds[0].fields.find(x=>x.name==='📣 Повідомлення').value,'Терміновий збір біля офісу о 20:00');
 });
