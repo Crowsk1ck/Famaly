@@ -574,7 +574,7 @@ export async function sendDiscordWebhook(env,kind,info,targetKind=kind){
 export function discordOutboxDecision(error,attempts){
  if(!error)return {status:'sent',delaySeconds:0,code:''};
  const message=String(error.message||'');
- const http=Number(message.match(/\\(HTTP (\\d{3})\\)$/)?.[1]||0);
+ const http=Number(message.match(/\(HTTP (\d{3})\)$/)?.[1]||0);
  const code=http?'http_error':message.includes('з’єднання')?'network_error':'configuration_error';
  if(http===429&&attempts<3)return {status:'pending',delaySeconds:Math.min(120,30*attempts),code};
  return {status:code==='network_error'?'uncertain':'failed',delaySeconds:0,code};
