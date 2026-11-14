@@ -811,3 +811,32 @@
 .overview-activity-list{display:grid;gap:10px}
 .overview-activity-list>.row{border-bottom:1px solid #373b47;padding:8px 0;flex-wrap:wrap}
 @media(max-width:740px){.gr-history-timeline{grid-template-columns:minmax(0,1fr)}.gr-gallery-sort{justify-content:flex-start;flex-wrap:wrap}}
+
+/* GRIZZLY optional ambient music: single floating control across all pages */
+.gr-audio-dock{
+ position:fixed;z-index:85;right:19px;bottom:18px;
+ display:flex;align-items:center;gap:12px;
+ padding:8px 11px 8px 9px;
+ background:rgba(24,27,36,.96);color:#efe5eb;
+ border:1px solid #5b3946;border-radius:13px;
+ box-shadow:0 8px 26px rgba(0,0,0,.36);
+ backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+ max-width:calc(100vw - 24px);
+}
+.gr-audio-toggle{display:inline-flex;align-items:center;gap:8px;
+ color:#efe5eb;border:0;background:transparent;border-radius:8px;
+ padding:5px 7px;cursor:pointer;font:inherit;white-space:nowrap;font-size:.81rem;font-weight:700}
+.gr-audio-toggle>span:first-child{display:grid;place-items:center;
+ width:29px;height:29px;border-radius:8px;
+ background:#40262f;border:1px solid #904657;color:#ffa0b1;font-size:1.2rem}
+.gr-audio-dock.is-playing .gr-audio-toggle>span:first-child{background:#71354a;color:white}
+.gr-audio-toggle:hover{background:#29252f}
+.gr-audio-toggle:focus-visible,.gr-audio-volume-label input:focus-visible{outline:2px solid #ff94a5;outline-offset:2px}
+.gr-audio-volume-label{display:flex;align-items:center}
+.gr-audio-volume-label input{width:74px;accent-color:#e8798e;cursor:pointer}
+.gr-audio-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}
+@media(max-width:520px){
+ .gr-audio-dock{right:9px;bottom:10px;gap:6px;padding:6px 8px}
+ .gr-audio-caption{display:none}
+ .gr-audio-volume-label input{width:66px}
+}
