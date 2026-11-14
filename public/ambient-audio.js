@@ -20,9 +20,10 @@
  function playNote(freq,now,duration,loudness,wave){
    const osc=ctx.createOscillator(),env=ctx.createGain();
    osc.type=wave;osc.frequency.setValueAtTime(freq,now);
+   const attack=Math.min(1.4,duration*.24),release=Math.min(2,duration*.3);
    env.gain.setValueAtTime(0.0001,now);
-   env.gain.linearRampToValueAtTime(loudness,now+1.4);
-   env.gain.setValueAtTime(loudness,now+duration-2);
+   env.gain.linearRampToValueAtTime(loudness,now+attack);
+   env.gain.setValueAtTime(loudness,now+duration-release);
    env.gain.exponentialRampToValueAtTime(0.0001,now+duration);
    osc.connect(env);env.connect(master);osc.start(now);osc.stop(now+duration+.05);
    osc.onended=()=>{osc.disconnect();env.disconnect()};
