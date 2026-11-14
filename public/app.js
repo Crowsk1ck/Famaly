@@ -418,7 +418,20 @@ function loginModal(){modal('Вхід до панелі',`<p class="modal-desc">
 function modal(title,html){$('#modal-root').innerHTML=`<div class="modal-backdrop" data-backdrop="1"><div class="modal" role="dialog" aria-modal="true" aria-label="${esc(title)}"><div class="modal-head"><h3>${esc(title)}</h3><button type="button" data-action="close-modal" class="iconbtn">✕</button></div><div class="modal-body">${html}</div></div></div>`;const first=$('#modal-root input:not([type=hidden])');if(first)setTimeout(()=>first.focus(),20);}
 function closeModal(){$('#modal-root').innerHTML='';state.galleryLightboxId=null;}
 function visible(n){if(n.id==='inactivity'&&!['leader','deputy','head'].includes(state.user.role))return false;if(n.id==='leadership'&&!['leader','deputy'].includes(state.user.role))return false;if(n.id==='workspace'&&!['leader','deputy','head'].includes(state.user.role))return false;if(['audit','settings'].includes(n.id)&&state.user.role!=='leader')return false;if(n.id==='applications'&&!can('recruitment:manage'))return false;if(['public_news','public_team','public_achievements','public_calendar'].includes(n.id)&&!can('content:manage'))return false;if(n.id==='discipline'&&!can('discipline:manage'))return false;if(n.id==='contracts'&&!can('finance:read')&&!can('finance:manage'))return true;return true;}
-function sidebar(){let current='';return `<aside class="sidebar"><div class="sidebrand"><div class="brand"><span class="brand-mark">🐻</span>GRIZZLY</div><span class="sub">FAMILY CONTROL</span></div><nav class="side-scroll"><a class="sideitem" href="/?view=public#home"><span class="ni">↗</span> Публічний сайт</a>${nav.filter(visible).map(n=>{let group='';if(n.group!==current){current=n.group;group=`<div class="nav-group">${esc(current)}</div>`;}return `${group}<a href="#${n.id}" class="sideitem ${state.route===n.id?'active':''}" data-route="${n.id}"><span class="ni">${n.icon}</span>${esc(n.text)}</a>`;}).join('')}</nav><div class="side-bottom"><div class="row"><div class="avatar">${esc((state.user.nickname||state.user.username).slice(0,1).toUpperCase())}</div><div style="min-width:0"><strong class="small">${esc(state.user.nickname||state.user.username)}</strong><div class="muted small">${esc(roles[state.user.role])}</div></div></div><button class="btn ghost tiny sidebar-logout" data-action="logout">Вийти ↗</button></div></aside>`;}
+const COMPACT_NAV_GROUPS=['ПУБЛІЧНИЙ САЙТ','СИСТЕМА'];
+function sidebar(){
+ let current='';
+ const activeGroup=nav.find(n=>n.id===state.route)?.group;
+ const collapsed=group=>group!==activeGroup&&Boolean(state.navCollapsed?.[group]??COMPACT_NAV_GROUPS.includes(group));
+ return `<aside class="sidebar"><div class="sidebrand"><div class="brand"><span class="brand-mark">🐻</span>GRIZZLY</div><span class="sub">FAMILY CONTROL</span></div><nav class="side-scroll"><a class="sideitem" href="/?view=public#home"><span class="ni">↗</span> Публічний сайт</a>${nav.filter(visible).map(n=>{
+  let group='';
+  if(n.group!==current){
+   current=n.group;
+   group=`<button type="button" class="nav-group gr-nav-group-toggle" data-action="nav-group-toggle" data-group="${esc(current)}" aria-expanded="${!collapsed(current)}"><span>${esc(current)}</span><span aria-hidden="true">${collapsed(current)?'＋':'−'}</span></button>`;
+  }
+  return `${group}<a href="#${n.id}" class="sideitem ${state.route===n.id?'active':''} ${collapsed(n.group)?'gr-nav-hidden':''}" data-route="${n.id}"><span class="ni">${n.icon}</span>${esc(n.text)}</a>`;
+ }).join('')}</nav><div class="side-bottom"><div class="row"><div class="avatar">${esc((state.user.nickname||state.user.username).slice(0,1).toUpperCase())}</div><div style="min-width:0"><strong class="small">${esc(state.user.nickname||state.user.username)}</strong><div class="muted small">${esc(roles[state.user.role])}</div></div></div><button class="btn ghost tiny sidebar-logout" data-action="logout">Вийти ↗</button></div></aside>`;
+}
 function shell(content){const unread=state.notifications.filter(x=>!x.read_at).length;$('#app').innerHTML=`<div class="shell ${state.menu?'menu-open':''}">${sidebar()}<div class="app-main"><header class="topbar"><div class="row"><button class="iconbtn mobile-menu" data-action="toggle-menu">☰</button><div><small>GRIZZLY / ${esc(roles[state.user.role])}</small><h2>${esc(nav.find(n=>n.id===state.route)?.text||'Огляд')}</h2></div></div><div class="row"><div class="notif-menu"><button class="iconbtn" data-action="notifications" aria-label="Сповіщення">♧${unread?'<span class="alert-dot"></span>':''}</button><div id="notif-pop" class="notif-pop hide"></div></div><button class="iconbtn" data-route="profile" title="Мій профіль">◌</button></div></header><div class="app-content">${content}</div></div></div>`;}
 function notifyPopup(){const el=$('#notif-pop');if(!el)return;el.classList.toggle('hide');el.innerHTML=`<div class="card-head"><h3>Сповіщення</h3><span class="pill">${state.notifications.filter(x=>!x.read_at).length} нових</span></div>${state.notifications.length?state.notifications.slice(0,12).map(n=>`<div class="notif-item"><div class="row space"><strong class="small">${esc(n.title)}</strong>${n.read_at?'':`<button class="btn tiny ghost" data-action="read-notification" data-id="${esc(n.id)}">✓</button>`}</div><div class="muted small">${esc(n.details)}</div><div class="muted small">${date(n.created_at)}</div></div>`).join(''):empty('Немає сповіщень','Нові події з’являться тут.')}`;}
 function table(headers,rows){return rows.length?`<div class="tablewrap"><table><thead><tr>${headers.map(s=>`<th>${esc(s)}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table></div>`:empty();}
@@ -1780,6 +1793,15 @@ document.addEventListener('click',async e=>{const back=e.target.closest('[data-b
   case 'show-login':loginModal();break;
   case 'close-modal':closeModal();break;
   case 'toggle-menu':$('.shell')?.classList.toggle('menu-open');break;
+  case 'nav-group-toggle':{
+    const group=t.dataset.group;
+    if(!nav.filter(visible).some(n=>n.group===group))break;
+    state.navCollapsed={...(state.navCollapsed||{}),
+      [group]:!(state.navCollapsed?.[group]??COMPACT_NAV_GROUPS.includes(group))};
+    const node=document.querySelector('.sidebar');
+    if(node)node.outerHTML=sidebar();
+    break;
+  }
   case 'refresh':await render();break;
   case 'overview-trend-period':state.overviewTrendPeriod=t.dataset.value==='30'?'30':'7';await render();break;
   case 'discord-refresh':{if(state.user?.role!=='leader')throw new Error('Недостатньо прав');await render();toast('Статус Discord оновлено');break;}
