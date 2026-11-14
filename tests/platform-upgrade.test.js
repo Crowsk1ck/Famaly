@@ -18,6 +18,7 @@ test('public SEO pages have stable canonical metadata without authenticated data
  assert.match(body,/<title>Історія та напрямки/);
  assert.match(body,/https:\/\/grizzly-family\.online\/about\//);
  assert.match(body,/ІСТОРІЯ GRIZZLY/);
+ assert.doesNotMatch(body,/class="boot"/,'SEO fallback must not duplicate root loading spinner');
  assert.doesNotMatch(body,/password_hash|grizzly_session|CLOUDFLARE_API_TOKEN/);
 });
 
