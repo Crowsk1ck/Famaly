@@ -12,7 +12,7 @@ test('v11.0 sends promotions only after atomic approval and rank update',()=>{
  const section=worker.slice(start,end);
  assert.match(section,/SELECT nickname FROM users/);
  assert.match(section,/SELECT title FROM ranks/);
- assert.match(section,/queueDiscord\(ctx,db,env,'announcements'/);
+ assert.match(section,/queueDiscord\(ctx,db,env,'promotions'/);
  assert.match(section,/Підвищення учасника/);
 });
 test('v11.1 includes warning, reprimand, recognition, award and reversal without private reasons',()=>{
@@ -20,7 +20,7 @@ test('v11.1 includes warning, reprimand, recognition, award and reversal without
  const begin=worker.indexOf("if(path==='/api/personnel-actions'&&method==='POST')");
  const end=worker.indexOf("if(path==='/api/inactivity'&&method==='GET')",begin);
  const section=worker.slice(begin,end);
- assert.equal((section.match(/queueDiscord\(ctx,db,env,'announcements'/g)||[]).length,2);
+ assert.equal((section.match(/queueDiscord\(ctx,db,env,'personnel'/g)||[]).length,2);
  assert.ok(section.includes('Кадрове рішення · знято'));
  assert.ok(!section.includes('message:details'));
  assert.ok(!section.includes('message:reason'));
@@ -31,7 +31,7 @@ test('v11.2 posts only approved leave and uses existing department authorization
  const section=worker.slice(begin,end);
  assert.ok(section.includes('canReviewAbsence(user,old)'));
  assert.ok(section.includes("if(decision==='Погоджено')"));
- assert.ok(section.includes("queueDiscord(ctx,db,env,'announcements'"));
+ assert.ok(section.includes("queueDiscord(ctx,db,env,'absences'"));
  assert.ok(section.includes('ABSENCE_TYPES[parseJson(old.extra,{}).type]'));
  assert.ok(!section.includes('message:extra.review_comment'));
 });
