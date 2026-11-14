@@ -1121,3 +1121,30 @@ form[aria-busy="true"] [type="submit"]{cursor:progress;opacity:.65}
 
 /* v15.6: keep the dynamically updated overview notification preview aligned. */
 .gr-overview-notification-preview{display:flex;flex-direction:column;min-width:0}
+
+
+/* v15.7: department-level command center using existing authorized workspace data */
+.gr-head-focus{min-width:0;margin:14px 0 18px;padding:18px}
+.gr-head-focus .card-head{margin-bottom:14px}
+.gr-head-focus .card-head p{margin:6px 0 0}
+.gr-head-focus-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.gr-head-focus-panel{display:flex;flex-direction:column;min-width:0;gap:12px;padding:14px;
+ border:1px solid var(--border);border-radius:11px;background:#1b1e28}
+.gr-head-focus-panel h4,.gr-head-focus-team h4{font-size:.92rem;margin:0;overflow-wrap:anywhere}
+.gr-head-focus-panel>.btn{align-self:flex-start;margin-top:auto;min-height:40px}
+.gr-head-focus-task,.gr-head-focus-person{display:flex;gap:9px;align-items:flex-start;justify-content:space-between;min-width:0;
+ padding:9px 0;border-top:1px solid var(--border)}
+.gr-head-focus-copy,.gr-head-focus-person>div{display:flex;flex-direction:column;gap:5px;min-width:0;overflow-wrap:anywhere}
+.gr-head-focus-copy strong,.gr-head-focus-person strong{font-size:.83rem;line-height:1.4}
+.gr-head-focus-copy .small,.gr-head-focus-person .small{font-size:.74rem}
+.gr-head-focus-task .btn,.gr-head-focus-person .btn{flex-shrink:0;min-height:38px;white-space:normal}
+.gr-head-focus-team{min-width:0;margin-top:14px;padding:14px;border:1px solid var(--border);border-radius:11px}
+.gr-head-focus-team-header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:8px}
+.gr-head-focus-team>.gr-head-focus-person{display:inline-flex;width:calc(50% - 6px);vertical-align:top;margin-right:6px}
+@media(max-width:1110px){.gr-head-focus-grid{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:650px){
+ .gr-head-focus{padding:13px}
+ .gr-head-focus-team>.gr-head-focus-person{display:flex;width:100%;margin-right:0}
+ .gr-head-focus-panel>.btn{width:100%;min-height:44px}
+ .gr-head-focus-task .btn,.gr-head-focus-person .btn{min-height:44px}
+}
