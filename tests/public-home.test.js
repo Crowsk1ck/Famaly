@@ -8,7 +8,7 @@ const end=source.indexOf('function loginModal(){',start);
 assert.ok(start>=0&&end>start,'public renderer and helpers exist');
 
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const compile=new Function('state','$','esc','URL','date','location',
+const compile=new Function('state','$','esc','URL','date','location','stopNotificationPolling',
   source.slice(start,end)+'\nreturn {renderPublic,renderPublicGallery,renderPublicAchievements,renderPublicTeam,publicPageFromHash,renderPublicNewsPreview,renderPublicCalendar,grCalendarMonthValue};'
 );
 function context({hash='#home',settings={},gallery=[],news=[],team=[],achievements=[],calendar=[],user=null}={}){
@@ -16,7 +16,7 @@ function context({hash='#home',settings={},gallery=[],news=[],team=[],achievemen
   const state={public:{settings,gallery,news,team,achievements,calendar},user};
   const location={hash};
   const formatDate=v=>v?new Date(v).toLocaleDateString('uk-UA'):'—';
-  const renderer=compile(state,selector=>selector==='#app'?node:null,esc,URL,formatDate,location);
+  const renderer=compile(state,selector=>selector==='#app'?node:null,esc,URL,formatDate,location,()=>{});
   return {state,node,renderer,location};
 }
 function publicHtml(options={}){
