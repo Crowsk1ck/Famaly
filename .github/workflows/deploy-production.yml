@@ -71,3 +71,25 @@ jobs:
           check "Domain v8 page" "https://grizzly-family.online/about/" 'ІСТОРІЯ GRIZZLY'
           preview_code=$(curl --silent --show-error --location --output /tmp/grizzly-preview --write-out '%{http_code}' https://grizzly-family.online/grizzly-social.png)
           [[ "$preview_code" == "200" ]] && [[ "$(od -An -tx1 -N8 /tmp/grizzly-preview | tr -d ' \\n')" == "89504e470d0a1a0a" ]] || { echo "::error::GRIZZLY PNG preview missing or invalid (HTTP $preview_code)"; exit 1; }
+      - name: Browser smoke test for public navigation
+        shell: bash
+        run: |
+          npm install --no-save --no-audit --no-fund puppeteer-core
+          node --input-type=module <<'NODE'
+          import puppeteer from 'puppeteer-core';
+          const browser=await puppeteer.launch({executablePath:'/usr/bin/google-chrome',headless:true,args:['--no-sandbox']});
+          try {
+            const page=await browser.newPage();
+            page.on('pageerror',e=>console.log('Public page JavaScript error:',e.message));
+            await page.goto('https://grizzly-family.online/',{waitUntil:'networkidle2',timeout:30000});
+            await page.waitForSelector('#gr-main',{timeout:20000});
+            await page.evaluate(()=>window.__grizzlyNavigationProbe='persistent-document');
+            await page.click('a[href="/join/"]');
+            await page.waitForFunction(()=>location.pathname==='/join/' && !!document.querySelector('#apply-form'),{timeout:20000});
+            const state=await page.evaluate(()=>({probe:window.__grizzlyNavigationProbe,form:!!document.querySelector('#apply-form'),url:location.pathname}));
+            if(state.probe!=='persistent-document')throw new Error('Public navigation reloaded the document: '+JSON.stringify(state));
+            await page.goBack({waitUntil:'domcontentloaded'});
+            await page.waitForFunction(()=>location.pathname==='/'&&!!document.querySelector('#gr-main'),{timeout:15000});
+            console.log('Public tab navigation and browser Back passed without document reload');
+          } finally { await browser.close(); }
+          NODE
