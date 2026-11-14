@@ -79,3 +79,17 @@ test('SEO route is handled by Worker before assets with no-cache response',async
  assert.match(page,/id="modal-root"/);
  assert.match(page,/id="toast-root"/);
 });
+
+test('all six canonical public paths have real static HTML entries for Cloudflare assets',()=>{
+ for(const [slug,heading] of [
+  ['about','ІСТОРІЯ GRIZZLY'],['news','НОВИНИ GRIZZLY'],
+  ['gallery','ГАЛЕРЕЯ GRIZZLY'],['achievements','ДОСЯГНЕННЯ GRIZZLY'],
+  ['calendar','КАЛЕНДАР GRIZZLY'],['join','ВСТУП ДО GRIZZLY']
+ ]){
+  const page=readFileSync(new URL('../public/'+slug+'/index.html',import.meta.url),'utf8');
+  assert.match(page,new RegExp('<h1>'+heading+'</h1>'));
+  assert.ok(page.includes('https://grizzly-family.online/'+slug+'/'));
+  assert.match(page,/src="\/app\.js"/);
+  assert.doesNotMatch(page,/grizzly_session|password_hash|CLOUDFLARE_API_TOKEN/);
+ }
+});
