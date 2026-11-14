@@ -845,29 +845,57 @@ async function inactivityPage(){
   '<span>Потребують уваги: <strong>'+overdue+'</strong></span><span>На погодженій відсутності: <strong>'+exempt+'</strong></span></div>'+
   '<div class="card gr-activity-table">'+inactivityTable(response.items)+'</div>';
 }
+// Dossier filters apply only to records returned by the authorized server endpoint.
+function filterDossierRows(rows,options={}){
+ const kind=options.kind||'all',status=options.status||'all';
+ const from=options.from||'',to=options.to||'';
+ return rows.filter(row=>{
+  const day=String(row.created_at||'').slice(0,10);
+  return (kind==='all'||row.kind===kind)&&
+   (status==='all'||row.status===status)&&
+   (!from||!!day&&day>=from)&&(!to||!!day&&day<=to);
+ });
+}
 async function dossierPage(){
  const id=state.dossierUser||state.user.id;
  const {item:x}=await api('/personnel-dossier?user='+encodeURIComponent(id));
  const people=state.roster.filter(p=>['leader','deputy'].includes(state.user.role)||
   state.user.role==='head'&&state.user.head_appointed&&p.department_id===state.user.department_id||p.id===state.user.id);
- const picker=people.length>1?'<select id="dossier-user-select" class="select" aria-label="Оберіть учасника">'+
- people.map(p=>'<option value="'+esc(p.id)+'"'+(p.id===id?' selected':'')+'>'+esc(p.nickname)+'</option>').join('')+'</select>':'';
+ const picker=people.length>1?'<div class="gr-dossier-picker"><label for="dossier-person-search" class="muted small">Пошук учасника</label>'+
+ '<input id="dossier-person-search" type="search" class="input" placeholder="Нікнейм або ігровий ID" autocomplete="off" aria-controls="dossier-user-select">'+
+ '<select id="dossier-user-select" class="select" aria-label="Оберіть учасника">'+
+ people.map(p=>'<option value="'+esc(p.id)+'" data-lookup="'+esc((p.nickname||'')+' '+(p.game_id||''))+'"'+(p.id===id?' selected':'')+'>'+esc(p.nickname)+'</option>').join('')+
+ '</select><span id="dossier-person-count" class="muted small">'+people.length+' доступних учасників</span></div>':'';
  const badges=[['Завдання',x.stats.tasks],['Звіти',x.stats.reports],['Підвищення',x.stats.promotions],['CAPT',x.stats.capt],['Дії · 7 днів',x.activity?.actions_7||0],['Дії · 30 днів',x.activity?.actions_30||0]];
- const actionRows=x.actions.map(a=>'<tr><td>'+esc(a.title)+'</td><td>'+esc(a.details)+'</td><td>'+badge(a.status)+'</td><td>'+esc(date(a.created_at))+'</td><td>'+
+ const actionKinds=[['all','Усі рішення'],['warning','Попередження'],['reprimand','Догани'],['recognition','Подяки'],['award','Нагороди']];
+ const actionKind=state.dossierKind||'all',actionStatus=state.dossierStatus||'all';
+ const from=state.dossierFrom||'',to=state.dossierTo||'';
+ const filteredActions=filterDossierRows(x.actions,{kind:actionKind,status:actionStatus,from,to});
+ const filteredHistory=filterDossierRows(x.history,{from,to});
+ const actionFilters='<div class="gr-dossier-filters">'+
+ '<label>Тип рішення<select id="dossier-kind-filter" class="select">'+actionKinds.map(([key,label])=>'<option value="'+key+'"'+(actionKind===key?' selected':'')+'>'+label+'</option>').join('')+'</select></label>'+
+ '<label>Статус<select id="dossier-status-filter" class="select">'+[['all','Усі'],['Чинне','Чинне'],['Знято','Знято']].map(([key,label])=>'<option value="'+key+'"'+(actionStatus===key?' selected':'')+'>'+label+'</option>').join('')+'</select></label>'+
+ '<label>Від<input type="date" class="input" id="dossier-from-filter" value="'+esc(from)+'"></label>'+
+ '<label>До<input type="date" class="input" id="dossier-to-filter" value="'+esc(to)+'"></label>'+
+ '<button class="btn tiny secondary" data-action="dossier-reset-filters" type="button">Скинути</button></div>';
+ const actionRows=filteredActions.map(a=>'<tr><td>'+esc(a.title)+'</td><td>'+esc(a.details)+'</td><td>'+badge(a.status)+'</td><td>'+esc(date(a.created_at))+'</td><td>'+
   (x.can_manage&&a.status==='Чинне'?'<button class="btn tiny secondary" data-action="resolve-personnel-action" data-id="'+esc(a.id)+'" data-version="'+a.version+'">Зняти</button>':'')+'</td></tr>');
  const history=x.latest_records.map(r=>'<tr><td>'+esc(r.title)+'</td><td>'+esc(r.module)+'</td><td>'+badge(r.status)+'</td><td>'+esc(date(r.created_at))+'</td></tr>');
  const abs=x.absences.map(a=>'<tr><td>'+esc(absenceType(a.type))+'</td><td>'+esc(a.starts_at)+' — '+esc(a.ends_at)+'</td><td>'+badge(a.status)+'</td></tr>');
- const auditRows=x.history.map(h=>'<tr><td>'+esc(date(h.created_at))+'</td><td>'+esc(h.action)+'</td><td>'+esc(h.detail||'—')+'</td></tr>');
+ const auditRows=filteredHistory.map(h=>'<tr><td>'+esc(date(h.created_at))+'</td><td>'+esc(h.action)+'</td><td>'+esc(h.detail||'—')+'</td></tr>');
  return intro('Особова справа · '+x.person.nickname,'Дані учасника, рішення керівництва й історія активності. Фінансові операції недоступні.')+
   '<div class="row space wrap mt">'+picker+(x.can_manage?'<button class="btn" data-action="new-personnel-action" data-id="'+esc(id)+'">＋ Догана / нагорода</button>':'')+'</div>'+
   '<div class="card gr-v10-profile"><h3>'+esc(x.person.nickname)+'</h3><p>'+esc(roles[x.person.role]||x.person.role)+' · '+esc(rankName(x.person.rank_id))+
   ' · '+esc(departmentName(x.person.department_id))+'</p><p class="muted small">Вступ: '+esc(x.person.joined_at||'—')+
   ' · Статус: '+esc(x.person.status)+' · Ігровий ID: '+esc(x.person.game_id||'—')+'</p></div>'+
   '<div class="gr-activity-stats">'+badges.map(([t,v])=>'<div class="card"><span class="muted small">'+esc(t)+'</span><strong>'+fmt(v)+'</strong></div>').join('')+'</div>'+
-  '<div class="card gr-activity-table"><h3>Догани та заохочення</h3>'+(actionRows.length?table(['Рішення','Причина','Статус','Дата',''],actionRows):empty('Рішень поки немає'))+'</div>'+
+  '<div class="card gr-activity-table"><h3>Догани та заохочення</h3>'+actionFilters+
+ '<p class="muted small">Знайдено рішень: '+filteredActions.length+' із '+x.actions.length+'</p>'+
+ (actionRows.length?table(['Рішення','Причина','Статус','Дата',''],actionRows):empty('Немає рішень за обраними фільтрами'))+'</div>'+
   '<div class="card gr-activity-table"><h3>Звіти, завдання й CAPT</h3>'+(history.length?table(['Назва','Розділ','Статус','Дата'],history):empty('Записів поки немає'))+'</div>'+
   '<div class="card gr-activity-table"><h3>Відпустки та неактив</h3>'+(abs.length?table(['Тип','Період','Статус'],abs):empty('Заявок поки немає'))+'</div>'+ 
-  '<div class="card gr-activity-table"><h3>Історія змін особової справи</h3>'+(auditRows.length?table(['Дата','Операція','Деталі'],auditRows):empty('Немає кадрових змін'))+'</div>';
+  '<div class="card gr-activity-table"><h3>Історія змін особової справи</h3><p class="muted small">За вибраним періодом: '+filteredHistory.length+' записів</p>'+
+ (auditRows.length?table(['Дата','Операція','Деталі'],auditRows):empty('Немає кадрових змін за період'))+'</div>';
 }
 async function activityPage(){
  const user=state.user;
@@ -1909,8 +1937,25 @@ document.addEventListener('change',async event=>{
  try{await render();}catch(err){toast(err.message,true);}
 });
 document.addEventListener('submit',handleSubmit);
-document.addEventListener('input',e=>{if(e.target.closest('#contract-correction-form')){const f=e.target.closest('form');f.dataset.previewAmount='';f.dataset.previewReason='';const btn=f.querySelector('[data-action="contract-correction-save"]');if(btn)btn.disabled=true;const box=f.querySelector('#contract-correction-preview');if(box)box.textContent='Дані змінено. Повторіть попередній розрахунок.';}if(e.target.name==='photo_url'&&e.target.closest('#gallery-form'))updateGalleryFormPreview();if(e.target.name==='photo_url'&&e.target.closest('#team-form'))updateTeamFormPreview();if(e.target.name==='photo_url'&&e.target.closest('#achievement-form'))updateAchievementPreview();if(e.target.id==='search-input'){state.membersPage=1;state.auditPage=1;state.search=e.target.value;const start=e.target.selectionStart;render().then(()=>{const v=$('#search-input');if(v){v.focus();try{v.setSelectionRange(start,start);}catch{}}});}});
-document.addEventListener('change',e=>{if(e.target.id==='dossier-user-select'){state.dossierUser=e.target.value;void render();return;}if(e.target.id==='inactivity-days-select'){state.inactivityDays=Number(e.target.value);void render();return;}if(e.target.id==='inactivity-department-select'){state.inactivityDepartment=e.target.value;void render();return;}if(e.target.id==='activity-department-filter'){state.activityDepartment=e.target.value;void render();return;}if(e.target.id==='workspace-department-select'){state.workspaceDepartment=e.target.value;state.workspaceSection='personnel';void render();return;}if(e.target.id==='gr-gallery-sort'){state.gallerySort=e.target.value;const node=$('#gr-gallery-content');if(node)node.innerHTML=renderPublicGallery();return;}if(e.target.id==='gr-achievement-sort'){state.achievementSort=e.target.value;const node=$('#gr-achievements-content');if(node)node.innerHTML=renderPublicAchievements();return;}if(e.target.matches('#record-form[data-module="promotions"] [name="extra_requested_rank_id"]')){const form=e.target.form,box=form.querySelector('#promotion-requirement-box');if(box){box.innerHTML=promotionChecklistView(e.target.value,[]);syncPromotionChecklist();}return;}if(e.target.matches('.promotion-requirement')){syncPromotionChecklist();return;}if(state.route==='members'&&['members-role-filter','members-status-filter','members-department-filter','members-sort-filter'].includes(e.target.id)){const key={'members-role-filter':'membersRole','members-status-filter':'membersStatus','members-department-filter':'membersDepartment','members-sort-filter':'membersSort'}[e.target.id];state[key]=e.target.value;render();return;}if(e.target.id==='contract-department-filter'){state.contractDepartment=e.target.value;render();return;}if(e.target.id==='status-filter'){state.filter=e.target.value;render();}if(e.target.id==='sort-select'){state.sort=e.target.value;render();}if(e.target.id==='period-filter'){state.period=e.target.value;render();}});
+document.addEventListener('input',e=>{
+ if(e.target.id==='dossier-person-search'){
+  const select=document.getElementById('dossier-user-select'),count=document.getElementById('dossier-person-count');
+  if(!select)return;
+  if(!select._allOptions)select._allOptions=Array.from(select.options).map(o=>o.cloneNode(true));
+  const term=e.target.value.trim().toLocaleLowerCase('uk');
+  const selected=select.value;
+  const allowed=select._allOptions.filter(o=>String(o.dataset.lookup||o.textContent).toLocaleLowerCase('uk').includes(term));
+  select.replaceChildren(...allowed.map(o=>o.cloneNode(true)));
+  if(allowed.some(o=>o.value===selected))select.value=selected;
+  else select.selectedIndex=-1;
+  if(count)count.textContent=allowed.length+' знайдено';
+  return;
+ }
+ if(e.target.closest('#contract-correction-form')){const f=e.target.closest('form');f.dataset.previewAmount='';f.dataset.previewReason='';const btn=f.querySelector('[data-action="contract-correction-save"]');if(btn)btn.disabled=true;const box=f.querySelector('#contract-correction-preview');if(box)box.textContent='Дані змінено. Повторіть попередній розрахунок.';}if(e.target.name==='photo_url'&&e.target.closest('#gallery-form'))updateGalleryFormPreview();if(e.target.name==='photo_url'&&e.target.closest('#team-form'))updateTeamFormPreview();if(e.target.name==='photo_url'&&e.target.closest('#achievement-form'))updateAchievementPreview();if(e.target.id==='search-input'){state.membersPage=1;state.auditPage=1;state.search=e.target.value;const start=e.target.selectionStart;render().then(()=>{const v=$('#search-input');if(v){v.focus();try{v.setSelectionRange(start,start);}catch{}}});}});
+document.addEventListener('change',e=>{if(['dossier-kind-filter','dossier-status-filter','dossier-from-filter','dossier-to-filter'].includes(e.target.id)){
+ const field={'dossier-kind-filter':'dossierKind','dossier-status-filter':'dossierStatus','dossier-from-filter':'dossierFrom','dossier-to-filter':'dossierTo'}[e.target.id];
+ state[field]=e.target.value;void render();return;
+}if(e.target.id==='dossier-user-select'){state.dossierUser=e.target.value;void render();return;}if(e.target.id==='inactivity-days-select'){state.inactivityDays=Number(e.target.value);void render();return;}if(e.target.id==='inactivity-department-select'){state.inactivityDepartment=e.target.value;void render();return;}if(e.target.id==='activity-department-filter'){state.activityDepartment=e.target.value;void render();return;}if(e.target.id==='workspace-department-select'){state.workspaceDepartment=e.target.value;state.workspaceSection='personnel';void render();return;}if(e.target.id==='gr-gallery-sort'){state.gallerySort=e.target.value;const node=$('#gr-gallery-content');if(node)node.innerHTML=renderPublicGallery();return;}if(e.target.id==='gr-achievement-sort'){state.achievementSort=e.target.value;const node=$('#gr-achievements-content');if(node)node.innerHTML=renderPublicAchievements();return;}if(e.target.matches('#record-form[data-module="promotions"] [name="extra_requested_rank_id"]')){const form=e.target.form,box=form.querySelector('#promotion-requirement-box');if(box){box.innerHTML=promotionChecklistView(e.target.value,[]);syncPromotionChecklist();}return;}if(e.target.matches('.promotion-requirement')){syncPromotionChecklist();return;}if(state.route==='members'&&['members-role-filter','members-status-filter','members-department-filter','members-sort-filter'].includes(e.target.id)){const key={'members-role-filter':'membersRole','members-status-filter':'membersStatus','members-department-filter':'membersDepartment','members-sort-filter':'membersSort'}[e.target.id];state[key]=e.target.value;render();return;}if(e.target.id==='contract-department-filter'){state.contractDepartment=e.target.value;render();return;}if(e.target.id==='status-filter'){state.filter=e.target.value;render();}if(e.target.id==='sort-select'){state.sort=e.target.value;render();}if(e.target.id==='period-filter'){state.period=e.target.value;render();}});
 document.addEventListener('click',async e=>{const back=e.target.closest('[data-backdrop]');if(back&&e.target===back){closeModal();return;}const t=e.target.closest('[data-action],[data-route]');if(!t)return;e.preventDefault();try{if(t.dataset.route){await navigate(t.dataset.route);return;}const act=t.dataset.action,id=t.dataset.id,mod=t.dataset.module;switch(act){
   case 'show-login':loginModal();break;
   case 'close-modal':closeModal();break;
@@ -1992,6 +2037,8 @@ document.addEventListener('click',async e=>{const back=e.target.closest('[data-b
       '<div class="full form-actions"><button class="btn ghost" type="button" data-action="close-modal">Скасувати</button><button class="btn" type="submit">Подати на перевірку</button></div></form>');
     break;
   }
+  case 'dossier-reset-filters':
+    state.dossierKind='all';state.dossierStatus='all';state.dossierFrom='';state.dossierTo='';await render();break;
   case 'open-dossier':state.dossierUser=t.dataset.id;await navigate('dossier');break;
   case 'new-personnel-action':{
     if(!['leader','deputy','head'].includes(state.user.role))throw new Error('Тільки керівництво може додавати рішення');
