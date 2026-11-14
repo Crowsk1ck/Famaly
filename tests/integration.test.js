@@ -1378,5 +1378,34 @@ test('department contract finances remain scoped to the assigned head and track 
   assert.match(app,/contract-department-filter/);
   assert.match(app,/department-contracts/);
 });
+test('GRIZZLY overview v2 uses authenticated role-scoped sources and shows key panels',async()=>{
+  const app=readFileSync(resolve('public/app.js'),'utf8');
+  const section=app.slice(app.indexOf('async function overview(){'),app.indexOf('function memberStatusLabel(',app.indexOf('async function overview(){')));
+  assert.match(section,/api\('\/finance'\)/);
+  assert.match(section,/api\('\/contracts'\)/);
+  assert.match(section,/api\('\/records\/tasks'\)/);
+  assert.match(section,/api\('\/records\/reports'\)/);
+  assert.match(section,/api\('\/records\/events'\)/);
+  assert.match(section,/Сума контрактів/);
+  assert.match(section,/Баланс скарбниці/);
+  assert.match(section,/Оборот, не баланс скарбниці/);
+  assert.match(section,/Мої завдання/);
+  assert.match(section,/Звіти на перевірці/);
+  assert.match(section,/Найближчі заходи/);
+  assert.match(section,/Стан підрозділів/);
+  assert.match(section,/Нові сповіщення/);
+  assert.match(section,/departmentFinance/);
+  assert.match(app,/\['overview','members','ranks','departments','contracts','settings','profile'\]/);
+  const finance=await req('/api/finance',{token:member});
+  const contracts=await req('/api/contracts',{token:member});
+  const tasks=await req('/api/records/tasks',{token:member});
+  const reports=await req('/api/records/reports',{token:member});
+  const events=await req('/api/records/events',{token:member});
+  for(const result of [finance,contracts,tasks,reports,events])assert.equal(result.status,200,JSON.stringify(result.data));
+  assert.equal(finance.data.payment_rows,undefined,'Member must not get other people’s payment rows');
+  assert.ok(Array.isArray(contracts.data.items));
+  const memberAccounts=await req('/api/users',{token:member});
+  assert.equal(memberAccounts.data.items.length,1,'Overview must not depend on unrestricted user account data');
+});
 // Run destructive session-revocation coverage last: other integration tests use this member's active session.
 test('blocking user revokes sessions and stops access',async()=>{const u=(await req('/api/users',{token:leader})).data.items.find(x=>x.id===memberId);const r=await req(`/api/users/${memberId}`,{method:'PATCH',token:leader,data:{...u,status:'blocked'}});assert.equal(r.status,200,JSON.stringify(r.data));assert.equal((await req('/api/auth/me',{token:member})).status,401);});
