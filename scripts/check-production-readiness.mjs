@@ -56,7 +56,7 @@ export async function checkProduction({fetcher=fetch,base=PRODUCTION}={}){
    'Public page unexpectedly missing expected HTML: '+path);
  }
 
- return {passed:true,readOnlyRequests:8,base};
+ return {passed:true,readOnlyRequests:7,base};
 }
 
 if(process.argv[1]&&fileURLToPath(import.meta.url)===process.argv[1]){
