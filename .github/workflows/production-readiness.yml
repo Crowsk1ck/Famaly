@@ -1,0 +1,43 @@
+name: GRIZZLY production readiness (read-only)
+
+on:
+  schedule:
+    - cron: '13 6 * * *'   # Daily: public health, anonymous RBAC, SEO
+    - cron: '21 7 * * 2'   # Tuesday, after Monday private D1 backup
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: grizzly-readonly-production-check
+  cancel-in-progress: false
+
+jobs:
+  production_health:
+    name: Production GET-only availability and authorization
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify health, public API and anonymous auth barriers
+        run: node scripts/check-production-readiness.mjs
+
+  backup_freshness:
+    name: Check last successful encrypted private D1 backup
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '21 7 * * 2'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify a successful private backup run after v17.0
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/check-backup-freshness.mjs

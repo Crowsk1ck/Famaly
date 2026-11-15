@@ -1,6 +1,6 @@
 {
   "name": "grizzly-family-panel",
-  "version": "17.0.0",
+  "version": "17.1.0",
   "private": true,
   "type": "module",
   "description": "Grizzly GTA 5 RP — public website and secure Cloudflare D1 management panel",
@@ -13,7 +13,9 @@
     "build:social": "node scripts/build-social-preview.mjs",
     "predeploy": "npm run build:social",
     "check:perf": "node scripts/check-performance-budget.mjs",
-    "check:backup": "bash scripts/check-backup-roundtrip.sh"
+    "check:backup": "bash scripts/check-backup-roundtrip.sh",
+    "check:production": "node scripts/check-production-readiness.mjs",
+    "check:backup-freshness": "node scripts/check-backup-freshness.mjs"
   },
   "devDependencies": {
     "wrangler": "^4.47.0",

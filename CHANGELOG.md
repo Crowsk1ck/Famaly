@@ -1,5 +1,13 @@
 # Changelog
 
+## 17.1.0 — 2026-11-15
+
+- Scheduled, read-only production monitoring: public health, public API, anonymous access controls, and security headers.
+- Weekly GitHub metadata check for successful private encrypted D1 backups after v17.0; does not access backup material or alter production.
+- Node.js fixture tests cover privacy failures, missing authentication controls, and stale/failed backup runs.
+- Closed superseded legacy PRs #1, #8, and #46 without merging old patches; all requested core features already exist in main.
+- Production-account acceptance and actual encrypted R2 backup validation remain tracked in Issue #97.
+
 ## 17.0.0 — 2026-11-14
 
 - **v16.1:** real Chromium acceptance for logged-in SPA: 4 roles × desktop/mobile, local synthetic API only; runs automatically in GitHub Verify.
