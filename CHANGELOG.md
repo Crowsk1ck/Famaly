@@ -1,3 +1,12 @@
+## 17.2.0 — 2026-11-25
+
+- Added public **/register/** page styled after the requested dark GTA RP portal: login, password, in-game nickname, numeric Static ID, Discord and Telegram.
+- Public registration creates a **pending request** only, never an active session or elevated account. Leader-only moderation creates a regular member after explicit approval.
+- Secure PBKDF2 password hashes are never returned by APIs and are cleared from reviewed registration requests; CSRF/header checks, IP rate limits and optimistic version checks protect moderation.
+- Added Telegram as a private account field; no contact details appear in the public family roster.
+- Added additive D1 migration `0009_public_account_registration.sql` and a strictly guarded one-time production migration before new Worker deployment.
+- Responsive design, public SEO, tests (API and desktop/mobile Chromium), and production read-only registration smoke checks.
+
 # Changelog
 
 ## 17.1.0 — 2026-11-15

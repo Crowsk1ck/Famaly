@@ -44,7 +44,8 @@ test('all dedicated public pages have own routes and no unnecessary sections',()
     '#achievements':['achievements'],
     '#gallery':['gallery'],
     '#calendar':['calendar'],
-    '#join':['join']
+    '#join':['join'],
+    '#register':['register']
   };
   for(const [hash,expected] of Object.entries(map)){
     const html=publicHtml({hash});
@@ -237,4 +238,20 @@ test('mobile menu preserves login access when desktop login button is hidden on 
   assert.ok(css.includes('overflow:clip;font-family:Inter'));
   assert.ok(css.includes('.gr-header-actions>.gr-login-btn{display:none}'));
   assert.ok(css.includes('.gr-mobile-menu nav{width:min(294px'));
+});
+
+test('v17.2 registration page matches the two-column portal layout and stays separate from recruitment',()=>{
+ const html=publicHtml({hash:'#register'});
+ for(const field of ['username','password','nickname','game_id','discord','telegram']){
+  assert.ok(html.includes('name="'+field+'"'),'Missing registration field '+field);
+ }
+ assert.ok(html.includes('id="register-form"'));
+ assert.ok(html.includes('class="gr-register-grid"'));
+ assert.ok(html.includes('РЕЄСТРАЦІЯ'));
+ assert.ok(html.includes('href="/register/"'));
+ assert.ok(html.includes('data-action="show-login"'));
+ assert.ok(html.includes('autocomplete="new-password"'));
+ assert.ok(html.includes('minlength="12"'));
+ assert.ok(!html.includes('id="apply-form"'),'Public signup must not submit a recruitment application');
+ assert.ok(!html.includes('name="role"'),'Signup cannot choose a privileged role');
 });

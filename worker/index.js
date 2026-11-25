@@ -223,6 +223,12 @@ function validApplicationStatus(value){
   return value;
 }
 function applicationView(record){return {...record,status:applicationStatus(record.status)};}
+// A registration contains a password hash until review. Never return it via an API.
+function registrationView(r){
+ return {id:r.id,username:r.username,nickname:r.nickname,game_id:r.game_id,
+  discord:r.discord,telegram:r.telegram,status:r.status,version:r.version,
+  created_at:r.created_at,reviewed_at:r.reviewed_at};
+}
 function dateInput(v){const s=str(v,40);if(!s)return '';if(!/^\d{4}-\d\d-\d\d(?:T\d\d:\d\d(?::\d\d)?)?$/.test(s))fail(400,'Невірний формат дати');const [year,month,day,hour=0,minute=0,second=0]=s.split(/[-T:]/).map(Number);const t=new Date(Date.UTC(year,month-1,day,hour,minute,second));if(t.getUTCFullYear()!==year||t.getUTCMonth()!==month-1||t.getUTCDate()!==day||t.getUTCHours()!==hour||t.getUTCMinutes()!==minute||t.getUTCSeconds()!==second)fail(400,'Некоректна календарна дата');return s;}
 function tokenValue(){const b=new Uint8Array(32);crypto.getRandomValues(b);return [...b].map(x=>x.toString(16).padStart(2,'0')).join('');}
 async function sha256(s){const d=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s));return [...new Uint8Array(d)].map(x=>x.toString(16).padStart(2,'0')).join('');}
@@ -236,7 +242,7 @@ function requirePerm(user,perm){if(!can(user,perm))fail(403,'Недостатн�
 function manageInDepartment(user,department){return user.role!=='head'||(!!user.department_id && user.department_id===department);}
 function cookie(req,token){const host=new URL(req.url).hostname;const secure=(host!=='localhost'&&host!=='127.0.0.1')?'; Secure':'';return `grizzly_session=${token}; Path=/; HttpOnly; SameSite=Strict${secure}; Max-Age=604800`;}
 function clearCookie(req){return cookie(req,'')+'; Max-Age=0';}
-function safeUser(u){if(!u)return null;return {id:u.id,username:u.username,nickname:u.nickname,game_id:u.game_id,discord:u.discord,role:u.role,permissions:u.role==='head'&&!u.head_appointed?['members:read','stats:read']:permissions(u),head_appointed:u.role==='head'?!!u.head_appointed:undefined,custom_permissions:parseJson(u.permissions,[]),rank_id:u.rank_id,department_id:u.department_id,joined_at:u.joined_at,status:u.status,activity:u.activity,version:u.version,created_at:u.created_at,updated_at:u.updated_at};}
+function safeUser(u){if(!u)return null;return {id:u.id,username:u.username,nickname:u.nickname,game_id:u.game_id,discord:u.discord,telegram:u.telegram||'',role:u.role,permissions:u.role==='head'&&!u.head_appointed?['members:read','stats:read']:permissions(u),head_appointed:u.role==='head'?!!u.head_appointed:undefined,custom_permissions:parseJson(u.permissions,[]),rank_id:u.rank_id,department_id:u.department_id,joined_at:u.joined_at,status:u.status,activity:u.activity,version:u.version,created_at:u.created_at,updated_at:u.updated_at};}
 async function audit(db,user,action,entity,id,detail=''){await db.prepare('INSERT INTO audit(id,actor_id,actor_name,action,entity,entity_id,detail,created_at) VALUES(?,?,?,?,?,?,?,?)').bind(uuid(),user?.id||'system',user?.username||'system',action,entity,id,str(detail,1000),now()).run();}
 async function notify(db,userId,title,details=''){if(!userId)return;await db.prepare('INSERT INTO notifications(id,user_id,title,details,created_at) VALUES(?,?,?,?,?)').bind(uuid(),userId,str(title,150),str(details,600),now()).run();}
 // A Discord webhook is a credential. Never store it in D1, echo it in JSON,
@@ -752,6 +758,35 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
     const key='apply:'+await sha256(publicOrigin(req));await rateCheck(db,key,3,60);const b=await body(req);const nickname=str(b.nickname,80),gameId=str(b.game_id,40),motivation=str(b.motivation,1400);if(!nickname||!gameId||motivation.length<10)fail(400,'Вкажіть нік, ігровий ID та мотивацію (від 10 символів)');
     const id=uuid(),t=now();await db.prepare('INSERT INTO applications(id,nickname,game_id,discord,experience,motivation,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)').bind(id,nickname,gameId,str(b.discord,120),str(b.experience,700),motivation,'Очікує',t,t).run();await rateFail(db,key,1000,60);queueDiscord(ctx,db,env,'applications',{nickname,gameId,status:'Очікує'},applicationWebhookKind('Очікує'));return json({ok:true,message:'Заявку надіслано. Акаунт не створюється автоматично.'},201);
   }
+  // Public registration is *not* an invitation and cannot create an active
+  // user. Only an explicitly approved request becomes a member account.
+  if(path==='/api/register'&&method==='POST'){
+    const ipKey='register:'+await sha256(publicOrigin(req));
+    await rateCheck(db,ipKey,3,60);
+    const b=await body(req);
+    if(b.website)fail(400,'Некоректна форма');
+    const username=str(b.username,50).toLowerCase();
+    if(!/^[a-z0-9_.-]{3,50}$/.test(username))fail(400,'Логін: 3–50 символів латиницею, цифри, _ . -');
+    const nickname=str(b.nickname,80),gameId=str(b.game_id,10);
+    const discord=str(b.discord,120),telegram=str(b.telegram,40);
+    if(nickname.length<3||!/^[0-9]{1,10}$/.test(gameId))fail(400,'Вкажіть ігровий нік (від 3 символів) та числовий Static ID');
+    if(telegram&&!/^@?[a-zA-Z0-9_]{5,32}$/.test(telegram))fail(400,'Некоректний Telegram (5–32 символи, без пробілів)');
+    const passwordHash=await hashPassword(b.password);
+    await rateFail(db,ipKey,3,60);
+    const existing=await db.prepare('SELECT id FROM users WHERE username=? COLLATE NOCASE').bind(username).first();
+    if(existing)fail(409,'Логін уже зайнятий. Оберіть інший');
+    const id=uuid(),t=now();
+    try{
+      await db.prepare(`INSERT INTO account_registrations(id,username,password_hash,nickname,game_id,discord,telegram,created_at,updated_at)
+       VALUES(?,?,?,?,?,?,?,?,?)`).bind(id,username,passwordHash,nickname,gameId,discord,telegram,t,t).run();
+    }catch(e){
+      if(/UNIQUE|constraint/i.test(String(e)))fail(409,'Для цього логіна вже є заявка на розгляді');
+      throw e;
+    }
+    const leaders=await allRows(db,"SELECT id FROM users WHERE role='leader' AND status='active'");
+    for(const leader of leaders)await notify(db,leader.id,'Нова реєстрація на порталі',nickname+' · '+username);
+    return json({ok:true,message:'Реєстрацію отримано. Акаунт стане доступним після схвалення лідером.'},202);
+  }
   if(path==='/api/setup/bootstrap'&&method==='POST'){
     const configured=env.BOOTSTRAP_TOKEN||'';if(configured.length<32)fail(503,'Для створення лідера налаштуйте секрет BOOTSTRAP_TOKEN (мінімум 32 символи)');
     const supplied=req.headers.get('x-bootstrap-token')||'';if(supplied.length!==configured.length)fail(403,'Невірний токен налаштування');let diff=0;for(let i=0;i<configured.length;i++)diff|=configured.charCodeAt(i)^supplied.charCodeAt(i);if(diff)fail(403,'Невірний токен налаштування');
@@ -786,7 +821,7 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
     const all=await allRows(db,'SELECT * FROM users ORDER BY created_at DESC');return json({items:all.filter(u=>u.id===user.id||can(user,'members:read')&&manageInDepartment(user,u.department_id)).map(safeUser)});
   }
   if(path==='/api/users'&&method==='POST'){
-    requirePerm(user,'members:write');if(user.role==='head')fail(403,'Немає прав');const b=await body(req),username=str(b.username,50).toLowerCase();if(!/^[a-z0-9_.-]{3,50}$/.test(username))fail(400,'Логін: латиниця, цифри, _ . - (від 3 символів)');const role=ROLES.includes(b.role)?b.role:'member';if(user.role!=='leader'&&role!=='member')fail(403,'Тільки лідер призначає керівні ролі');const pw=await hashPassword(b.password),id=uuid(),t=now();await db.prepare('INSERT INTO users(id,username,password_hash,nickname,game_id,discord,role,rank_id,department_id,joined_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)').bind(id,username,pw,str(b.nickname,80),str(b.game_id,40),str(b.discord,120),role,b.rank_id?Number(b.rank_id):null,str(b.department_id,80)||null,dateInput(b.joined_at)||t.slice(0,10),t,t).run();await audit(db,user,'create','users',id,username);return json({item:safeUser(await db.prepare('SELECT * FROM users WHERE id=?').bind(id).first())},201);
+    requirePerm(user,'members:write');if(user.role==='head')fail(403,'Немає прав');const b=await body(req),username=str(b.username,50).toLowerCase();if(!/^[a-z0-9_.-]{3,50}$/.test(username))fail(400,'Логін: латиниця, цифри, _ . - (від 3 символів)');const role=ROLES.includes(b.role)?b.role:'member';if(user.role!=='leader'&&role!=='member')fail(403,'Тільки лідер призначає керівні ролі');const pw=await hashPassword(b.password),id=uuid(),t=now();await db.prepare('INSERT INTO users(id,username,password_hash,nickname,game_id,discord,telegram,role,rank_id,department_id,joined_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(id,username,pw,str(b.nickname,80),str(b.game_id,40),str(b.discord,120),str(b.telegram,40),role,b.rank_id?Number(b.rank_id):null,str(b.department_id,80)||null,dateInput(b.joined_at)||t.slice(0,10),t,t).run();await audit(db,user,'create','users',id,username);return json({item:safeUser(await db.prepare('SELECT * FROM users WHERE id=?').bind(id).first())},201);
   }
   m=path.match(/^\/api\/users\/([\w-]+)(?:\/(reset-password))?$/);
   if(m&&m[2]==='reset-password'&&method==='POST'){
@@ -804,7 +839,7 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
       (manager&&b.status==='blocked')))
       fail(409,'Спочатку призначте іншого керівника або зніміть призначення в налаштуваннях підрозділу');
     const customPerms=user.role==='leader'&&Object.prototype.hasOwnProperty.call(b,'permissions')?JSON.stringify({custom:true,items:uniqueIds(b.permissions,40)}):old.permissions;
-    const result=await db.prepare('UPDATE users SET nickname=?,game_id=?,discord=?,role=?,permissions=?,rank_id=?,department_id=?,joined_at=?,status=?,activity=?,version=version+1,updated_at=? WHERE id=? AND version=?').bind(str(b.nickname??old.nickname,80),str(b.game_id??old.game_id,40),str(b.discord??old.discord,120),role,customPerms,manager?(b.rank_id?Number(b.rank_id):null):old.rank_id,manager?(str(b.department_id,80)||null):old.department_id,manager?dateInput(b.joined_at??old.joined_at):old.joined_at,manager&&['active','blocked'].includes(b.status)?b.status:old.status,str(b.activity??old.activity,100),now(),old.id,b.version).run();if(result.meta.changes!==1)fail(409,'Запис змінив інший користувач. Оновіть дані');
+    const result=await db.prepare('UPDATE users SET nickname=?,game_id=?,discord=?,telegram=?,role=?,permissions=?,rank_id=?,department_id=?,joined_at=?,status=?,activity=?,version=version+1,updated_at=? WHERE id=? AND version=?').bind(str(b.nickname??old.nickname,80),str(b.game_id??old.game_id,40),str(b.discord??old.discord,120),str(b.telegram??old.telegram,40),role,customPerms,manager?(b.rank_id?Number(b.rank_id):null):old.rank_id,manager?(str(b.department_id,80)||null):old.department_id,manager?dateInput(b.joined_at??old.joined_at):old.joined_at,manager&&['active','blocked'].includes(b.status)?b.status:old.status,str(b.activity??old.activity,100),now(),old.id,b.version).run();if(result.meta.changes!==1)fail(409,'Запис змінив інший користувач. Оновіть дані');
     if(b.status==='blocked')await db.prepare('UPDATE sessions SET revoked_at=? WHERE user_id=?').bind(now(),old.id).run();await audit(db,user,'update','users',old.id);return json({item:safeUser(await db.prepare('SELECT * FROM users WHERE id=?').bind(old.id).first())});
   }
   if(path==='/api/ranks'&&method==='GET')return json({items:await allRows(db,'SELECT * FROM ranks ORDER BY id'),templates:user.role==='leader'?GRIZZLY_RANK_TEMPLATES:undefined});
@@ -1240,6 +1275,56 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
     const r=await db.prepare(`UPDATE settings SET value=CASE key ${caseSql} ELSE value END,version=version+1,updated_at=? WHERE key IN (${keys}) AND (SELECT COUNT(*) FROM settings WHERE ${guard})=?`).bind(...args,normalized.length).run();
     if(r.meta.changes!==normalized.length)fail(409,'Налаштування змінив інший лідер. Оновіть сторінку');await audit(db,user,'update','settings','site',entries.map(([k])=>k).join(','));return json({items:await settings(db)});
   }
+  if(path==='/api/registrations'&&method==='GET'){
+    if(user.role!=='leader')fail(403,'Лише лідер переглядає реєстрації');
+    const requests=await allRows(db,`SELECT id,username,nickname,game_id,discord,telegram,status,version,created_at,reviewed_at
+     FROM account_registrations ORDER BY created_at DESC LIMIT 300`);
+    return json({items:requests.map(registrationView)});
+  }
+  m=path.match(/^\/api\/registrations\/([\w-]+)\/review$/);
+  if(m&&method==='POST'){
+    if(user.role!=='leader')fail(403,'Лише лідер схвалює нові акаунти');
+    const b=await body(req),decision=str(b.decision,12);
+    if(!['approve','reject'].includes(decision))fail(400,'Некоректне рішення');
+    if(!Number.isInteger(b.version)||b.version<1)fail(428,'Потрібна актуальна версія заявки');
+    const request=await db.prepare('SELECT id,nickname,username,status,version FROM account_registrations WHERE id=?').bind(m[1]).first();
+    if(!request)fail(404,'Реєстрацію не знайдено');
+    if(request.status!=='Очікує'||request.version!==b.version)fail(409,'Реєстрацію вже розглянули. Оновіть сторінку');
+    const t=now();
+    if(decision==='reject'){
+      const done=await db.prepare(`UPDATE account_registrations SET status='Відхилено',
+        password_hash=NULL,reviewed_by=?,reviewed_at=?,updated_at=?,version=version+1
+        WHERE id=? AND status='Очікує' AND version=?`).bind(user.id,t,t,request.id,b.version).run();
+      if(done.meta.changes!==1)fail(409,'Реєстрацію змінено іншим користувачем');
+      await audit(db,user,'reject','account_registrations',request.id,request.username);
+      return json({ok:true,status:'Відхилено'});
+    }
+    const memberId=uuid();
+    let results;
+    try{
+      results=await db.batch([
+        db.prepare(`INSERT INTO users(id,username,password_hash,nickname,game_id,discord,telegram,role,rank_id,joined_at,created_at,updated_at)
+          SELECT ?,username,password_hash,nickname,game_id,discord,telegram,'member',1,?,?,?
+          FROM account_registrations WHERE id=? AND status='Очікує' AND version=?
+          AND password_hash IS NOT NULL
+          AND NOT EXISTS(SELECT 1 FROM users WHERE users.username=account_registrations.username COLLATE NOCASE)`)
+          .bind(memberId,t.slice(0,10),t,t,request.id,b.version),
+        db.prepare(`UPDATE account_registrations SET status='Прийнято',
+          password_hash=NULL,reviewed_by=?,reviewed_at=?,updated_at=?,version=version+1
+          WHERE id=? AND status='Очікує' AND version=?
+          AND EXISTS(SELECT 1 FROM users WHERE id=?)`)
+          .bind(user.id,t,t,request.id,b.version,memberId)
+      ]);
+    }catch(e){
+      if(/UNIQUE|constraint/i.test(String(e)))fail(409,'Логін уже зайнятий. Перевірте склад сім’ї');
+      throw e;
+    }
+    if(results[0].meta.changes!==1||results[1].meta.changes!==1)
+      fail(409,'Не вдалося схвалити акаунт: логін зайнятий або заявку змінено');
+    await audit(db,user,'approve','account_registrations',request.id,request.username);
+    await notify(db,memberId,'Акаунт GRIZZLY активовано','Тепер ви можете увійти до особистого кабінету.');
+    return json({ok:true,status:'Прийнято',user_id:memberId});
+  }
   if(path==='/api/applications'&&method==='GET'){requirePerm(user,'recruitment:manage');if(user.role==='head'){const appointed=await db.prepare('SELECT head_id FROM departments WHERE id=?').bind('recruitment').first();if(user.department_id!=='recruitment'||appointed?.head_id!==user.id)fail(403,'Лише призначений керівник рекрутингу переглядає заявки');}return json({items:(await allRows(db,'SELECT * FROM applications ORDER BY created_at DESC LIMIT 500')).map(applicationView)});}
   m=path.match(/^\/api\/applications\/([\w-]+)$/);if(m&&method==='PATCH'){
     requirePerm(user,'recruitment:manage');if(user.role==='head'){const appointed=await db.prepare('SELECT head_id FROM departments WHERE id=?').bind('recruitment').first();if(user.department_id!=='recruitment'||appointed?.head_id!==user.id)fail(403,'Лише призначений керівник рекрутингу розглядає заявки');}const b=await body(req);if(!Number.isInteger(b.version))fail(428,'Потрібна версія');const old=await db.prepare('SELECT nickname,status FROM applications WHERE id=?').bind(m[1]).first();if(!old)fail(404,'Заявку не знайдено');const status=validApplicationStatus(b.status);const r=await db.prepare('UPDATE applications SET status=?,comment=?,version=version+1,updated_at=? WHERE id=? AND version=?').bind(status,str(b.comment,1200),now(),m[1],b.version).run();if(r.meta.changes!==1)fail(409,'Заявку змінено іншим користувачем');await audit(db,user,'review','applications',m[1],status);if(applicationStatus(old.status)!==status)queueDiscord(ctx,db,env,'decisions',{nickname:old.nickname,status},applicationWebhookKind(status));return json({ok:true});
@@ -1613,6 +1698,7 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
 }
 // Server-rendered public landing metadata and crawlable summary; private API content is never embedded.
 const PUBLIC_SEO={
+ '/register/':{title:'Реєстрація на порталі — GRIZZLY Family',description:'Створіть заявку на особистий акаунт GRIZZLY FAMILY. Доступ до порталу відкривається після схвалення керівництвом.',heading:'РЕЄСТРАЦІЯ GRIZZLY',intro:'Створіть профіль для доступу до особистого кабінету. Нову реєстрацію перевіряє лідер сім’ї.'},
  '/about/':{title:'Історія та напрямки — GRIZZLY Family',description:'Історія сім’ї Grizzly, її принципи, керівництво та напрямки у GTA 5 Roleplay.',heading:'ІСТОРІЯ GRIZZLY',intro:'Сім’я Grizzly об’єднує гравців, для яких важливі повага, дисципліна й командна робота.'},
  '/news/':{title:'Новини сім’ї — GRIZZLY Family',description:'Оголошення, новини та важливі події сім’ї GRIZZLY у GTA 5 RP.',heading:'НОВИНИ GRIZZLY',intro:'Офіційні новини та оголошення сім’ї. Актуальні записи з’являються після публікації.'},
  '/achievements/':{title:'Досягнення — GRIZZLY Family',description:'Перемоги CAPT, нагороди та важливі досягнення GRIZZLY Family.',heading:'ДОСЯГНЕННЯ GRIZZLY',intro:'Здобутки сім’ї, результати спільних подій і підтверджені перемоги.'},
