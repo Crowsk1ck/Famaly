@@ -184,7 +184,7 @@ function renderPublicNews(){
       '<div class="gr-news-count">'+String(i+1).padStart(2,'0')+' / GRIZZLY</div>'+
       '<h3>'+esc(post.title)+'</h3><p class="gr-news-excerpt">'+esc(shortText)+'</p>'+
       (txt.length>260?'<details class="gr-news-expand"><summary>Читати повністю <span>↗</span></summary><p>'+esc(txt)+'</p></details>':'')+
-      (post.category==='recruitment'?'<a class="gr-news-join" href="#join">Подати заявку ↗</a>':'')+
+      (post.category==='recruitment'?'<a class="gr-news-join" href="/register/">Зареєструватися ↗</a>':'')+
       (post.featured?'<span class="gr-news-important">★ Важливе</span>':'')+
       '</article>';
   }).join('')+'</div>';
@@ -407,7 +407,7 @@ function renderPublic(){
     if(d.protocol==='https:'&&['discord.gg','discord.com','www.discord.com'].includes(d.hostname))discord=d.href;
   }catch{}
   const discordLink=discord?'<a class="gr-nav-discord" href="'+esc(discord)+'" target="_blank" rel="noopener noreferrer">Discord ↗</a>':'';
-  const navLinks=[['home','Головна'],['about','Про сім’ю'],['news','Новини'],['achievements','Досягнення'],['gallery','Галерея'],['calendar','Календар'],['join','Вступити']].map(([route,label])=>'<a href="'+(grPublicPaths[route]||'/')+'"'+(page===route?' aria-current="page"':'')+'>'+label+'</a>').join('')+discordLink;
+  const navLinks=[['home','Головна'],['about','Про сім’ю'],['news','Новини'],['achievements','Досягнення'],['gallery','Галерея'],['calendar','Календар'],['register','Реєстрація']].map(([route,label])=>'<a href="'+(grPublicPaths[route]||'/')+'"'+(page===route?' aria-current="page"':'')+'>'+label+'</a>').join('')+discordLink;
   $('#app').innerHTML=
   '<div class="gr-public">'+
   '<div class="gr-topline"><div class="gr-container"><span><i></i> GTA 5 ROLEPLAY · LOS SANTOS</span><span>GRIZZLY FAMILY / COMMUNITY</span></div></div>'+
@@ -425,7 +425,7 @@ function renderPublic(){
     '<div class="gr-hero-content"><div class="gr-eyebrow"><span class="gr-red-dot"></span> УКРАЇНСЬКА GTA 5 RP СІМ’Я <span class="gr-eyebrow-rule"></span> LOS SANTOS</div>'+
       '<h1>БІЛЬШЕ НІЖ<br><em>СІМ’Я.</em><span> GRIZZLY.</span></h1>'+
       '<p class="gr-hero-description">'+esc(introText)+'</p>'+
-      '<div class="gr-hero-buttons"><a class="gr-button gr-button-primary" href="#join">Стати частиною GRIZZLY <span aria-hidden="true">↗</span></a><a class="gr-button gr-button-outline" href="#about">Наша історія <span aria-hidden="true">→</span></a></div>'+
+      '<div class="gr-hero-buttons"><a class="gr-button gr-button-primary" href="/register/">Стати частиною GRIZZLY <span aria-hidden="true">↗</span></a><a class="gr-button gr-button-outline" href="#about">Наша історія <span aria-hidden="true">→</span></a></div>'+
       '<div class="gr-hero-values"><span><b>01</b> Братерство</span><span><b>02</b> Дисципліна</span><span><b>03</b> Розвиток</span></div>'+
     '</div>'+
     '<div class="gr-hero-art'+(heroPhoto?' has-photo':'')+'" aria-label="Емблема GRIZZLY">'+
@@ -441,7 +441,7 @@ function renderPublic(){
     '</div><div class="gr-hero-footer"><div class="gr-container"><span>SCROLL TO EXPLORE <b>↓</b></span><span>GRIZZLY · STRENGTH IN UNITY</span></div></div></section>')+
     ('<section class="gr-section gr-home-intro" id="home-intro"><div class="gr-container"><span class="gr-kicker">01 — ПРО НАС</span><div class="gr-section-heading gr-heading-row"><h2>ОДНА СІМ’Я.<br><span>ОДИН ХАРАКТЕР.</span></h2><p>Сила в єдності. Повага — у вчинках.</p></div><p class="gr-home-story">'+esc(history.length>320?history.slice(0,320).trimEnd()+'…':history)+'</p><a class="gr-text-link" href="#about">Читати нашу історію <span>↗</span></a><div class="gr-home-features"><article><span>01 / CAPT</span><h3>КОМАНДНА ГРА</h3><p>Тренування, бої та командна тактика.</p></article><article><span>02 / FAMILY</span><h3>СВОЇ ЛЮДИ</h3><p>Довіра, повага та взаємодопомога.</p></article><article><span>03 / PROGRESS</span><h3>РОЗВИТОК</h3><p>Контракти, івенти й спільна активність.</p></article></div></div></section>')+
     ('<section class="gr-section gr-home-news" id="home-news"><div class="gr-container"><div class="gr-section-heading gr-heading-row"><div><span class="gr-kicker">02 — ЖИТТЯ СІМ’Ї</span><h2>ОСТАННІ <span>НОВИНИ.</span></h2></div><a href="#news" class="gr-text-link">Усі новини <span>↗</span></a></div>'+renderPublicNewsPreview()+'</div></section>')+
-    ('<section class="gr-home-cta" id="home-join"><div class="gr-container gr-home-cta-layout"><div><span class="gr-kicker">03 — ПРИЄДНАЙСЯ ДО НАС</span><h2>СТАНЬ ЧАСТИНОЮ<br><span>GRIZZLY FAMILY.</span></h2><p>Твоя команда чекає. Заповни коротку анкету для вступу.</p></div><a class="gr-button gr-button-primary" href="#join">Подати заявку <span>↗</span></a></div></section>')
+    ('<section class="gr-home-cta" id="home-join"><div class="gr-container gr-home-cta-layout"><div><span class="gr-kicker">03 — ПРИЄДНАЙСЯ ДО НАС</span><h2>СТАНЬ ЧАСТИНОЮ<br><span>GRIZZLY FAMILY.</span></h2><p>Твоя команда чекає. Зареєструйся на порталі — доступ відкриється після схвалення лідером.</p></div><a class="gr-button gr-button-primary" href="/register/">Реєстрація <span>↗</span></a></div></section>')
   ):'')+
   (page==='about'?(
     ('<section class="gr-section gr-about" id="about"><div class="gr-container"><div class="gr-section-heading"><span class="gr-kicker">01 — НАША ІСТОРІЯ</span><h2>ПОВАГА НЕ ДАЄТЬСЯ.<br><span>ЇЇ ЗАСЛУГОВУЮТЬ.</span></h2></div>'+
@@ -485,7 +485,7 @@ function renderPublic(){
        '<p class="gr-form-note full">Заявка на вступ — окремо від реєстрації кабінету. <a href="/register/">Створити акаунт на порталі ↗</a></p>'+
      '</form></div></div></section>'):'')+
     '</main>'+
-  '<footer class="gr-footer"><div class="gr-container"><div class="gr-footer-top"><a href="#home" class="gr-footer-brand">GRIZZLY<span>.</span></a><p>Сила в єдності.<br>Повага — у вчинках.</p><a href="#home" class="gr-back-top">НАГОРУ ↑</a></div><div class="gr-footer-bottom"><span>© '+new Date().getFullYear()+' GRIZZLY FAMILY · GTA 5 RP</span><span>MADE FOR THE FAMILY. BUILT ON LOYALTY.</span>'+(discord?'<a href="'+esc(discord)+'" target="_blank" rel="noopener noreferrer">DISCORD ↗</a>':'<a href="#join">ВСТУПИТИ ↗</a>')+'</div></div></footer>'+
+  '<footer class="gr-footer"><div class="gr-container"><div class="gr-footer-top"><a href="#home" class="gr-footer-brand">GRIZZLY<span>.</span></a><p>Сила в єдності.<br>Повага — у вчинках.</p><a href="#home" class="gr-back-top">НАГОРУ ↑</a></div><div class="gr-footer-bottom"><span>© '+new Date().getFullYear()+' GRIZZLY FAMILY · GTA 5 RP</span><span>MADE FOR THE FAMILY. BUILT ON LOYALTY.</span>'+(discord?'<a href="'+esc(discord)+'" target="_blank" rel="noopener noreferrer">DISCORD ↗</a>':'<a href="/register/">РЕЄСТРАЦІЯ ↗</a>')+'</div></div></footer>'+
   '</div>';
   if(typeof window!=='undefined'&&typeof window.requestAnimationFrame==='function'){
     window.requestAnimationFrame(()=>{

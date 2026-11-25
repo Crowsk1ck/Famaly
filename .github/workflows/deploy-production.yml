@@ -107,9 +107,9 @@ jobs:
             await page.goto('https://grizzly-family.online/',{waitUntil:'networkidle2',timeout:30000});
             await page.waitForSelector('#gr-main',{timeout:20000});
             await page.evaluate(()=>window.__grizzlyNavigationProbe='persistent-document');
-            await page.evaluate(()=>document.querySelector('a[href="/join/"]').click());
-            await page.waitForFunction(()=>location.pathname==='/join/' && !!document.querySelector('#apply-form'),{timeout:20000});
-            const state=await page.evaluate(()=>({probe:window.__grizzlyNavigationProbe,form:!!document.querySelector('#apply-form'),url:location.pathname}));
+            await page.evaluate(()=>document.querySelector('.gr-nav a[href="/register/"]').click());
+            await page.waitForFunction(()=>location.pathname==='/register/' && !!document.querySelector('#register-form'),{timeout:20000});
+            const state=await page.evaluate(()=>({probe:window.__grizzlyNavigationProbe,form:!!document.querySelector('#register-form'),url:location.pathname}));
             if(state.probe!=='persistent-document')throw new Error('Public navigation reloaded the document: '+JSON.stringify(state));
             await page.goBack({waitUntil:'domcontentloaded'});
             await page.waitForFunction(()=>location.pathname==='/'&&!!document.querySelector('#gr-main'),{timeout:15000});
@@ -121,15 +121,15 @@ jobs:
             await page.waitForSelector('#gr-main',{timeout:20000});
             await page.click('.gr-mobile-menu summary');
             await page.waitForFunction(()=>document.querySelector('.gr-mobile-menu')?.open===true,{timeout:5000});
-            await page.evaluate(()=>document.querySelector('.gr-mobile-menu a[href="/join/"]').click());
-            await page.waitForFunction(()=>location.pathname==='/join/'&&!!document.querySelector('#apply-form'),{timeout:20000});
+            await page.evaluate(()=>document.querySelector('.gr-mobile-menu a[href="/register/"]').click());
+            await page.waitForFunction(()=>location.pathname==='/register/'&&!!document.querySelector('#register-form'),{timeout:20000});
             const mobile=await page.evaluate(()=>({
               width:innerWidth,
               documentWidth:document.documentElement.scrollWidth,
-              visibleApplication:!!document.querySelector('#apply-form')
+              visibleRegistration:!!document.querySelector('#register-form')
             }));
             console.log('GRIZZLY mobile navigation:',JSON.stringify(mobile));
-            if(!mobile.visibleApplication)throw new Error('Mobile application form not reachable');
+            if(!mobile.visibleRegistration)throw new Error('Mobile registration form not reachable');
             await page.goto('https://grizzly-family.online/register/',{waitUntil:'networkidle2',timeout:30000});
             await page.waitForSelector('#register-form',{timeout:20000});
             const registration=await page.evaluate(()=>({
