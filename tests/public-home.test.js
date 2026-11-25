@@ -53,7 +53,8 @@ test('all dedicated public pages have own routes and no unnecessary sections',()
     assert.ok(!html.includes('id="home"'),hash);
     assert.ok(!html.includes('id="home-intro"'),hash);
     assert.ok(html.includes('class="gr-footer"'),hash);
-    assert.ok(html.includes('aria-current="page"'),hash);
+    if(hash!=='#join')assert.ok(html.includes('aria-current="page"'),hash);
+    else assert.ok(html.includes('id="apply-form"'),'Legacy recruitment stays accessible directly');
   }
   assert.ok(publicHtml({hash:'#join'}).includes('id="apply-form"'));
   assert.ok(!publicHtml({hash:'#about'}).includes('id="apply-form"'));
