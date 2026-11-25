@@ -15,6 +15,7 @@ const date=v=>v?new Date(v).toLocaleDateString('uk-UA',{day:'2-digit',month:'2-d
 const short=v=>String(v||'').slice(0,18);
 const {roles,statuses,applicationStatuses,permissionNames,moduleInfo,groupRoutes}=window.GRIZZLY_UI_CONFIG;
 const nav=[
+  {id:'registrations',text:'Реєстрації',icon:'✉',group:'КЕРІВНИЦТВО'},
   {id:'overview',text:'Огляд',icon:'◫',group:'ГОЛОВНЕ'},
   {id:'members',text:'Учасники',icon:'♟',group:'ГОЛОВНЕ'},
   {id:'dossier',text:'Особові справи',icon:'▤',group:'ГОЛОВНЕ'},
@@ -237,8 +238,8 @@ function renderPublicAchievements(){
     '<div><strong>'+counts.award+'</strong><span>Нагород</span></div></div>'+
     tabs+(shown.length?'<div class="gr-ach-grid">'+cards+'</div>':'<div class="gr-ach-empty"><p>У цій категорії поки немає записів.</p></div>');
 }
-const grPublicRoutes={home:'home',about:'about',team:'about',directions:'about',rules:'about',news:'news',achievements:'achievements',gallery:'gallery',calendar:'calendar',join:'join'};
-const grPublicPaths={home:'/',about:'/about/',news:'/news/',achievements:'/achievements/',gallery:'/gallery/',calendar:'/calendar/',join:'/join/'};
+const grPublicRoutes={home:'home',about:'about',team:'about',directions:'about',rules:'about',news:'news',achievements:'achievements',gallery:'gallery',calendar:'calendar',join:'join',register:'register'};
+const grPublicPaths={home:'/',about:'/about/',news:'/news/',achievements:'/achievements/',gallery:'/gallery/',calendar:'/calendar/',join:'/join/',register:'/register/'};
 function publicPageFromHash(hash){const route=grPublicRoutes[String(hash||'').replace(/^#/,'').toLowerCase()];if(route)return route;const path=String(location.pathname||'/').replace(/^\/+|\/+$/g,'');return grPublicRoutes[path]||'home';}
 function renderPublicNewsPreview(){
   const posts=Array.isArray(state.public?.news)?state.public.news.slice(0,3):[];
@@ -349,13 +350,43 @@ function renderPublicCalendar(){
     (monthEvents.length?monthEvents.map(grCalendarCard).join(''):'<div class="gr-cal-empty">У цьому місяці немає опублікованих заходів. Перевір інший місяць або категорію.</div>')+
     '</div></div>';
 }
+// v17.2: dedicated public sign-up, based on the supplied two-column dark
+// portal reference. The submitted request never creates a session or role.
+function renderPublicRegistration(){
+ return '<section id="register" class="gr-register-scene" aria-labelledby="gr-register-title">'+
+  '<div class="gr-register-card">'+
+    '<div class="gr-register-brand"><img src="/grizzly-header-logo.svg" alt="GRIZZLY FAMILY" width="58" height="58" decoding="async"></div>'+
+    '<p class="gr-register-overline">GRIZZLY FAMILY · ОСОБИСТИЙ КАБІНЕТ</p>'+
+    '<h1 id="gr-register-title">РЕЄСТРАЦІЯ <span>НА ПОРТАЛІ</span></h1>'+
+    '<p class="gr-register-lead">Створи заявку на особистий профіль сім’ї. Доступ відкриється після схвалення лідером.</p>'+
+    '<form id="register-form" class="gr-register-grid" autocomplete="on">'+
+      '<div class="gr-register-field"><label for="reg-username">Логін для входу <span>*</span></label>'+
+        '<input id="reg-username" class="gr-register-input" name="username" required minlength="3" maxlength="50" autocomplete="username" pattern="[A-Za-z0-9_.-]{3,50}" placeholder="grizzly_player"></div>'+
+      '<div class="gr-register-field"><label for="reg-password">Пароль <span>*</span></label>'+
+        '<input id="reg-password" class="gr-register-input" name="password" type="password" required minlength="12" maxlength="128" autocomplete="new-password" placeholder="Мінімум 12 символів"></div>'+
+      '<div class="gr-register-field"><label for="reg-nickname">Ігровий нікнейм <span>*</span></label>'+
+        '<input id="reg-nickname" class="gr-register-input" name="nickname" required minlength="3" maxlength="80" autocomplete="nickname" placeholder="Andriy Grizzly"></div>'+
+      '<div class="gr-register-field"><label for="reg-game-id">Static ID у грі <span>*</span></label>'+
+        '<input id="reg-game-id" class="gr-register-input" name="game_id" required inputmode="numeric" pattern="[0-9]{1,10}" maxlength="10" autocomplete="off" placeholder="10452"></div>'+
+      '<div class="gr-register-field"><label for="reg-discord">Discord</label>'+
+        '<input id="reg-discord" class="gr-register-input" name="discord" maxlength="120" autocomplete="off" placeholder="username"></div>'+
+      '<div class="gr-register-field"><label for="reg-telegram">Telegram</label>'+
+        '<input id="reg-telegram" class="gr-register-input" name="telegram" maxlength="40" autocomplete="off" placeholder="@username"></div>'+
+      '<div class="gr-register-honeypot" aria-hidden="true"><label for="reg-website">Залиш порожнім</label><input id="reg-website" name="website" type="text" tabindex="-1" autocomplete="off"></div>'+
+      '<button class="gr-register-submit" type="submit">Зареєструватися <span aria-hidden="true">→</span></button>'+
+      '<p class="gr-register-note">Ваші дані використовуються для реєстрації в сім’ї. Пароль зберігається лише як захищений хеш.</p>'+
+    '</form>'+
+    '<div class="gr-register-bottom">Вже маєш акаунт? <button type="button" data-action="show-login">Увійти</button></div>'+
+  '</div>'+
+ '</section>';
+}
 function renderPublic(){
   stopNotificationPolling();
   const page=publicPageFromHash(location.hash);
   const routeKey=String(location.pathname||'/')+String(location.hash||'');
   const publicRouteChanged=state.publicLastRoute!==undefined&&state.publicLastRoute!==routeKey;
   state.publicLastRoute=routeKey;
-  const publicTitles={home:'Головна',about:'Про сім’ю',news:'Новини',achievements:'Досягнення',gallery:'Галерея',calendar:'Календар заходів',join:'Вступити'};
+  const publicTitles={home:'Головна',about:'Про сім’ю',news:'Новини',achievements:'Досягнення',gallery:'Галерея',calendar:'Календар заходів',join:'Вступити',register:'Реєстрація'};
   if(typeof document!=='undefined'){
     document.title=(publicTitles[page]||'Головна')+' — GRIZZLY Family | GTA 5 RP';
     const canonical=document.querySelector('link[rel="canonical"]');
@@ -383,9 +414,9 @@ function renderPublic(){
   '<header class="gr-header"><div class="gr-container gr-header-inner">'+
     '<a href="#home" class="gr-logo" aria-label="GRIZZLY — на головну"><img class="gr-logo-image" src="/grizzly-header-logo.svg" alt="" width="48" height="48" decoding="async"><span class="gr-logo-copy"><strong>GRIZZLY</strong><small>FAMILY / GTA V RP</small></span></a>'+
     '<nav class="gr-nav" aria-label="Основна навігація">'+navLinks+'</nav>'+
-    '<div class="gr-header-actions">'+(state.user?'<a class="gr-login-btn" href="/#overview">Відкрити панель <span>↗</span></a>':'<button class="gr-login-btn" data-action="show-login" type="button">Особистий кабінет <span>↗</span></button>')+
+    '<div class="gr-header-actions">'+(state.user?'<a class="gr-login-btn" href="/#overview">Відкрити панель <span>↗</span></a>':'<button class="gr-login-btn" data-action="show-login" type="button">Увійти <span>↗</span></button><a class="gr-register-nav-btn" href="/register/">Реєстрація</a>')+
     '<details class="gr-mobile-menu"><summary aria-label="Відкрити навігацію">☰</summary><nav aria-label="Мобільна навігація">'+navLinks+
-    (state.user?'<a class="gr-mobile-account" href="/#overview">Відкрити панель ↗</a>':'<button type="button" class="gr-mobile-account" data-action="show-login">Особистий кабінет ↗</button>')+
+    (state.user?'<a class="gr-mobile-account" href="/#overview">Відкрити панель ↗</a>':'<button type="button" class="gr-mobile-account" data-action="show-login">Увійти ↗</button><a class="gr-mobile-account" href="/register/">Реєстрація ↗</a>')+
     '</nav></details></div>'+
   '</div></header>'+
   '<main id="gr-main" tabindex="-1">'+
@@ -441,6 +472,7 @@ function renderPublic(){
    '<div id="gr-gallery-content">'+renderPublicGallery()+'</div>'+
   '</div></section>'):'')+
   (page==='calendar'?('<section class="gr-section gr-public-calendar" id="calendar"><div class="gr-container"><div class="gr-section-heading gr-heading-row"><div><span class="gr-kicker">ПЛАНУЙМО РАЗОМ</span><h2>КАЛЕНДАР<br><span>GRIZZLY.</span></h2></div><p>Збори, CAPT та спільні заходи. Тут публікується тільки підтверджений керівництвом розклад.</p></div><div id="gr-calendar-content">'+renderPublicCalendar()+'</div></div></section>'):'')+
+  (page==='register'?renderPublicRegistration():'')+
   (page==='join'?('<section class="gr-section gr-join" id="join"><div class="gr-container gr-join-layout"><div class="gr-join-info"><span class="gr-kicker">08 — ПРИЄДНАЙСЯ ДО НАС</span><h2>ТВОЄ МІСЦЕ<br><span>СЕРЕД СВОЇХ.</span></h2><p>Готовий стати частиною GRIZZLY? Заповни анкету — рекрутер розгляне твою заявку.</p><div class="gr-join-steps"><div><span>01</span><p>Заповни анкету</p></div><div><span>02</span><p>Дочекайся розгляду</p></div><div><span>03</span><p>Приєднайся до команди</p></div></div></div>'+
     '<div class="gr-join-form"><div class="gr-form-header"><span>ЗАЯВКА НА ВСТУП</span><small>GRIZZLY / RECRUITMENT</small></div>'+
      '<form id="apply-form" class="formgrid">'+
@@ -450,7 +482,7 @@ function renderPublic(){
        '<div class="field"><label for="gr-experience">Досвід GTA RP</label><input id="gr-experience" class="input" name="experience" maxlength="700" placeholder="Де грали раніше"></div>'+
        '<div class="field full"><label for="gr-motivation">Чому хочеш вступити? *</label><textarea id="gr-motivation" class="textarea" name="motivation" required minlength="10" maxlength="1400" placeholder="Розкажи про себе, свій досвід та цілі"></textarea></div>'+
        '<button class="gr-button gr-button-primary gr-submit full" type="submit">Надіслати заявку <span>↗</span></button>'+
-       '<p class="gr-form-note full">Заявка не створює акаунт автоматично. Дані доступу видає керівництво після рішення.</p>'+
+       '<p class="gr-form-note full">Заявка на вступ — окремо від реєстрації кабінету. <a href="/register/">Створити акаунт на порталі ↗</a></p>'+
      '</form></div></div></section>'):'')+
     '</main>'+
   '<footer class="gr-footer"><div class="gr-container"><div class="gr-footer-top"><a href="#home" class="gr-footer-brand">GRIZZLY<span>.</span></a><p>Сила в єдності.<br>Повага — у вчинках.</p><a href="#home" class="gr-back-top">НАГОРУ ↑</a></div><div class="gr-footer-bottom"><span>© '+new Date().getFullYear()+' GRIZZLY FAMILY · GTA 5 RP</span><span>MADE FOR THE FAMILY. BUILT ON LOYALTY.</span>'+(discord?'<a href="'+esc(discord)+'" target="_blank" rel="noopener noreferrer">DISCORD ↗</a>':'<a href="#join">ВСТУПИТИ ↗</a>')+'</div></div></footer>'+
@@ -464,7 +496,7 @@ function renderPublic(){
     });
   }
 }
-function loginModal(){modal('Вхід до панелі',`<p class="modal-desc">Логін і пароль видає керівник сім’ї. Реєстрація після заявки не відбувається автоматично.</p><form id="login-form" class="stack"><div class="field"><label>Логін</label><input class="input" name="username" autocomplete="username" required autofocus></div><div class="field"><label>Пароль</label><input class="input" type="password" name="password" autocomplete="current-password" required></div><button type="submit" class="btn">Увійти →</button></form>`);}
+function loginModal(){modal('Вхід до панелі',`<p class="modal-desc">Введіть свій логін і пароль. Нові акаунти активує лідер після перевірки. <a href="/register/">Створити акаунт ↗</a></p><form id="login-form" class="stack"><div class="field"><label>Логін</label><input class="input" name="username" autocomplete="username" required autofocus></div><div class="field"><label>Пароль</label><input class="input" type="password" name="password" autocomplete="current-password" required></div><button type="submit" class="btn">Увійти →</button></form>`);}
 // v16.2: modal focus restoration, keyboard navigation and mobile scroll lock.
 let modalRestoreFocus=null;
 function modal(title,html){
@@ -497,7 +529,7 @@ document.addEventListener('keydown',event=>{
   event.preventDefault();first.focus();
  }
 });
-function visible(n){if(n.id==='inactivity'&&!['leader','deputy','head'].includes(state.user.role))return false;if(n.id==='leadership'&&!['leader','deputy'].includes(state.user.role))return false;if(n.id==='workspace'&&!['leader','deputy','head'].includes(state.user.role))return false;if(['audit','settings'].includes(n.id)&&state.user.role!=='leader')return false;if(n.id==='applications'&&!can('recruitment:manage'))return false;if(['public_news','public_team','public_achievements','public_calendar'].includes(n.id)&&!can('content:manage'))return false;if(n.id==='discipline'&&!can('discipline:manage'))return false;if(n.id==='contracts'&&!can('finance:read')&&!can('finance:manage'))return true;return true;}
+function visible(n){if(n.id==='registrations'&&state.user.role!=='leader')return false;if(n.id==='inactivity'&&!['leader','deputy','head'].includes(state.user.role))return false;if(n.id==='leadership'&&!['leader','deputy'].includes(state.user.role))return false;if(n.id==='workspace'&&!['leader','deputy','head'].includes(state.user.role))return false;if(['audit','settings'].includes(n.id)&&state.user.role!=='leader')return false;if(n.id==='applications'&&!can('recruitment:manage'))return false;if(['public_news','public_team','public_achievements','public_calendar'].includes(n.id)&&!can('content:manage'))return false;if(n.id==='discipline'&&!can('discipline:manage'))return false;if(n.id==='contracts'&&!can('finance:read')&&!can('finance:manage'))return true;return true;}
 const COMPACT_NAV_GROUPS=['ПУБЛІЧНИЙ САЙТ','СИСТЕМА'];
 function sidebar(){
  let current='';
@@ -1016,7 +1048,7 @@ function credentialReceipt(username,password,nickname,reset=false){
     <div class="form-actions"><button type="button" class="btn" data-action="close-modal">Готово — закрити</button></div>
   </div>`);
 }
-function userForm(id){const u=state.users.find(x=>x.id===id),edit=!!id,manager=canCreateRosterAccount(),leader=state.user.role==='leader';if(id&&!canEditRosterAccount(u)||!id&&!manager){toast('Недостатньо прав для редагування акаунта',true);return;}const roleOptions=Object.entries(roles).filter(([k])=>leader||k==='member').map(([k,v])=>`<option value="${k}" ${(u?.role||'member')===k?'selected':''}>${v}</option>`).join('');const fields=`<form id="user-form" data-id="${esc(id||'')}" class="formgrid">${field('Ігровий нікнейм','nickname',u?.nickname||'','text',false,'required maxlength="80"')}${field('Ігровий ID','game_id',u?.game_id||'')}${field('Discord','discord',u?.discord||'')}${field('Активність','activity',u?.activity||'')}${!edit?`${field('Логін *','username','','text',false,'required minlength="3" autocomplete="off"')}${field('Тимчасовий пароль (12+ символів) *','password','','password',false,'required minlength="12" autocomplete="new-password"')}<div class="full credential-tools"><button type="button" class="btn tiny secondary" data-action="generate-login">Згенерувати логін</button><button type="button" class="btn tiny secondary" data-action="generate-temp-password">Згенерувати пароль</button><button type="button" class="btn tiny ghost" data-action="toggle-temp-password">Показати / приховати</button><span class="muted small">20 випадкових символів, пароль буде показано лише під час видачі доступу.</span></div>`:''}${(manager||!edit)?`<div class="field"><label>Роль доступу</label><select name="role" class="select">${roleOptions}</select></div>${selectField('Ігровий ранг','rank_id',state.ranks,u?.rank_id)}${selectField('Напрямок','department_id',state.departments,u?.department_id)}${field('Дата вступу','joined_at',u?.joined_at||new Date().toISOString().slice(0,10),'date')}<div class="field"><label>Статус акаунта</label><select name="status" class="select"><option value="active" ${u?.status==='active'?'selected':''}>Активний</option><option value="blocked" ${u?.status==='blocked'?'selected':''}>Заблокований</option></select></div>`:''}${leader&&edit?field('Індивідуальні права через кому (порожньо = без прав при збереженні)','permissions',Array.isArray(u.custom_permissions)?u.permissions.join(', '):u.custom_permissions?.items?.join(', ')||'', 'textarea',true):''}<div class="full form-actions"><button type="button" class="btn ghost" data-action="close-modal">Закрити</button><button class="btn" type="submit">${edit?'Зберегти зміни':'Створити акаунт'}</button></div></form>`;modal(edit?'Особова справа / '+(u.nickname||u.username):'Новий учасник',`<p class="modal-desc">${edit?'Редагування запису з перевіркою версії.':'Логін та пароль потрібно особисто передати учаснику.'}</p>${fields}${edit&&leader?`<div class="hr"></div><button class="btn tiny danger" data-action="reset-password" data-id="${esc(id)}">Скинути пароль і всі сесії</button>`:''}`);}
+function userForm(id){const u=state.users.find(x=>x.id===id),edit=!!id,manager=canCreateRosterAccount(),leader=state.user.role==='leader';if(id&&!canEditRosterAccount(u)||!id&&!manager){toast('Недостатньо прав для редагування акаунта',true);return;}const roleOptions=Object.entries(roles).filter(([k])=>leader||k==='member').map(([k,v])=>`<option value="${k}" ${(u?.role||'member')===k?'selected':''}>${v}</option>`).join('');const fields=`<form id="user-form" data-id="${esc(id||'')}" class="formgrid">${field('Ігровий нікнейм','nickname',u?.nickname||'','text',false,'required maxlength="80"')}${field('Ігровий ID','game_id',u?.game_id||'')}${field('Discord','discord',u?.discord||'')}${field('Telegram','telegram',u?.telegram||'')}${field('Активність','activity',u?.activity||'')}${!edit?`${field('Логін *','username','','text',false,'required minlength="3" autocomplete="off"')}${field('Тимчасовий пароль (12+ символів) *','password','','password',false,'required minlength="12" autocomplete="new-password"')}<div class="full credential-tools"><button type="button" class="btn tiny secondary" data-action="generate-login">Згенерувати логін</button><button type="button" class="btn tiny secondary" data-action="generate-temp-password">Згенерувати пароль</button><button type="button" class="btn tiny ghost" data-action="toggle-temp-password">Показати / приховати</button><span class="muted small">20 випадкових символів, пароль буде показано лише під час видачі доступу.</span></div>`:''}${(manager||!edit)?`<div class="field"><label>Роль доступу</label><select name="role" class="select">${roleOptions}</select></div>${selectField('Ігровий ранг','rank_id',state.ranks,u?.rank_id)}${selectField('Напрямок','department_id',state.departments,u?.department_id)}${field('Дата вступу','joined_at',u?.joined_at||new Date().toISOString().slice(0,10),'date')}<div class="field"><label>Статус акаунта</label><select name="status" class="select"><option value="active" ${u?.status==='active'?'selected':''}>Активний</option><option value="blocked" ${u?.status==='blocked'?'selected':''}>Заблокований</option></select></div>`:''}${leader&&edit?field('Індивідуальні права через кому (порожньо = без прав при збереженні)','permissions',Array.isArray(u.custom_permissions)?u.permissions.join(', '):u.custom_permissions?.items?.join(', ')||'', 'textarea',true):''}<div class="full form-actions"><button type="button" class="btn ghost" data-action="close-modal">Закрити</button><button class="btn" type="submit">${edit?'Зберегти зміни':'Створити акаунт'}</button></div></form>`;modal(edit?'Особова справа / '+(u.nickname||u.username):'Новий учасник',`<p class="modal-desc">${edit?'Редагування запису з перевіркою версії.':'Логін та пароль потрібно особисто передати учаснику.'}</p>${fields}${edit&&leader?`<div class="hr"></div><button class="btn tiny danger" data-action="reset-password" data-id="${esc(id)}">Скинути пароль і всі сесії</button>`:''}`);}
 function rankRequirementsMissing(rank){return !String(rank.requirements||'').trim()||String(rank.requirements||'').trim()==='Умови встановлює керівник';}
 function promotionProgress(record){
  const target=Number(record?.extra?.requested_rank_id||0);
@@ -2018,6 +2050,31 @@ async function captPage(){
     +grouped(groupRoutes.capt)+await renderModule(state.sub.capt||groupRoutes.capt[0]);
 }
 
+// Only the leader can read and approve account registration requests.
+// The backend never includes password hashes in this response.
+async function registrationsPage(){
+ if(state.user?.role!=='leader')throw new Error('Реєстрації доступні лише лідеру');
+ const all=(await api('/registrations')).items;
+ const pending=all.filter(r=>r.status==='Очікує');
+ const cards=all.map(r=>{
+  const pendingStatus=r.status==='Очікує';
+  return '<article class="card gr-registration-admin-item">'+
+   '<div class="row space wrap"><strong>'+esc(r.nickname)+'</strong>'+badge(r.status)+'</div>'+
+   '<p class="muted small">Логін: '+esc(r.username)+' · Static ID: '+esc(r.game_id)+'</p>'+
+   '<p class="muted small">Discord: '+esc(r.discord||'—')+' · Telegram: '+esc(r.telegram||'—')+'</p>'+
+   '<p class="muted small">Подано: '+esc(date(r.created_at))+'</p>'+
+   (pendingStatus?'<div class="row wrap mt">'+
+    '<button type="button" class="btn tiny secondary" data-action="registration-review" data-decision="approve" data-id="'+esc(r.id)+'" data-version="'+r.version+'">✓ Схвалити</button>'+
+    '<button type="button" class="btn tiny danger" data-action="registration-review" data-decision="reject" data-id="'+esc(r.id)+'" data-version="'+r.version+'">Відхилити</button>'+
+   '</div>':'')+'</article>';
+ }).join('');
+ return intro('Реєстрації на порталі','Кандидати створюють заявку на акаунт, але не отримують доступ до схвалення лідером.')+
+  '<div class="card mb"><div class="row wrap"><span class="pill">Очікують: '+pending.length+'</span>'+
+  '<span class="pill">Усього: '+all.length+'</span>'+
+  '<a class="btn tiny secondary" href="/register/" target="_blank" rel="noopener noreferrer">Сторінка реєстрації ↗</a></div>'+
+  '<p class="muted small mt">Після схвалення створюється звичайний акаунт учасника без керівних прав. Додаткові ролі призначайте вручну в розділі «Учасники».</p></div>'+
+  (cards?'<div class="gr-registration-admin-list">'+cards+'</div>':empty('Немає заявок на реєстрацію'));
+}
 async function applications(){
   if(state.filter&&!applicationStatuses.includes(state.filter))state.filter='';
   const all=(await api('/applications')).items;
@@ -2284,7 +2341,7 @@ return `${intro('Налаштування Grizzly','Редагування пу�
     applicationWebhooksHtml+discordRoutesHtml+discordSettingsHtml+outboxHtml+discordLogsHtml+
     '<div class="row wrap mt"><button class="btn secondary" type="button" data-action="discord-test" '+(discord.configured?'':'disabled')+'>Надіслати тестове повідомлення</button>'+
     '<button type="button" class="btn ghost" data-action="discord-refresh">Оновити статус</button><span class="muted small">Worker: famaly · Не надсилай webhook у чат.</span></div></div>':''}<div class="notice mt">Ставки CAPT застосовуються вручну при створенні виплат, щоб керівник контролював підставу нарахування. Права заступників задаються в особових справах.</div>`;}
-async function profile(){const u=state.user;const sessions=(await api('/auth/sessions')).items;return `${intro('Мій профіль','Особисті дані, пароль та активні сесії.')}<div class="grid2"><div class="card"><h3>${esc(u.nickname||u.username)}</h3><div class="stack mt"><div>Логін: <strong>${esc(u.username)}</strong></div><div>Роль доступу: <strong>${esc(roles[u.role])}</strong></div><div>Ігровий ранг: <strong>${esc(rankName(u.rank_id))}</strong></div><div>Напрямок: <strong>${esc(departmentName(u.department_id))}</strong></div><div>Ігровий ID: <strong>${esc(u.game_id||'—')}</strong></div><div>Discord: <strong>${esc(u.discord||'—')}</strong></div></div><button class="btn tiny secondary mt" data-action="edit-user" data-id="${u.id}">Редагувати профіль</button></div><div class="card"><h3>Зміна пароля</h3><form id="password-form" class="stack mt">${field('Поточний пароль','old_password','','password',true,'required')}${field('Новий пароль (12–128 символів)','new_password','','password',true,'minlength="12" required')}<button class="btn" type="submit">Змінити пароль і завершити сесії</button></form></div></div><div class="card mt"><div class="card-head"><h3>Сесії</h3><span class="muted small">Завершення доступу з інших пристроїв</span></div>${table(['Створено','Термін дії','Пристрій','Дія'],sessions.map(x=>`<tr><td>${date(x.created_at)}</td><td>${date(x.expires_at)}</td><td class="wordwrap">${esc(x.user_agent.slice(0,100))}</td><td>${x.revoked_at?badge('Завершено'):`<button class="btn tiny danger" data-action="revoke-session" data-id="${esc(x.id)}">Завершити</button>`}</td></tr>`))}</div>`;}
+async function profile(){const u=state.user;const sessions=(await api('/auth/sessions')).items;return `${intro('Мій профіль','Особисті дані, пароль та активні сесії.')}<div class="grid2"><div class="card"><h3>${esc(u.nickname||u.username)}</h3><div class="stack mt"><div>Логін: <strong>${esc(u.username)}</strong></div><div>Роль доступу: <strong>${esc(roles[u.role])}</strong></div><div>Ігровий ранг: <strong>${esc(rankName(u.rank_id))}</strong></div><div>Напрямок: <strong>${esc(departmentName(u.department_id))}</strong></div><div>Ігровий ID: <strong>${esc(u.game_id||'—')}</strong></div><div>Discord: <strong>${esc(u.discord||'—')}</strong></div><div>Telegram: <strong>${esc(u.telegram||'—')}</strong></div></div><button class="btn tiny secondary mt" data-action="edit-user" data-id="${u.id}">Редагувати профіль</button></div><div class="card"><h3>Зміна пароля</h3><form id="password-form" class="stack mt">${field('Поточний пароль','old_password','','password',true,'required')}${field('Новий пароль (12–128 символів)','new_password','','password',true,'minlength="12" required')}<button class="btn" type="submit">Змінити пароль і завершити сесії</button></form></div></div><div class="card mt"><div class="card-head"><h3>Сесії</h3><span class="muted small">Завершення доступу з інших пристроїв</span></div>${table(['Створено','Термін дії','Пристрій','Дія'],sessions.map(x=>`<tr><td>${date(x.created_at)}</td><td>${date(x.expires_at)}</td><td class="wordwrap">${esc(x.user_agent.slice(0,100))}</td><td>${x.revoked_at?badge('Завершено'):`<button class="btn tiny danger" data-action="revoke-session" data-id="${esc(x.id)}">Завершити</button>`}</td></tr>`))}</div>`;}
 // A shared navigation context for members, dossiers and panel activity.
 const MEMBER_CONTEXT_ROUTES=['members','dossier','activity','inactivity'];
 function memberContextTabs(active){
@@ -2294,7 +2351,7 @@ function memberContextTabs(active){
   (item.id===active?' is-active':'')+'"'+(item.id===active?' aria-current="page"':'')+'>'+
   esc(item.text)+'</a>').join('')+'</nav>';
 }
-async function render(){state.menu=false;let content='';try{if(!state.user||(location.pathname!=='/'&&Object.values(grPublicPaths).includes(location.pathname)&&!location.hash.startsWith('#overview'))){renderPublic();return;}if(ROUTES_WITH_RENDER_PRELOAD.has(state.route))await preload();switch(state.route){case'overview':content=await overview();break;case'members':content=await members();break;case'ranks':content=await ranks();break;case'departments':content=await departments();break;case'workspace':content=await departmentWorkspace();break;case'leadership':content=await leadershipDashboard();break;case'activity':content=await activityPage();break;case'absences':content=await absencesPage();break;case'dossier':content=await dossierPage();break;case'inactivity':content=await inactivityPage();break;case'tasks':content=await renderModule('tasks');break;case'events':content=await renderModule('events');break;case'gallery':content=await galleryManager();break;case'public_news':content=await newsManager();break;case'public_team':content=await teamManager();break;case'public_achievements':content=await achievementsManager();break;case'public_calendar':content=await calendarManager();break;case'contracts':content=await contracts();break;case'capt':content=await captPage();break;case'fleet':content=await fleetPage();break;case'discipline':case'announcements':case'reports':content=await groupPage(state.route);break;case'finance':content=await finance();break;case'applications':content=await applications();break;case'stats':content=await stats();break;case'audit':content=await auditPage();break;case'settings':content=await settingsPage();break;case'profile':content=await profile();break;default:state.route='overview';content=await overview();}if(MEMBER_CONTEXT_ROUTES.includes(state.route))content=memberContextTabs(state.route)+content;shell(content);if(state.route==='members')syncMembersBulkUi();}catch(e){if(e.status===401){stopNotificationPolling();state.user=null;state.route='overview';renderPublic();toast('Сесію завершено. Увійдіть повторно.',true);return;}shell(intro('Помилка завантаження',e.message)+`<button class="btn mt" data-action="refresh">Повторити</button>`);toast(e.message,true);}}
+async function render(){state.menu=false;let content='';try{if(!state.user||(location.pathname!=='/'&&Object.values(grPublicPaths).includes(location.pathname)&&!location.hash.startsWith('#overview'))){renderPublic();return;}if(ROUTES_WITH_RENDER_PRELOAD.has(state.route))await preload();switch(state.route){case'overview':content=await overview();break;case'members':content=await members();break;case'ranks':content=await ranks();break;case'departments':content=await departments();break;case'workspace':content=await departmentWorkspace();break;case'leadership':content=await leadershipDashboard();break;case'activity':content=await activityPage();break;case'absences':content=await absencesPage();break;case'dossier':content=await dossierPage();break;case'inactivity':content=await inactivityPage();break;case'tasks':content=await renderModule('tasks');break;case'events':content=await renderModule('events');break;case'gallery':content=await galleryManager();break;case'public_news':content=await newsManager();break;case'public_team':content=await teamManager();break;case'public_achievements':content=await achievementsManager();break;case'public_calendar':content=await calendarManager();break;case'contracts':content=await contracts();break;case'capt':content=await captPage();break;case'fleet':content=await fleetPage();break;case'discipline':case'announcements':case'reports':content=await groupPage(state.route);break;case'finance':content=await finance();break;case'applications':content=await applications();break;case'registrations':content=await registrationsPage();break;case'stats':content=await stats();break;case'audit':content=await auditPage();break;case'settings':content=await settingsPage();break;case'profile':content=await profile();break;default:state.route='overview';content=await overview();}if(MEMBER_CONTEXT_ROUTES.includes(state.route))content=memberContextTabs(state.route)+content;shell(content);if(state.route==='members')syncMembersBulkUi();}catch(e){if(e.status===401){stopNotificationPolling();state.user=null;state.route='overview';renderPublic();toast('Сесію завершено. Увійдіть повторно.',true);return;}shell(intro('Помилка завантаження',e.message)+`<button class="btn mt" data-action="refresh">Повторити</button>`);toast(e.message,true);}}
 async function navigate(route){clearTimeout(memberSearchTimer);const url=new URL(location.href);if(url.searchParams.has('view')||url.pathname!=='/'){url.searchParams.delete('view');history.replaceState(history.state,'','/'+url.search+url.hash);}state.route=route;state.search='';state.sort='new';state.filter='';state.menu=false;location.hash=route;await render();}
 // Initial public data and session lookup are independent network requests.
 // Render will load the roster for roster-dependent pages; avoid fetching it twice.
@@ -2363,6 +2420,18 @@ async function handleSubmit(e){
  formSavingState(f,true);
  let failed=null;
  try{switch(f.id){
+  case 'register-form':{
+    const result=await api('/register','POST',b);
+    const card=f.closest('.gr-register-card');
+    if(card){
+      card.querySelector('.gr-register-lead').textContent=result.message;
+      f.replaceWith(Object.assign(document.createElement('div'),{
+        className:'gr-register-success',
+        textContent:'✓ Вашу заявку на акаунт отримано. Після схвалення лідером ви зможете увійти з обраними логіном і паролем.'
+      }));
+    }
+    toast('Реєстрацію надіслано на схвалення');return;
+  }
   case 'apply-form':await api('/apply','POST',b);f.reset();toast('Заявку надіслано. Очікуйте рішення рекрутера.');return;
   case 'login-form':state.user=(await api('/auth/login','POST',b)).user;closeModal();state.notifications=(await api('/notifications')).items;await preload();await navigate('overview');toast('Вхід успішний');return;
   case 'user-form':{const id=f.dataset.id,old=state.users.find(u=>u.id===id);if(id?!canEditRosterAccount(old):!canCreateRosterAccount())throw new Error('Недостатньо прав для редагування акаунта');let payload={...b};if(!id){delete payload.activity;delete payload.status;}else{payload.version=old.version;if(state.user.role==='leader'){payload.permissions=lines((b.permissions||'').replace(/,/g,'\n'));}else delete payload.permissions;}
@@ -2538,8 +2607,28 @@ document.addEventListener('change',e=>{
  state[key]=e.target.value;state.dossierTimelinePage=1;void render();return;
 }if(e.target.id==='dossier-user-select'){state.dossierUser=e.target.value;state.dossierTimelinePage=1;void render();return;}if(e.target.id==='inactivity-days-select'){state.inactivityDays=Number(e.target.value);void render();return;}if(e.target.id==='inactivity-department-select'){state.inactivityDepartment=e.target.value;void render();return;}if(e.target.id==='activity-department-filter'){state.activityDepartment=e.target.value;void render();return;}if(e.target.id==='workspace-department-select'){state.workspaceDepartment=e.target.value;state.workspaceSection='personnel';void render();return;}if(e.target.id==='gr-gallery-sort'){state.gallerySort=e.target.value;const node=$('#gr-gallery-content');if(node)node.innerHTML=renderPublicGallery();return;}if(e.target.id==='gr-achievement-sort'){state.achievementSort=e.target.value;const node=$('#gr-achievements-content');if(node)node.innerHTML=renderPublicAchievements();return;}if(e.target.matches('#record-form[data-module="promotions"] [name="extra_requested_rank_id"]')){const form=e.target.form,box=form.querySelector('#promotion-requirement-box');if(box){box.innerHTML=promotionChecklistView(e.target.value,[]);syncPromotionChecklist();}return;}if(e.target.matches('.promotion-requirement')){syncPromotionChecklist();return;}if(state.route==='members'&&['members-role-filter','members-status-filter','members-department-filter','members-sort-filter'].includes(e.target.id)){const key={'members-role-filter':'membersRole','members-status-filter':'membersStatus','members-department-filter':'membersDepartment','members-sort-filter':'membersSort'}[e.target.id];state[key]=e.target.value;state.membersPage=1;state.membersSelectedIds=[];render();return;}if(e.target.id==='contract-department-filter'){state.contractDepartment=e.target.value;render();return;}if(e.target.id==='status-filter'){state.filter=e.target.value;render();}if(e.target.id==='sort-select'){state.sort=e.target.value;render();}if(e.target.id==='period-filter'){state.period=e.target.value;render();}});
 document.addEventListener('click',async e=>{const back=e.target.closest('[data-backdrop]');if(back&&e.target===back){closeModal();return;}const t=e.target.closest('[data-action],[data-route]');if(!t)return;e.preventDefault();try{if(t.dataset.route){await navigate(t.dataset.route);return;}const act=t.dataset.action,id=t.dataset.id,mod=t.dataset.module;switch(act){
+  case 'registration-review':{
+    if(state.user?.role!=='leader')throw new Error('Лише лідер схвалює реєстрації');
+    const decision=t.dataset.decision;
+    if(!['approve','reject'].includes(decision))throw new Error('Некоректне рішення');
+    const question=decision==='approve'?
+      'Схвалити реєстрацію та створити звичайний акаунт учасника?':
+      'Відхилити реєстрацію? Кандидат не отримає доступ до панелі.';
+    if(!confirm(question))break;
+    await api('/registrations/'+encodeURIComponent(id)+'/review','POST',{
+      decision,version:Number(t.dataset.version)
+    });
+    await render();
+    toast(decision==='approve'?'Акаунт учасника активовано':'Реєстрацію відхилено');
+    break;
+  }
   case 'show-login':loginModal();break;
   case 'close-modal':closeModal();break;
+  case 'register-toggle-password':{
+    const input=document.querySelector('#reg-password');
+    if(input){input.type=input.type==='password'?'text':'password';t.setAttribute('aria-pressed',String(input.type==='text'));}
+    break;
+  }
   case 'toggle-menu':{
     const shell=$('.shell'),button=shell?.querySelector('[data-action="toggle-menu"]');
     const open=!!shell?.classList.toggle('menu-open');
