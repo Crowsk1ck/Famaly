@@ -49,11 +49,16 @@ test('public gallery sorting only uses fields in the public whitelist',()=>{
  assert.match(backend,/evidence:r\.evidence,created_at:r\.created_at,extra:/);
 });
 
-test('deployment always runs tests and never applies remote D1 migrations',()=>{
+test('deployment runs tests and only permits a guarded additive registration migration 0009',()=>{
  assert.match(deploy,/npm test/);
  assert.match(deploy,/wrangler deploy/);
  assert.match(deploy,/grizzly-production-deploy/);
- assert.doesNotMatch(deploy,/migrations apply/);
+ assert.match(deploy,/database_id = "22bfd811-aa30-4eba-bc72-2418ef7fedd4"/);
+ assert.match(deploy,/migrations list grizzly-db --remote/);
+ assert.match(deploy,/0009_public_account_registration\.sql/);
+ assert.match(deploy,/Unexpected pending D1 migration/);
+ assert.match(deploy,/migrations apply grizzly-db --remote/);
+ assert.doesNotMatch(deploy,/wrangler d1 migrations apply [^\n]*--local/);
 });
 
 test('backups are encrypted and never uploaded as public actions artifacts',()=>{
