@@ -15,7 +15,6 @@ const date=v=>v?new Date(v).toLocaleDateString('uk-UA',{day:'2-digit',month:'2-d
 const short=v=>String(v||'').slice(0,18);
 const {roles,statuses,applicationStatuses,permissionNames,moduleInfo,groupRoutes}=window.GRIZZLY_UI_CONFIG;
 const nav=[
-  {id:'registrations',text:'Реєстрації',icon:'✉',group:'КЕРІВНИЦТВО'},
   {id:'overview',text:'Огляд',icon:'◫',group:'ГОЛОВНЕ'},
   {id:'members',text:'Учасники',icon:'♟',group:'ГОЛОВНЕ'},
   {id:'dossier',text:'Особові справи',icon:'▤',group:'ГОЛОВНЕ'},
@@ -32,6 +31,7 @@ const nav=[
   {id:'ranks',text:'Ранги та кар’єра',icon:'⬡',group:'КЕРІВНИЦТВО'},
   {id:'absences',text:'Відпустки та неактив',icon:'☷',group:'КЕРІВНИЦТВО'},
   {id:'applications',text:'Рекрутинг',icon:'✉',group:'КЕРІВНИЦТВО'},
+  {id:'registrations',text:'Реєстрації',icon:'✉',group:'КЕРІВНИЦТВО'},
   {id:'discipline',text:'Дисципліна',icon:'⚑',group:'КЕРІВНИЦТВО'},
   {id:'announcements',text:'Оголошення',icon:'◉',group:'КЕРІВНИЦТВО'},
   {id:'finance',text:'Фінанси',icon:'₴',group:'КЕРІВНИЦТВО'},
@@ -414,9 +414,9 @@ function renderPublic(){
   '<header class="gr-header"><div class="gr-container gr-header-inner">'+
     '<a href="#home" class="gr-logo" aria-label="GRIZZLY — на головну"><img class="gr-logo-image" src="/grizzly-header-logo.svg" alt="" width="48" height="48" decoding="async"><span class="gr-logo-copy"><strong>GRIZZLY</strong><small>FAMILY / GTA V RP</small></span></a>'+
     '<nav class="gr-nav" aria-label="Основна навігація">'+navLinks+'</nav>'+
-    '<div class="gr-header-actions">'+(state.user?'<a class="gr-login-btn" href="/#overview">Відкрити панель <span>↗</span></a>':'<button class="gr-login-btn" data-action="show-login" type="button">Увійти <span>↗</span></button><a class="gr-register-nav-btn" href="/register/">Реєстрація</a>')+
+    '<div class="gr-header-actions">'+(state.user?'<a class="gr-login-btn" href="/#overview">Відкрити панель <span>↗</span></a>':'<button class="gr-login-btn" data-action="show-login" type="button">Увійти <span>↗</span></button><a class="gr-register-nav-btn" href="/register/"'+(page==='register'?' aria-current="page"':'')+'>Реєстрація</a>')+
     '<details class="gr-mobile-menu"><summary aria-label="Відкрити навігацію">☰</summary><nav aria-label="Мобільна навігація">'+navLinks+
-    (state.user?'<a class="gr-mobile-account" href="/#overview">Відкрити панель ↗</a>':'<button type="button" class="gr-mobile-account" data-action="show-login">Увійти ↗</button><a class="gr-mobile-account" href="/register/">Реєстрація ↗</a>')+
+    (state.user?'<a class="gr-mobile-account" href="/#overview">Відкрити панель ↗</a>':'<button type="button" class="gr-mobile-account" data-action="show-login">Увійти ↗</button><a class="gr-mobile-account" href="/register/"'+(page==='register'?' aria-current="page"':'')+'>Реєстрація ↗</a>')+
     '</nav></details></div>'+
   '</div></header>'+
   '<main id="gr-main" tabindex="-1">'+
