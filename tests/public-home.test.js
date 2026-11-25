@@ -33,7 +33,7 @@ test('homepage is compact and excludes the full content sections and application
   assert.ok(!html.includes('id="apply-form"'));
   assert.ok(html.includes('Сила в єдності'));
   assert.ok(html.includes('Наша історія Grizzly'));
-  assert.ok(html.includes('href="#join"'));
+  assert.ok(html.includes('href="/register/"'));
   assert.ok(html.includes('href="#about"'));
   assert.ok(html.includes('aria-current="page"'));
 });
@@ -108,7 +108,7 @@ test('news page safely renders feature cards and recruitment call to action',()=
   ]});
   assert.ok(html.includes('Набір CAPT'));
   assert.ok(html.includes('gr-news-featured'));
-  assert.ok(html.includes('href="#join"'));
+  assert.ok(html.includes('href="/register/"'));
   assert.ok(!html.includes('<script>x</script>'));
   assert.ok(!html.includes('<img src=x>'));
 });
@@ -254,4 +254,25 @@ test('v17.2 registration page matches the two-column portal layout and stays sep
  assert.ok(html.includes('minlength="12"'));
  assert.ok(!html.includes('id="apply-form"'),'Public signup must not submit a recruitment application');
  assert.ok(!html.includes('name="role"'),'Signup cannot choose a privileged role');
+});
+
+test('v17.2 public calls to action and primary menu open registration rather than the old join anchor',()=>{
+ const home=publicHtml();
+ const news=publicHtml({hash:'#news',news:[{
+  id:'r1',title:'Відкрито реєстрацію',details:'Нові учасники',
+  category:'recruitment',featured:true,updated_at:'2026-11-25'
+ }]});
+ const about=publicHtml({hash:'#about'});
+ for(const html of [home,news,about]){
+  assert.ok(!html.includes('href="#join"'),'Public pages must not link to legacy #join anchor');
+  assert.ok(html.includes('href="/register/"'),'Registration must be reachable from public pages');
+  assert.ok(html.includes('>Реєстрація</a>'),'Public navigation should read Реєстрація');
+  assert.ok(!html.includes('>Вступити</a>'),'Public menu must no longer say Вступити');
+ }
+ assert.ok(home.includes('Зареєструйся на порталі'));
+ assert.ok(home.includes('Реєстрація <span>↗</span>'));
+ assert.ok(news.includes('Зареєструватися ↗'));
+ // Preserve old direct /join/ recruitment route and its existing data.
+ assert.ok(publicHtml({hash:'#join'}).includes('id="apply-form"'));
+ assert.ok(publicHtml({hash:'#register'}).includes('id="register-form"'));
 });
