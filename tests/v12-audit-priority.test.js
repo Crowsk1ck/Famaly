@@ -10,7 +10,7 @@ const overview=app.slice(app.indexOf('async function overview()'),app.indexOf('f
 test('v12 navigation preserves all existing module routes, reordered into practical groups',()=>{
  const expected=['overview','members','dossier','activity','inactivity','departments','workspace','leadership',
   'capt','contracts','fleet','events','reports','ranks','absences','applications','discipline',
-  'announcements','finance','gallery','public_news','public_team','public_achievements','public_calendar',
+  'announcements','finance','registrations','gallery','public_news','public_team','public_achievements','public_calendar',
   'stats','audit','settings','profile'];
  for(const name of expected)assert.ok(nav.includes("id:'"+name+"'"),name);
  assert.equal((nav.match(/id:'/g)||[]).length,expected.length);
