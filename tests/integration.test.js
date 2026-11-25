@@ -2682,7 +2682,18 @@ test('v16.0 acceptance: leader, deputy, head and member see only permitted accou
 });
 
 
+let registrationMemberToken=null;
 test('v17.2 public account registration creates pending request without granting a session',async()=>{
+ const observer=await req('/api/users',{method:'POST',token:leader,data:{
+  username:'registration_observer172',password:'observer-login-pass-2026',
+  nickname:'Registration Observer',role:'member',game_id:'8001'
+ }});
+ assert.equal(observer.status,201,JSON.stringify(observer.data));
+ const observerLogin=await req('/api/auth/login',{method:'POST',data:{
+  username:'registration_observer172',password:'observer-login-pass-2026'
+ }});
+ assert.equal(observerLogin.status,200);
+ registrationMemberToken=observerLogin.cookie.match(/grizzly_session=([a-f0-9]+)/)[1];
  const candidate={username:'portal_visitor172',password:'private-portal-acc-2026',nickname:'Portal Grizzly',game_id:'10452',discord:'grizzly.candidate',telegram:'@grizzly_candidate'};
  const submitted=await req('/api/register',{method:'POST',data:candidate});
  assert.equal(submitted.status,202,JSON.stringify(submitted.data));
@@ -2691,7 +2702,7 @@ test('v17.2 public account registration creates pending request without granting
  assert.ok(!JSON.stringify(submitted.data).includes(candidate.password));
  const login=await req('/api/auth/login',{method:'POST',data:{username:candidate.username,password:candidate.password}});
  assert.equal(login.status,401,'No account before leader approval');
- const forbidden=await req('/api/registrations',{token:member});
+ const forbidden=await req('/api/registrations',{token:registrationMemberToken});
  assert.equal(forbidden.status,403,'Registration queue is leader-only');
  const queue=await req('/api/registrations',{token:leader});
  assert.equal(queue.status,200,JSON.stringify(queue.data));
@@ -2705,7 +2716,7 @@ test('v17.2 public account registration creates pending request without granting
  const raw=await DB1.prepare('SELECT password_hash FROM account_registrations WHERE id=?').bind(record.id).first();
  assert.ok(raw.password_hash.startsWith('pbkdf2-sha256$'),'Pending account has PBKDF2 hash, never plaintext');
  assert.ok(!raw.password_hash.includes(candidate.password));
- const roster=await req('/api/members',{token:member});
+ const roster=await req('/api/members',{token:registrationMemberToken});
  assert.ok(!roster.data.items.some(x=>x.nickname===candidate.nickname),'Pending requests cannot appear in family roster');
 });
 
@@ -2713,7 +2724,7 @@ test('v17.2 only the leader can approve a pending request; activation creates me
  const queue=(await req('/api/registrations',{token:leader})).data.items;
  const record=queue.find(x=>x.username==='portal_visitor172');
  assert.ok(record);
- assert.equal((await req('/api/registrations/'+record.id+'/review',{method:'POST',token:member,data:{decision:'approve',version:record.version}})).status,403);
+ assert.equal((await req('/api/registrations/'+record.id+'/review',{method:'POST',token:registrationMemberToken,data:{decision:'approve',version:record.version}})).status,403);
  assert.equal((await req('/api/registrations/'+record.id+'/review',{method:'POST',token:leader,data:{decision:'approve',version:record.version+1}})).status,409);
  const approved=await req('/api/registrations/'+record.id+'/review',{method:'POST',token:leader,data:{decision:'approve',version:record.version}});
  assert.equal(approved.status,200,JSON.stringify(approved.data));
@@ -2756,7 +2767,7 @@ test('v17.2 admin can edit approved member Telegram, but public roster never exp
   data:{version:account.version,telegram:'@grizzly_new'}});
  assert.equal(patched.status,200,JSON.stringify(patched.data));
  assert.equal(patched.data.item.telegram,'@grizzly_new');
- const publicRoster=(await req('/api/members',{token:member})).data.items.find(x=>x.id===account.id);
+ const publicRoster=(await req('/api/members',{token:registrationMemberToken})).data.items.find(x=>x.id===account.id);
  assert.ok(publicRoster);
  assert.equal(Object.hasOwn(publicRoster,'telegram'),false,'Telegram must stay private');
 });
