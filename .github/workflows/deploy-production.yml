@@ -48,7 +48,25 @@ jobs:
           npm test
       - name: Build GRIZZLY social preview PNG
         run: npm run build:social
-      - name: Deploy production Worker (no D1 migration)
+      - name: Apply strictly additive registration migration 0009 before deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fxq 'name = "famaly"' wrangler.toml
+          grep -Fxq 'database_name = "grizzly-db"' wrangler.toml
+          grep -Fxq 'database_id = "22bfd811-aa30-4eba-bc72-2418ef7fedd4"' wrangler.toml
+          npx wrangler d1 migrations list grizzly-db --remote 2>&1 | tee /tmp/grizzly-register-pending.txt
+          if grep -Eq '000[1-8]_[^[:space:]]*\.sql|00(1[0-9]|[2-9][0-9])_[^[:space:]]*\.sql' /tmp/grizzly-register-pending.txt; then
+            echo "::error::Unexpected pending D1 migration; refusing automatic rollout. Inspect the migration list manually."
+            exit 1
+          fi
+          if grep -Fq '0009_public_account_registration.sql' /tmp/grizzly-register-pending.txt; then
+            npx wrangler d1 migrations apply grizzly-db --remote
+            echo "::notice::Registration schema 0009 was applied to grizzly-db"
+          else
+            echo "::notice::Registration schema has no pending migration"
+          fi
+      - name: Deploy production Worker (only approved registration migration applied above)
         run: npx wrangler deploy
       - name: Verify Worker and GRIZZLY production domain
         shell: bash
