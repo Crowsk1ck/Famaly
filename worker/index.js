@@ -1698,6 +1698,7 @@ async function handleApi(req,env,ctx){const db=env.DB;if(!db)fail(500,'Не на
 }
 // Server-rendered public landing metadata and crawlable summary; private API content is never embedded.
 const PUBLIC_SEO={
+ '/register/':{title:'Реєстрація на порталі — GRIZZLY Family',description:'Створіть заявку на особистий акаунт GRIZZLY FAMILY. Доступ до порталу відкривається після схвалення керівництвом.',heading:'РЕЄСТРАЦІЯ GRIZZLY',intro:'Створіть профіль для доступу до особистого кабінету. Нову реєстрацію перевіряє лідер сім’ї.'},
  '/about/':{title:'Історія та напрямки — GRIZZLY Family',description:'Історія сім’ї Grizzly, її принципи, керівництво та напрямки у GTA 5 Roleplay.',heading:'ІСТОРІЯ GRIZZLY',intro:'Сім’я Grizzly об’єднує гравців, для яких важливі повага, дисципліна й командна робота.'},
  '/news/':{title:'Новини сім’ї — GRIZZLY Family',description:'Оголошення, новини та важливі події сім’ї GRIZZLY у GTA 5 RP.',heading:'НОВИНИ GRIZZLY',intro:'Офіційні новини та оголошення сім’ї. Актуальні записи з’являються після публікації.'},
  '/achievements/':{title:'Досягнення — GRIZZLY Family',description:'Перемоги CAPT, нагороди та важливі досягнення GRIZZLY Family.',heading:'ДОСЯГНЕННЯ GRIZZLY',intro:'Здобутки сім’ї, результати спільних подій і підтверджені перемоги.'},
