@@ -8,7 +8,7 @@ import worker,{payoutPreview,hashPassword,verifyPassword,validDiscordWebhookUrl,
 
 const dir=mkdtempSync(join(tmpdir(),'grizzly-test-'));
 const file=join(dir,'local.sqlite');
-const schema=['0001_init.sql','0002_capt_signups.sql','0003_discord_notifications.sql','0004_discord_capt_news.sql','0005_discord_announcements.sql','0006_application_statuses.sql','0007_payout_confirmations.sql','0008_discord_outbox.sql'].map(file=>readFileSync(resolve('migrations',file),'utf8')).join('\n');
+const schema=['0001_init.sql','0002_capt_signups.sql','0003_discord_notifications.sql','0004_discord_capt_news.sql','0005_discord_announcements.sql','0006_application_statuses.sql','0007_payout_confirmations.sql','0008_discord_outbox.sql','0009_public_account_registration.sql'].map(file=>readFileSync(resolve('migrations',file),'utf8')).join('\n');
 const child=spawn('python',['-u',resolve('tests/db_adapter.py')]);let pending=[],buf='';child.stdout.on('data',d=>{buf+=d.toString();let idx;while((idx=buf.indexOf('\n'))>=0){const line=buf.slice(0,idx);buf=buf.slice(idx+1);const {resolve:res,reject:rej}=pending.shift();const obj=JSON.parse(line);if(obj.error)rej(new Error(obj.error));else res(obj);}});
 function python(payload){return new Promise((res,rej)=>{pending.push({resolve:res,reject:rej});child.stdin.write(JSON.stringify({file,...payload})+'\n');});}
 await python({init:schema});
@@ -2679,4 +2679,84 @@ test('v16.0 acceptance: leader, deputy, head and member see only permitted accou
  assert.equal((await req('/api/ledger',{token:tokens.head})).status,403);
  assert.equal((await req('/api/auth/me',{token:leader})).data.user.role,'leader');
  assert.equal((await req('/api/auth/me',{token:tokens.member})).data.user.role,'member');
+});
+
+
+test('v17.2 public account registration creates pending request without granting a session',async()=>{
+ const candidate={username:'portal_visitor172',password:'private-portal-acc-2026',nickname:'Portal Grizzly',game_id:'10452',discord:'grizzly.candidate',telegram:'@grizzly_candidate'};
+ const submitted=await req('/api/register',{method:'POST',data:candidate});
+ assert.equal(submitted.status,202,JSON.stringify(submitted.data));
+ assert.equal(submitted.data.ok,true);
+ assert.equal(submitted.cookie,null,'Public signup must never set a login cookie');
+ assert.ok(!JSON.stringify(submitted.data).includes(candidate.password));
+ const login=await req('/api/auth/login',{method:'POST',data:{username:candidate.username,password:candidate.password}});
+ assert.equal(login.status,401,'No account before leader approval');
+ const forbidden=await req('/api/registrations',{token:member});
+ assert.equal(forbidden.status,403,'Registration queue is leader-only');
+ const queue=await req('/api/registrations',{token:leader});
+ assert.equal(queue.status,200,JSON.stringify(queue.data));
+ const record=queue.data.items.find(x=>x.username===candidate.username);
+ assert.ok(record);
+ assert.equal(record.status,'Очікує');
+ assert.equal(record.telegram,candidate.telegram);
+ assert.equal(record.game_id,candidate.game_id);
+ assert.equal(Object.hasOwn(record,'password_hash'),false,'Never expose pending password hash');
+ assert.equal(Object.hasOwn(record,'password'),false);
+ const raw=await DB1.prepare('SELECT password_hash FROM account_registrations WHERE id=?').bind(record.id).first();
+ assert.ok(raw.password_hash.startsWith('pbkdf2-sha256$'),'Pending account has PBKDF2 hash, never plaintext');
+ assert.ok(!raw.password_hash.includes(candidate.password));
+ const roster=await req('/api/members',{token:member});
+ assert.ok(!roster.data.items.some(x=>x.nickname===candidate.nickname),'Pending requests cannot appear in family roster');
+});
+
+test('v17.2 only the leader can approve a pending request; activation creates member role once',async()=>{
+ const queue=(await req('/api/registrations',{token:leader})).data.items;
+ const record=queue.find(x=>x.username==='portal_visitor172');
+ assert.ok(record);
+ assert.equal((await req('/api/registrations/'+record.id+'/review',{method:'POST',token:member,data:{decision:'approve',version:record.version}})).status,403);
+ assert.equal((await req('/api/registrations/'+record.id+'/review',{method:'POST',token:leader,data:{decision:'approve',version:record.version+1}})).status,409);
+ const approved=await req('/api/registrations/'+record.id+'/review',{method:'POST',token:leader,data:{decision:'approve',version:record.version}});
+ assert.equal(approved.status,200,JSON.stringify(approved.data));
+ assert.equal(approved.data.status,'Прийнято');
+ assert.equal((await req('/api/registrations/'+record.id+'/review',{method:'POST',token:leader,data:{decision:'approve',version:record.version}})).status,409,'Double approval must be impossible');
+ const stored=await DB1.prepare('SELECT status,password_hash FROM account_registrations WHERE id=?').bind(record.id).first();
+ assert.equal(stored.status,'Прийнято');
+ assert.equal(stored.password_hash,null,'Hash removed from reviewed application');
+ const login=await req('/api/auth/login',{method:'POST',data:{username:record.username,password:'private-portal-acc-2026'}});
+ assert.equal(login.status,200,JSON.stringify(login.data));
+ assert.equal(login.data.user.role,'member','Public registration must never elevate role');
+ assert.equal(login.data.user.status,'active');
+ assert.equal(login.data.user.telegram,'@grizzly_candidate');
+ assert.equal(login.data.user.rank_id,1);
+ const counts=await DB1.prepare('SELECT COUNT(*) count FROM users WHERE username=?').bind(record.username).first();
+ assert.equal(counts.count,1,'No duplicate accounts after repeated approval');
+});
+
+test('v17.2 rejected accounts never activate, requests cannot self-approve and invalid fields are rejected',async()=>{
+ const applicant={username:'portal_reject172',password:'safe-signup-pass-2026',nickname:'Declined Player',game_id:'7654',discord:'',telegram:''};
+ const submitted=await req('/api/register',{method:'POST',data:applicant});
+ assert.equal(submitted.status,202);
+ const invalid=await req('/api/register',{method:'POST',data:{...applicant,username:'invalid user',password:'short'}});
+ assert.equal(invalid.status,400);
+ const queue=(await req('/api/registrations',{token:leader})).data.items;
+ const record=queue.find(x=>x.username===applicant.username);
+ const denied=await req('/api/registrations/'+record.id+'/review',{method:'POST',token:leader,data:{decision:'reject',version:record.version}});
+ assert.equal(denied.status,200);
+ const stored=await DB1.prepare('SELECT status,password_hash FROM account_registrations WHERE id=?').bind(record.id).first();
+ assert.equal(stored.status,'Відхилено');
+ assert.equal(stored.password_hash,null);
+ assert.equal((await req('/api/auth/login',{method:'POST',data:{username:applicant.username,password:applicant.password}})).status,401);
+ assert.equal((await req('/api/registrations/'+record.id+'/review',{method:'POST',token:leader,data:{decision:'approve',version:record.version}})).status,409);
+});
+
+test('v17.2 admin can edit approved member Telegram, but public roster never exposes it',async()=>{
+ const account=(await req('/api/users',{token:leader})).data.items.find(x=>x.username==='portal_visitor172');
+ assert.ok(account);
+ const patched=await req('/api/users/'+account.id,{method:'PATCH',token:leader,
+  data:{version:account.version,telegram:'@grizzly_new'}});
+ assert.equal(patched.status,200,JSON.stringify(patched.data));
+ assert.equal(patched.data.item.telegram,'@grizzly_new');
+ const publicRoster=(await req('/api/members',{token:member})).data.items.find(x=>x.id===account.id);
+ assert.ok(publicRoster);
+ assert.equal(Object.hasOwn(publicRoster,'telegram'),false,'Telegram must stay private');
 });
