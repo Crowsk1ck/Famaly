@@ -21,7 +21,7 @@ test('public prerender removes the duplicate root loading screen',()=>{
 
 test('production deploy exercises a real public tab and browser Back in Chromium',()=>{
  assert.match(deploy,/Browser smoke test for public navigation/);
- assert.match(deploy,/waitForFunction\(\(\)=>location\.pathname==='\/join\/'/);
+ assert.match(deploy,/waitForFunction\(\(\)=>location\.pathname==='\/register\/'/);
  assert.match(deploy,/page\.goBack/);
  assert.match(deploy,/state\.probe!=='persistent-document'/);
 });
